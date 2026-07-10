@@ -165,7 +165,10 @@ function loadInitialDraft(
   snapshot: RevisionDto["snapshot"],
   layoutStorageKey: string
 ): CanvasDraft {
-  const { connectors, junctions, paths } = readCanvasDraftSnapshot(revisionId, snapshot);
+  const draftSnapshot = readCanvasDraftSnapshot(revisionId, snapshot);
+  const connectors = draftSnapshot.connectors;
+  const junctions = draftSnapshot.junctions ?? [];
+  const paths = draftSnapshot.paths;
   const basePositions = buildDefaultPositions(connectors, junctions);
   const legacyLayoutPositions = loadLegacyLayoutPositions(layoutStorageKey);
 
@@ -1339,7 +1342,7 @@ export function CableCanvas({
         {isDetailsOpen ? (
           <DetailsSummary
             revisionId={revisionId}
-            snapshot={{ connectors, junctions, paths: pathsState }}
+            snapshot={snapshot}
             connectors={connectors}
             junctions={junctions}
             paths={pathsState}

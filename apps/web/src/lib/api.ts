@@ -135,6 +135,8 @@ export interface LibraryIngestItemDto {
   stockStatus: LibraryComponentDto["stockStatus"];
   compatibilityHints: string[];
   isReviewed: boolean;
+  reviewedByUserId?: string;
+  reviewedAt?: string;
   customFieldValues?: Record<string, string>;
 }
 

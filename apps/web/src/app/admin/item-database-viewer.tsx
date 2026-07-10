@@ -45,7 +45,7 @@ function normalizeRuntimeCategory(rawCategory: unknown): Category | null {
 
 interface ItemDatabaseViewerProps {
   items: LibraryComponentDto[];
-  visibleCategories: Category[];
+  visibleCategories: readonly Category[];
   categoryLabel: Record<Category, string>;
   q?: string;
   category?: Category;
@@ -225,7 +225,7 @@ function getColumnDefs(
   const fieldByKey = new Map(fieldDefinitions.map((definition) => [definition.key, definition]));
   const getLabel = (key: string, fallback: string) => fieldByKey.get(key)?.label ?? fallback;
   const isVisible = (key: string, fallback: boolean) => fieldByKey.get(key)?.isVisibleInViewer ?? fallback;
-  const sharedColumns: Array<ColumnDef<LibraryComponentDto>> = [
+  const sharedColumns = [
     columnHelper.accessor("partNumber", {
       id: "partNumber",
       header: getLabel("partNumber", "Part number"),
@@ -327,7 +327,7 @@ function getColumnDefs(
         </button>
       )
     })
-  ];
+  ] as Array<ColumnDef<LibraryComponentDto>>;
   const customColumns = fieldDefinitions
     .filter((definition) => !definition.isSystem && definition.isVisibleInViewer)
     .map((definition) =>
@@ -337,7 +337,7 @@ function getColumnDefs(
         size: 170,
         minSize: 72
       })
-    );
+    ) as Array<ColumnDef<LibraryComponentDto>>;
   return [
     ...sharedColumns.filter((column) => isVisible(String(column.id), true) || String(column.id) === LOCKED_FIRST_COLUMN_ID),
     ...customColumns

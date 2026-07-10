@@ -1,0 +1,177 @@
+.page {
+  min-height: 100vh;
+  padding: 32px 16px;
+  background: #f6f7fb;
+}
+
+.main {
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+  display: grid;
+  gap: 16px;
+}
+
+.header,
+.card {
+  background: #fff;
+  border: 1px solid #e8e8ef;
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.header h1 {
+  margin: 0 0 8px;
+}
+
+.header p {
+  margin: 0 0 12px;
+  color: #4f5666;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.actions a,
+.actions button {
+  border: 1px solid #cdd3de;
+  background: #fff;
+  color: #111827;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font: inherit;
+}
+
+.card h2 {
+  margin: 0 0 10px;
+}
+
+.card details {
+  margin-bottom: 12px;
+}
+
+.card p {
+  margin: 0 0 12px;
+  color: #4f5666;
+}
+
+.form {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.form label {
+  display: grid;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.form input {
+  font: inherit;
+  border: 1px solid #cdd3de;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.form button {
+  width: fit-content;
+  border: 1px solid #1d4ed8;
+  background: #2563eb;
+  color: #fff;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font: inherit;
+}
+
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0;
+}
+
+.listItem {
+  border-top: 1px solid #edf0f5;
+  padding: 14px 0;
+}
+
+.harnessRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.harnessMeta {
+  display: grid;
+  gap: 6px;
+}
+
+.list span {
+  color: #4f5666;
+}
+
+.list a {
+  color: #1d4ed8;
+  text-decoration: underline;
+}
+
+.ctaSummary {
+  display: inline-block;
+  border: 1px solid #1d4ed8;
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-radius: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.error {
+  color: #b91c1c;
+}
+
+.success {
+  color: #166534;
+}
+
+.deleteSummary {
+  color: #b91c1c;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.deleteForm {
+  margin-top: 8px;
+  display: grid;
+  gap: 8px;
+}
+
+.deleteForm label {
+  display: grid;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.deleteForm input {
+  font: inherit;
+  border: 1px solid #cdd3de;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.deleteButton {
+  width: fit-content;
+  border: 1px solid #b91c1c;
+  background: #fff;
+  color: #b91c1c;
+  border-radius: 8px;
+  padding: 7px 10px;
+  font: inherit;
+  cursor: pointer;
+}

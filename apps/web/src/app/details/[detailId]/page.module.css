@@ -1,0 +1,148 @@
+.page {
+  min-height: 100vh;
+  padding: 32px 16px;
+  background: #f6f7fb;
+}
+
+.main {
+  width: 100%;
+  max-width: 1080px;
+  margin: 0 auto;
+  display: grid;
+  gap: 16px;
+}
+
+.header,
+.card {
+  background: #fff;
+  border: 1px solid #e8e8ef;
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.header h1 {
+  margin: 0 0 8px;
+}
+
+.header p {
+  margin: 0 0 12px;
+  color: #4f5666;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.actions a,
+.actions button,
+.card button {
+  border: 1px solid #1d4ed8;
+  background: #2563eb;
+  color: #fff;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font: inherit;
+}
+
+.card h2 {
+  margin: 0 0 10px;
+}
+
+.card p {
+  margin: 0 0 10px;
+  color: #4f5666;
+}
+
+.inlineActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.validationPanel {
+  border: 1px solid #e8e8ef;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.validationPanel ul,
+.exportList {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.validationPanel li,
+.exportList li {
+  margin-bottom: 4px;
+}
+
+.badgePending,
+.badgeCompleted,
+.badgeFailed {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+.badgePending {
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  color: #334155;
+}
+
+.badgeCompleted {
+  border: 1px solid #86efac;
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.badgeFailed {
+  border: 1px solid #fecaca;
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.retryForm {
+  display: inline-flex;
+  margin-left: 8px;
+}
+
+.error {
+  color: #b91c1c;
+}
+
+.bomTableWrap {
+  overflow-x: auto;
+}
+
+.bomTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.bomTable th,
+.bomTable td {
+  border: 1px solid #e8e8ef;
+  padding: 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.bomTable th {
+  background: #f8fafc;
+}
+
+.bomUnresolved {
+  background: #fff7ed;
+}
+
+.bomUnresolved td:nth-child(7) {
+  color: #c2410c;
+  font-weight: 600;
+}
+

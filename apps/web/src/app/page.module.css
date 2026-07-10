@@ -1,0 +1,282 @@
+.page {
+  min-height: 100vh;
+  padding: 32px 16px;
+  background: #f6f7fb;
+}
+
+.main {
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+  min-height: calc(100vh - 64px);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.header {
+  background: #fff;
+  border: 1px solid #e8e8ef;
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.header h1 {
+  margin: 0 0 8px;
+}
+
+.header p {
+  margin: 0;
+  color: #4f5666;
+}
+
+.headerActions {
+  margin-top: 12px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.headerActions form {
+  margin: 0;
+}
+
+.card {
+  background: #fff;
+  border: 1px solid #e8e8ef;
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.projectsCard {
+  flex: 1;
+}
+
+.card h2 {
+  margin-top: 0;
+}
+
+.card details {
+  margin-bottom: 12px;
+}
+
+.form {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.form label {
+  display: grid;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.form input,
+.form textarea {
+  font: inherit;
+  border: 1px solid #cdd3de;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.form button {
+  width: fit-content;
+  border: 1px solid #1d4ed8;
+  background: #2563eb;
+  color: #fff;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.projectList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0;
+}
+
+.projectList li {
+  display: grid;
+  gap: 6px;
+  padding: 14px 0;
+}
+
+.projectList li + li {
+  border-top: 1px solid #edf0f5;
+}
+
+.projectList li:only-child {
+  border-top: 1px solid #edf0f5;
+  border-bottom: 1px solid #edf0f5;
+}
+
+.projectRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 10px;
+}
+
+.dragHandle {
+  border: none;
+  background: transparent;
+  padding: 2px 4px;
+  font: inherit;
+  line-height: 1;
+  color: #6b7280;
+  cursor: grab;
+}
+
+.dragHandle:active {
+  cursor: grabbing;
+}
+
+.projectDragging {
+  opacity: 0.65;
+}
+
+.projectTitleGroup {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.projectNameLine {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.projectName {
+  line-height: 1.2;
+  flex-shrink: 0;
+}
+
+.projectDescription {
+  color: #4f5666;
+  font-size: 14px;
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.projectHarnessCount {
+  color: #4f5666;
+  font-size: 13px;
+}
+
+.projectRowActions {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.projectLink {
+  color: #1d4ed8;
+  text-decoration: underline;
+}
+
+.inlineSummary {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #1d4ed8;
+  background: #fff;
+  color: #1d4ed8;
+  border-radius: 8px;
+  padding: 6px 10px;
+  line-height: 1.2;
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+  list-style: none;
+}
+
+.inlineSummary::-webkit-details-marker {
+  display: none;
+}
+
+.renameSummary {
+  display: inline-block;
+  border: 1px solid #1d4ed8;
+  background: #fff;
+  color: #1d4ed8;
+  border-radius: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.renameSummary::-webkit-details-marker {
+  display: none;
+}
+
+.renameForm {
+  margin-top: 8px;
+  display: grid;
+  gap: 8px;
+}
+
+.renameForm label {
+  display: grid;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.renameForm input {
+  border: 1px solid #cdd3de;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+}
+
+.renameButton,
+.deleteButton {
+  border: 1px solid #cdd3de;
+  background: #fff;
+  border-radius: 8px;
+  padding: 7px 10px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.renameButton {
+  width: fit-content;
+  border-color: #1d4ed8;
+  color: #1d4ed8;
+}
+
+.deleteButton {
+  border-color: #b91c1c;
+  color: #b91c1c;
+}
+
+.error {
+  color: #b91c1c;
+}
+
+.ctaSummary {
+  display: inline-block;
+  border: 1px solid #1d4ed8;
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-radius: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.mutedCard {
+  background: #f1f3f7;
+  border-color: #d9dee8;
+}
+
+.healthCard {
+  margin-top: auto;
+}

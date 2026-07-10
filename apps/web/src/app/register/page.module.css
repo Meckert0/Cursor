@@ -1,0 +1,60 @@
+.page {
+  min-height: 100vh;
+  padding: 32px 16px;
+  background: #f6f7fb;
+}
+
+.main {
+  width: 100%;
+  max-width: 520px;
+  margin: 0 auto;
+}
+
+.card {
+  background: #fff;
+  border: 1px solid #e8e8ef;
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.card h1 {
+  margin: 0 0 8px;
+}
+
+.card p {
+  margin: 0 0 12px;
+  color: #4f5666;
+}
+
+.form {
+  display: grid;
+  gap: 12px;
+}
+
+.form label {
+  display: grid;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.form input {
+  font: inherit;
+  border: 1px solid #cdd3de;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.form button {
+  width: fit-content;
+  border: 1px solid #1d4ed8;
+  background: #2563eb;
+  color: #fff;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.error {
+  color: #b91c1c !important;
+}

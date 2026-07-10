@@ -1,0 +1,176 @@
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0;
+}
+
+.listItem {
+  border-top: 1px solid #edf0f5;
+  padding: 14px 0;
+}
+
+.dragging {
+  opacity: 0.65;
+}
+
+.harnessRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.dragHandle {
+  border: none;
+  background: transparent;
+  color: #4f5666;
+  padding: 2px 4px;
+  font-size: 20px;
+  font: inherit;
+  cursor: grab;
+  line-height: 1;
+}
+
+.dragHandle:active {
+  cursor: grabbing;
+}
+
+.harnessMeta {
+  display: grid;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.harnessMeta span {
+  color: #4f5666;
+}
+
+.harnessNameLine {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.harnessName {
+  line-height: 1.2;
+  flex-shrink: 0;
+}
+
+.harnessDescription {
+  color: #4f5666;
+  font-size: 14px;
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.harnessUpdatedAt {
+  color: #4f5666;
+}
+
+.harnessMeta a {
+  color: #1d4ed8;
+  text-decoration: underline;
+}
+
+.itemActions {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.renameSummary {
+  display: inline-block;
+  border: 1px solid #1d4ed8;
+  background: #fff;
+  color: #1d4ed8;
+  border-radius: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.renameSummary::-webkit-details-marker {
+  display: none;
+}
+
+.renameForm {
+  margin-top: 8px;
+  display: grid;
+  gap: 8px;
+}
+
+.renameForm label {
+  display: grid;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.renameForm input {
+  font: inherit;
+  border: 1px solid #cdd3de;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.renameButton {
+  width: fit-content;
+  border: 1px solid #1d4ed8;
+  background: #fff;
+  color: #1d4ed8;
+  border-radius: 8px;
+  padding: 7px 10px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.deleteSummary {
+  display: inline-block;
+  border: 1px solid #b91c1c;
+  background: #fff;
+  color: #b91c1c;
+  border-radius: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.deleteSummary::-webkit-details-marker {
+  display: none;
+}
+
+.deleteForm {
+  margin-top: 8px;
+  display: grid;
+  gap: 8px;
+}
+
+.deleteForm label {
+  display: grid;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.deleteForm input {
+  font: inherit;
+  border: 1px solid #cdd3de;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.deleteButton {
+  width: fit-content;
+  border: 1px solid #b91c1c;
+  background: #fff;
+  color: #b91c1c;
+  border-radius: 8px;
+  padding: 7px 10px;
+  font: inherit;
+  cursor: pointer;
+}

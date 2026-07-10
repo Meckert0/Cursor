@@ -1,0 +1,47 @@
+{
+  "connectors": [
+    {
+      "id": "c1",
+      "reference": "J1",
+      "pins": [
+        { "id": "1", "number": "1" },
+        { "id": "2", "number": "2" }
+      ]
+    },
+    {
+      "id": "c2",
+      "reference": "J2",
+      "pins": [
+        { "id": "1", "number": "1" },
+        { "id": "2", "number": "2" }
+      ]
+    }
+  ],
+  "paths": [
+    { "id": "p1", "fromConnectorId": "c1", "toConnectorId": "c2", "pathType": "wire" }
+  ],
+  "pinMappings": [
+    {
+      "id": "m1",
+      "pathId": "p1",
+      "fromConnectorId": "c1",
+      "fromPinId": "1",
+      "toConnectorId": "c2",
+      "toPinId": "1",
+      "mappingType": "one_to_one"
+    },
+    {
+      "id": "m2",
+      "pathId": "p1",
+      "fromConnectorId": "c1",
+      "fromPinId": "2",
+      "toConnectorId": "c2",
+      "toPinId": "2",
+      "mappingType": "one_to_one"
+    }
+  ],
+  "bundles": [
+    { "id": "b1", "name": "main-bundle", "pathIds": ["p1"] }
+  ],
+  "annotations": []
+}

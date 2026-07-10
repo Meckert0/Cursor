@@ -1,0 +1,61 @@
+.page {
+  min-height: 100vh;
+  background: #f5f7fa;
+  color: #1c1e21;
+  padding: 2rem;
+}
+
+.main {
+  max-width: 960px;
+  margin: 0 auto;
+  display: grid;
+  gap: 1rem;
+}
+
+.header {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.card {
+  background: #fff;
+  border: 1px solid #d7dde5;
+  border-radius: 0.75rem;
+  padding: 1rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.filters {
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  align-items: center;
+}
+
+.filters input,
+.filters select,
+.filters button {
+  border: 1px solid #c5ccd6;
+  border-radius: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  font: inherit;
+}
+
+.filters button {
+  background: #0f6adf;
+  color: #fff;
+  cursor: pointer;
+}
+
+.list {
+  margin: 0;
+  padding-left: 1rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.list li {
+  display: grid;
+  gap: 0.2rem;
+}

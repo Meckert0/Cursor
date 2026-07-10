@@ -1,0 +1,240 @@
+.wrapper {
+  display: grid;
+  gap: 12px;
+}
+
+.toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.toolbar button {
+  border: 1px solid #cdd3de;
+  border-radius: 8px;
+  background: #fff;
+  color: #111827;
+  padding: 8px 12px;
+}
+
+.toolbarRight {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+}
+
+.toolbarDivider {
+  width: 1px;
+  height: 28px;
+  background: #cdd3de;
+  flex-shrink: 0;
+}
+
+.zoomControls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.zoomControls button {
+  min-width: 32px;
+  padding: 8px 10px;
+}
+
+.zoomLabel {
+  min-width: 72px;
+  text-align: center;
+  font-size: 13px;
+  color: #334155;
+}
+
+.verifierToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #334155;
+  cursor: pointer;
+  user-select: none;
+}
+
+.verifierToggle input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.toggleTrack {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  border-radius: 999px;
+  background: #cbd5e1;
+  transition: background 0.15s ease;
+  flex-shrink: 0;
+}
+
+.toggleThumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 30%);
+  transition: transform 0.15s ease;
+}
+
+.verifierToggle input:checked + .toggleTrack {
+  background: #16a34a;
+}
+
+.verifierToggle input:checked + .toggleTrack .toggleThumb {
+  transform: translateX(18px);
+}
+
+.verifierToggle input:focus-visible + .toggleTrack {
+  outline: 2px solid var(--wirelist-header-bg, #4f81bd);
+  outline-offset: 2px;
+}
+
+.fileActions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.hiddenFileInput {
+  display: none;
+}
+
+.errorList {
+  margin: 0;
+  padding-left: 18px;
+  color: #b91c1c;
+}
+
+.tableShell {
+  overflow: auto;
+  border: 1px solid #404040;
+  border-radius: 4px;
+  background: #fff;
+  --wirelist-zoom: 1;
+  --wirelist-header-bg: #4f81bd;
+  --wirelist-row-alt-bg: #dce6f1;
+  --wirelist-grid-line: #404040;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  min-width: 880px;
+  font-size: calc(13px * var(--wirelist-zoom));
+}
+
+.table th,
+.table td {
+  border: 1px solid var(--wirelist-grid-line);
+  padding: calc(6px * var(--wirelist-zoom)) calc(8px * var(--wirelist-zoom));
+  text-align: left;
+  vertical-align: top;
+  overflow: hidden;
+}
+
+.table th {
+  position: relative;
+  background: var(--wirelist-header-bg);
+  font-size: calc(12px * var(--wirelist-zoom));
+  font-weight: 600;
+  color: #fff;
+}
+
+.table tbody tr:nth-child(odd) td {
+  background: #fff;
+}
+
+.table tbody tr:nth-child(even) td {
+  background: var(--wirelist-row-alt-bg);
+}
+
+.resizeHandle {
+  position: absolute;
+  right: -3px;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.resizeHandleActive {
+  background: rgb(255 255 255 / 35%);
+}
+
+.table input,
+.table select {
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 0;
+  padding: calc(4px * var(--wirelist-zoom)) calc(6px * var(--wirelist-zoom));
+  font: inherit;
+  background: transparent;
+  color: inherit;
+}
+
+.table input:focus,
+.table select:focus {
+  outline: none;
+  border-color: var(--wirelist-header-bg);
+  background: #fff;
+}
+
+.table button {
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #fff;
+  padding: 6px 10px;
+}
+
+.selectCell {
+  width: 44px;
+}
+
+.selectCell input {
+  width: auto;
+}
+
+.table tbody tr.selectedRow td {
+  background: #b8cce4;
+}
+
+.table tbody tr.draftRow td {
+  background: #f3f4f6;
+}
+
+.table tbody tr.draftRow input {
+  background: transparent;
+}
+
+.table tbody tr td.cellValid {
+  background: #c6efce !important;
+}
+
+.table tbody tr td.cellPartial {
+  background: #ffeb9c !important;
+}
+
+.table tbody tr td.cellInvalid {
+  background: #ffc7ce !important;
+}
+
+.table tbody tr td.cellPartial,
+.table tbody tr td.cellInvalid {
+  cursor: help;
+}

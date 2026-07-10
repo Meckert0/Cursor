@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.env
+.DS_Store
+Thumbs.db
+artifacts/
+exports/
+data/*.db
+data/*.db-*
+data/_debug*
+data/_test*
+apps/web/.next/
+apps/web/coverage/
+apps/web/test-results/
+apps/web/playwright-report/
+*.tsbuildinfo

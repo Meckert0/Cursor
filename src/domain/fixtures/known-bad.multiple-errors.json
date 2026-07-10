@@ -1,0 +1,71 @@
+{
+  "connectors": [
+    {
+      "id": "c1",
+      "reference": "J1",
+      "pins": [
+        { "id": "1", "number": "1" }
+      ]
+    },
+    {
+      "id": "c2",
+      "reference": "J2",
+      "pins": [
+        { "id": "1", "number": "1" }
+      ]
+    },
+    {
+      "id": "c3",
+      "reference": "J3",
+      "pins": [
+        { "id": "1", "number": "1" }
+      ]
+    }
+  ],
+  "paths": [
+    { "id": "p1", "fromConnectorId": "c1", "toConnectorId": "missing-connector", "pathType": "wire" },
+    { "id": "p2", "fromConnectorId": "c1", "toConnectorId": "c2", "pathType": "wire" }
+  ],
+  "pinMappings": [
+    {
+      "id": "m1",
+      "pathId": "p2",
+      "fromConnectorId": "c1",
+      "fromPinId": "1",
+      "toConnectorId": "c2",
+      "toPinId": "1",
+      "mappingType": "one_to_one"
+    },
+    {
+      "id": "m2",
+      "pathId": "p2",
+      "fromConnectorId": "c1",
+      "fromPinId": "1",
+      "toConnectorId": "c2",
+      "toPinId": "9",
+      "mappingType": "one_to_one"
+    },
+    {
+      "id": "m3",
+      "pathId": "missing-path",
+      "fromConnectorId": "c1",
+      "fromPinId": "1",
+      "toConnectorId": "c2",
+      "toPinId": "",
+      "mappingType": "one_to_one"
+    },
+    {
+      "id": "m4",
+      "pathId": "p2",
+      "fromConnectorId": "c1",
+      "fromPinId": "1",
+      "toConnectorId": "c3",
+      "toPinId": "1",
+      "mappingType": "one_to_one"
+    }
+  ],
+  "bundles": [
+    { "id": "b1", "name": "broken-bundle", "pathIds": ["p2", "missing-bundle-path"] }
+  ],
+  "annotations": []
+}

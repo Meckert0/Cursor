@@ -1,0 +1,20 @@
+.wrapper {
+  display: grid;
+  gap: 8px;
+}
+
+.wrapper textarea {
+  width: 100%;
+  min-height: 76px;
+  border: 1px solid #cdd3de;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font: inherit;
+  resize: vertical;
+}
+
+.error {
+  margin: 0;
+  color: #b91c1c;
+  font-size: 13px;
+}

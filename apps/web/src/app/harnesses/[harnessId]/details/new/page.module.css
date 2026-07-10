@@ -1,0 +1,43 @@
+.page {
+  min-height: 100vh;
+  padding: 32px 16px;
+  background: #f6f7fb;
+}
+
+.main {
+  width: 100%;
+  max-width: 1080px;
+  margin: 0 auto;
+  display: grid;
+  gap: 16px;
+}
+
+.header {
+  background: #fff;
+  border: 1px solid #e8e8ef;
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.header h1 {
+  margin: 0 0 8px;
+}
+
+.header p {
+  margin: 0 0 12px;
+  color: #4f5666;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.actions a {
+  border: 1px solid #cdd3de;
+  background: #fff;
+  color: #111827;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font: inherit;
+}

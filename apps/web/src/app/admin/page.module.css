@@ -1,0 +1,559 @@
+.page {
+  min-height: 100vh;
+  padding: 32px 16px;
+  background: #f6f7fb;
+}
+
+.main {
+  width: 100%;
+  max-width: min(1520px, calc(100vw - 6%));
+  margin: 0 auto;
+  display: grid;
+  gap: 16px;
+}
+
+.header,
+.card {
+  background: #fff;
+  border: 1px solid #e8e8ef;
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.sectionPanel {
+  padding: 0;
+  overflow: hidden;
+}
+
+.sectionSummary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  list-style: none;
+  cursor: pointer;
+  padding: 16px 20px;
+  font-weight: 600;
+  background: #f8faff;
+  border-bottom: 1px solid #e8e8ef;
+}
+
+.sectionSummary::-webkit-details-marker {
+  display: none;
+}
+
+.sectionTitle {
+  font-size: 18px;
+}
+
+.sectionHint {
+  color: #4f5666;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.sectionContent {
+  padding: 16px 20px 20px;
+}
+
+.pageDescriptionForm {
+  display: grid;
+  gap: 10px;
+}
+
+.pageDescriptionForm label {
+  display: grid;
+  gap: 6px;
+}
+
+.pageDescriptionForm textarea {
+  border: 1px solid #cdd3de;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+}
+
+.pageDescriptionForm button {
+  width: fit-content;
+  border: 1px solid #1d4ed8;
+  background: #2563eb;
+  color: #fff;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.header h1,
+.card h2,
+.card h3 {
+  margin-top: 0;
+}
+
+.actionButtons {
+  margin-top: 10px;
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.actionButton {
+  display: inline-block;
+  border: 1px solid #1d4ed8;
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-radius: 8px;
+  padding: 6px 10px;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.inlineAction {
+  margin: 0;
+}
+
+.smallActionButton {
+  display: inline-block;
+  border: 1px solid #1d4ed8;
+  background: #fff;
+  color: #1d4ed8;
+  border-radius: 6px;
+  padding: 2px 7px;
+  font-size: 12px;
+  line-height: 1.2;
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+  align-items: end;
+  margin-bottom: 14px;
+}
+
+.filters label {
+  display: grid;
+  gap: 6px;
+}
+
+.filters input,
+.filters select {
+  border: 1px solid #cdd3de;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+}
+
+.filters button {
+  border: 1px solid #1d4ed8;
+  background: #2563eb;
+  color: #fff;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.tableWrap {
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  padding-bottom: 4px;
+}
+
+.table {
+  width: max-content;
+  border-collapse: collapse;
+  min-width: 720px;
+  table-layout: fixed;
+}
+
+.table th,
+.table td {
+  text-align: left;
+  border-bottom: 1px solid #cfd6e3;
+  border-right: 1px solid #d9dfeb;
+  padding: 4px 6px;
+  line-height: 1.2;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.table th {
+  background: #f1f3f6;
+}
+
+.table th:last-child,
+.table td:last-child {
+  border-right: none;
+}
+
+.compactTable tbody tr {
+  height: 34px;
+}
+
+.tableToolbar {
+  display: flex;
+  justify-content: flex-end;
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.headerCell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-right: 10px;
+}
+
+.headerLabelDragZone {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.headerLabelDraggable {
+  cursor: grab;
+}
+
+.headerLabelDragging {
+  cursor: grabbing;
+  opacity: 0.72;
+}
+
+.dragHandle {
+  border: 0;
+  background: transparent;
+  color: #5f6b82;
+  cursor: grab;
+  padding: 0 2px;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.dragHandle:active {
+  cursor: grabbing;
+}
+
+.resizeHandle {
+  position: absolute;
+  right: -3px;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.resizeHandleActive {
+  background: rgb(37 99 235 / 22%);
+}
+
+.stickyPartNumber {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  background: #fff;
+}
+
+.bottomScrollbar {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: 18px;
+  margin-top: 8px;
+  box-sizing: border-box;
+  border: 1px solid #edf0f5;
+  border-radius: 8px;
+  background: #f8faff;
+  overflow-x: scroll;
+  overflow-y: hidden;
+  scrollbar-gutter: stable;
+}
+
+.bottomScrollbarInner {
+  min-width: 100%;
+  height: 1px;
+}
+
+.metaCol {
+  max-width: 148px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.categorySections {
+  display: grid;
+  gap: 14px;
+}
+
+.categorySection {
+  border: 1px solid #edf0f5;
+  border-radius: 10px;
+  padding: 12px;
+  background: #fcfcfe;
+  min-width: 0;
+}
+
+.categorySection h3 {
+  margin: 0;
+}
+
+.categoryHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.categoryHeaderActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.virtualViewport {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  max-height: 380px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border: 1px solid #edf0f5;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgb(15 23 42 / 44%);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+  z-index: 30;
+}
+
+.modal {
+  width: min(1200px, 96vw);
+  max-height: 90vh;
+  overflow: hidden;
+  background: #fff;
+  border-radius: 12px;
+  border: 1px solid #d7deea;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+}
+
+.modalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.modalHeader h4 {
+  margin: 0;
+}
+
+.modalForm {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+
+.modalFieldList {
+  display: grid;
+  gap: 6px;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
+}
+
+.modalForm label {
+  display: grid;
+  gap: 2px;
+  font-size: 12px;
+}
+
+.modalForm input,
+.modalForm select,
+.modalForm textarea {
+  border: 1px solid #cdd3de;
+  border-radius: 6px;
+  padding: 4px 6px;
+  font: inherit;
+}
+
+.modalFieldRow {
+  display: grid;
+  grid-template-columns: 18px minmax(108px, 1fr) minmax(150px, 1.4fr);
+  gap: 6px;
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 2px 4px;
+}
+
+.modalFieldRowDragging {
+  opacity: 0.65;
+  border-color: #d7deea;
+  background: #f8faff;
+}
+
+.modalDragHandle {
+  border: 0;
+  background: transparent;
+  color: #5f6b82;
+  cursor: grab;
+  padding: 0;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.modalDragHandle:active {
+  cursor: grabbing;
+}
+
+.modalFieldLabel {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.1;
+}
+
+.modalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 10px;
+  margin-top: 10px;
+  border-top: 1px solid #edf0f5;
+  flex-shrink: 0;
+}
+
+.fieldEditorRow {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.8fr) minmax(160px, 1.2fr) auto auto auto auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.fieldEditorAddRow {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(180px, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.fieldEditorAddActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fieldEditorAddButtonRow {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.checkboxLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.dangerActionButton {
+  display: inline-block;
+  border: 1px solid #b91c1c;
+  background: #fff5f5;
+  color: #b91c1c;
+  border-radius: 6px;
+  padding: 2px 7px;
+  font-size: 12px;
+  line-height: 1.2;
+  font: inherit;
+  cursor: pointer;
+}
+
+.modalDeleteActionButton {
+  margin-right: auto;
+  border-color: #991b1b;
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.formError {
+  margin: 0 auto 0 0;
+  color: #b91c1c;
+  font-size: 12px;
+}
+
+.userDropdownList {
+  display: grid;
+  gap: 10px;
+}
+
+.userDropdown {
+  border: 1px solid #edf0f5;
+  border-radius: 10px;
+  background: #fcfcfe;
+  padding: 10px 12px;
+}
+
+.userSummary {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.userSummaryMeta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.userDropdownContent {
+  margin-top: 10px;
+}
+
+.projectList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.projectItem {
+  border: 1px solid #edf0f5;
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.projectHeading {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.projectMeta {
+  color: #4f5666;
+  font-size: 13px;
+}
+
+.canvasLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}

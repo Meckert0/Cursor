@@ -1,0 +1,27 @@
+.summaryGrid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.summaryPanel {
+  border: 1px solid #dbe2ef;
+  border-radius: 10px;
+  background: #f8fafc;
+  padding: 10px 12px;
+}
+
+.summaryPanel h3 {
+  margin: 0 0 8px;
+  color: #1e293b;
+  font-size: 14px;
+}
+
+.summaryPanel ul {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+  color: #334155;
+  font-size: 12px;
+}

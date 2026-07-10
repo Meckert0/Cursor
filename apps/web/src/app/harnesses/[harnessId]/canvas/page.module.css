@@ -1,0 +1,68 @@
+.page {
+  min-height: 100vh;
+  padding: 32px 16px;
+  background: #f6f7fb;
+}
+
+.main {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  display: grid;
+  gap: 16px;
+}
+
+.header,
+.card {
+  background: #fff;
+  border: 1px solid #e8e8ef;
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.header h1 {
+  margin: 0 0 8px;
+}
+
+.header p {
+  margin: 0 0 12px;
+  color: #4f5666;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.actions a {
+  border: 1px solid #cdd3de;
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: #111827;
+  text-decoration: none;
+}
+
+.modeToggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  color: #1f2937;
+}
+
+.modeToggle a {
+  border: 1px solid #cdd3de;
+  border-radius: 8px;
+  padding: 6px 10px;
+  text-decoration: none;
+  color: #1f2937;
+}
+
+.modeToggle a[aria-current="page"] {
+  border-color: #1d4ed8;
+  background: #dbeafe;
+  color: #1e3a8a;
+}
+

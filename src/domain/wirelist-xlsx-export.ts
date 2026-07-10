@@ -13,6 +13,7 @@ const TEMPLATE_DATA_START_ROW = 2;
 const EMPTY_CELL_DISPLAY = "-";
 
 const BOM_HEADERS = ["Item", "Category", "Part Number", "Description", "Qty", "Unit", "Status", "Used By"];
+const FIXED_ZIP_ENTRY_DATE = new Date("2000-01-01T00:00:00.000Z");
 
 export function resolveWirelistTemplatePath(): string {
   const candidates = [
@@ -241,5 +242,11 @@ export async function buildWirelistXlsxFromTemplateRows(
   zip.updateFile(WORKBOOK_RELS_PATH, Buffer.from(relsXml, "utf8"));
   zip.updateFile(CONTENT_TYPES_PATH, Buffer.from(contentTypesXml, "utf8"));
   zip.addFile(BOM_SHEET_XML_PATH, Buffer.from(bomSheetXml, "utf8"));
+
+  // AdmZip stamps entry mtimes with "now" by default; pin them so content hashes are stable.
+  for (const entry of zip.getEntries()) {
+    entry.header.time = FIXED_ZIP_ENTRY_DATE;
+  }
+
   return zip.toBuffer();
 }

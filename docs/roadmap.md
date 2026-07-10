@@ -67,8 +67,11 @@ Grounded against the current codebase (2026-07-10 review): validation is still t
 
 1. ~~Bill of materials generation from revision snapshots + library resolution (API, exports, validation, UI).~~ Done (v1).
 2. ~~Export reliability hardening (retry/backoff, transient vs permanent failure handling, retention controls).~~ Done (v1).
+3. ~~Host the repository on GitHub and activate CI.~~ Done.
 
-### Priority 0: Host the repository on GitHub
+### ~~Priority 0: Host the repository on GitHub~~ Done
+
+Completed 2026-07-10: repository is at https://github.com/Meckert0/Cursor with `origin` tracking `master`; GitHub Actions CI (backend checks + frontend E2E smoke) runs green on push.
 
 Why: the project currently exists only as a local git repo (single baseline commit, no remote), so there is no off-machine backup, no collaboration surface, and the CI workflow in `.github/workflows/ci.yml` never runs. An empty GitHub repository named `Cursor` is already created for this.
 
@@ -194,6 +197,7 @@ MVP exit requires:
 
 ## Changelog Notes
 
+- 2026-07-10: Completed Priority 0 — hosted at https://github.com/Meckert0/Cursor; CI green (backend + frontend E2E). Also fixed XLSX export hash determinism, CI web dependency install, and frontend typecheck blockers uncovered by the first CI runs.
 - 2026-07-10: Added Priority 0: push the project to the existing `Cursor` GitHub repository and activate CI.
 - 2026-07-10: Rewrote near-term priorities as a codebase-grounded, scoped plan (rules depth v2 first, then E2E matrix, library governance, canvas decomposition, observability, notifications, datastore breadth). Flagged canvas localStorage-only persistence as a data-loss risk and added server-side draft saving to canvas scope.
 - 2026-07-10: Hardened auth defaults (legacy header auth off), durable postgres auth, and stale-validation submit/state-transition guards; aligned README endpoints.

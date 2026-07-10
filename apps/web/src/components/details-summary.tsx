@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import {
   buildConnectorPairTotals,
   buildUniqueWireSections,
@@ -27,15 +27,11 @@ export function DetailsSummary({
   paths?: RevisionDto["snapshot"]["paths"];
 }) {
   const hasLiveOverrides = connectorsOverride !== undefined && pathsOverride !== undefined;
-  const [draftSnapshot, setDraftSnapshot] = useState<Pick<RevisionDto["snapshot"], "connectors" | "junctions" | "paths"> | null>(
-    null
-  );
-
-  useEffect(() => {
+  const draftSnapshot = useMemo(() => {
     if (hasLiveOverrides) {
-      return;
+      return null;
     }
-    setDraftSnapshot(readCanvasDraftSnapshot(revisionId, snapshot));
+    return readCanvasDraftSnapshot(revisionId, snapshot);
   }, [hasLiveOverrides, revisionId, snapshot]);
 
   const connectors = useMemo(() => {

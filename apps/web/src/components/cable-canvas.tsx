@@ -7,7 +7,6 @@ import {
   buildConnectorPins,
   formatConnectorPinsLabel,
   getSleevingLabel,
-  normalizePathsWithWireDefaults,
   normalizeSelectedPathId,
   readCanvasDraftSnapshot,
   readPinCountFromComponent,
@@ -264,6 +263,7 @@ export function CableCanvas({
   const [connectorSearchQuery, setConnectorSearchQuery] = useState("");
   const [connectorNameDraft, setConnectorNameDraft] = useState("");
   const [connectorNameError, setConnectorNameError] = useState<string | null>(null);
+  const [connectorNameSyncKey, setConnectorNameSyncKey] = useState("");
   const [inlineLengthEdit, setInlineLengthEdit] = useState<{ pathId: string; draft: string } | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [undoHistory, setUndoHistory] = useState<UndoSnapshot[]>([]);
@@ -489,10 +489,14 @@ export function CableCanvas({
     );
   }, [connectorOptions, connectorSearchFields, connectorSearchQuery]);
 
-  useEffect(() => {
+  const connectorNameKey = selectedConnector
+    ? `${selectedConnector.id}:${selectedConnector.reference}`
+    : "";
+  if (connectorNameKey !== connectorNameSyncKey) {
+    setConnectorNameSyncKey(connectorNameKey);
     setConnectorNameDraft(selectedConnector?.reference ?? "");
     setConnectorNameError(null);
-  }, [selectedConnector?.id, selectedConnector?.reference]);
+  }
   const selectedWire = useMemo(
     () => wireOptions.find((wire) => wire.id === selectedPath?.wireComponentId) ?? null,
     [selectedPath?.wireComponentId, wireOptions]

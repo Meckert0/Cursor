@@ -2,16 +2,17 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { requireProjectMembership } from "../auth/membership.js";
 import type { DesignStatus } from "../domain/types.js";
+import { hashDesignSnapshot } from "../domain/snapshot-hash.js";
 import { requireRole } from "../auth/rbac.js";
 
 const lockSchema = z.object({
   ttlSeconds: z.number().int().min(60).max(7200).default(900),
-  userId: z.string().default("system-user"),
+  userId: z.string().optional(),
   reason: z.string().optional()
 });
 
 const unlockSchema = z.object({
-  userId: z.string().default("system-user")
+  userId: z.string().optional()
 });
 
 const updateDesignSchema = z
@@ -32,7 +33,7 @@ const submitForQuoteSchema = z.object({
 const stateTransitionSchema = z.object({
   targetState: z.enum(["draft", "locked", "submitted", "in_review", "quoted", "released"]),
   expectedCurrentState: z.enum(["draft", "locked", "submitted", "in_review", "quoted", "released"]).optional(),
-  changedBy: z.string().default("system-user"),
+  changedBy: z.string().optional(),
   comment: z.string().optional()
 });
 
@@ -251,9 +252,9 @@ export function registerDesignRoutes(app: FastifyInstance) {
     if (!memberCheck.ok) {
       return;
     }
-    const body = lockSchema.parse(request.body);
+    const body = lockSchema.parse(request.body ?? {});
     try {
-      const lock = await app.lockManager.lock(params.designId, body.userId, body.ttlSeconds);
+      const lock = await app.lockManager.lock(params.designId, memberCheck.userId, body.ttlSeconds);
       return reply.code(201).send(lock);
     } catch (error) {
       if (error instanceof Error && error.message.startsWith("LOCK_CONFLICT")) {
@@ -284,9 +285,9 @@ export function registerDesignRoutes(app: FastifyInstance) {
     if (!memberCheck.ok) {
       return;
     }
-    const body = unlockSchema.parse(request.body);
+    unlockSchema.parse(request.body ?? {});
     try {
-      await app.lockManager.unlock(params.designId, body.userId);
+      await app.lockManager.unlock(params.designId, memberCheck.userId);
       return reply.code(204).send();
     } catch (error) {
       if (error instanceof Error && error.message === "LOCK_CONFLICT") {
@@ -332,6 +333,11 @@ export function registerDesignRoutes(app: FastifyInstance) {
 
     if (latestValidation.summary.errors > 0) {
       return reply.conflict("Cannot submit design with validation errors.");
+    }
+
+    const currentSnapshotHash = hashDesignSnapshot(revision.snapshot);
+    if (latestValidation.snapshotHash !== currentSnapshotHash) {
+      return reply.conflict("Validation is stale. Re-validate the current revision snapshot before submission.");
     }
 
     if (body.idempotencyKey) {
@@ -390,12 +396,20 @@ export function registerDesignRoutes(app: FastifyInstance) {
     }
 
     if (body.targetState === "submitted") {
+      const currentRevision = await app.store.getRevision(design.currentRevisionId);
+      if (!currentRevision) {
+        return reply.conflict("Current revision not found.");
+      }
       const latestValidation = await app.store.getLatestValidationRunForRevision(design.currentRevisionId);
       if (!latestValidation) {
         return reply.conflict("Validation pass is required before moving to submitted.");
       }
       if (latestValidation.summary.errors > 0) {
         return reply.conflict("Cannot move to submitted while validation has errors.");
+      }
+      const currentSnapshotHash = hashDesignSnapshot(currentRevision.snapshot);
+      if (latestValidation.snapshotHash !== currentSnapshotHash) {
+        return reply.conflict("Validation is stale. Re-validate the current revision snapshot before moving to submitted.");
       }
     }
 
@@ -420,7 +434,7 @@ export function registerDesignRoutes(app: FastifyInstance) {
     const auditEvent = await app.store.createAuditEvent({
       designId: design.id,
       eventType: "design.state.changed",
-      actorId: body.changedBy,
+      actorId: memberCheck.userId,
       payload: {
         fromState: design.status,
         toState: body.targetState,

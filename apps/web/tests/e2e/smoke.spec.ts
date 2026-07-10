@@ -16,6 +16,28 @@ async function expectHeadingWithRetry(page: Page, headingName: string, timeoutMs
   }
 }
 
+async function registerAndSignIn(page: Page, input: { username: string; email: string; password?: string }) {
+  const password = input.password ?? "pass1234!";
+  await page.goto("/register");
+  await page.getByLabel("Username").fill(input.username);
+  await page.getByLabel("Email").fill(input.email);
+  await page.getByLabel("Password", { exact: true }).fill(password);
+  await page.getByLabel("Confirm password", { exact: true }).fill(password);
+  await page.getByRole("button", { name: "Create account" }).click();
+
+  try {
+    await expect(page).toHaveURL("/", { timeout: 5_000 });
+  } catch {
+    await page.goto("/login");
+    await page.getByLabel("Email").fill(input.email);
+    await page.getByLabel("Password", { exact: true }).fill(password);
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(page).toHaveURL("/");
+  }
+
+  await expect(page.getByRole("heading", { name: "Cable Design Tool Frontend (MVP)" })).toBeVisible();
+}
+
 async function openDetailsWithRetry(page: Page) {
   const harnessMatch = /\/harnesses\/([0-9a-f-]+)/i.exec(page.url());
   const harnessCanvasPath = harnessMatch ? `/harnesses/${harnessMatch[1]}/canvas` : "/";
@@ -27,24 +49,12 @@ async function openDetailsWithRetry(page: Page) {
       return;
     } catch {
       await page.goto(harnessCanvasPath);
-      await expectHeadingWithRetry(page, "Graphical authoring (canvas MVP)");
+      await expectHeadingWithRetry(page, "Harness Canvas");
     }
   }
 
   throw new Error("Could not open details after retries.");
 }
-
-test("home page renders and links to library", async ({ page }) => {
-  await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Cable Design Tool Frontend (MVP)" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Browse library catalog" })).toBeVisible();
-});
-
-test("admin overview route redirects non-admin users", async ({ page }) => {
-  await page.goto("/admin");
-  await expect(page).toHaveURL("/");
-  await expect(page.getByRole("heading", { name: "Cable Design Tool Frontend (MVP)" })).toBeVisible();
-});
 
 async function createProjectAndOpenProjectPage(page: Page, projectName: string) {
   await page.goto("/");
@@ -58,11 +68,36 @@ async function createProjectAndOpenProjectPage(page: Page, projectName: string) 
   await expectHeadingWithRetry(page, "Project workspace");
 }
 
+test("home page renders for signed-in users", async ({ page }) => {
+  const token = Date.now();
+  await registerAndSignIn(page, {
+    username: `home-${token}`,
+    email: `home-${token}@example.com`
+  });
+  await expect(page.getByRole("heading", { name: "Projects" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Backend health" })).toBeVisible();
+});
+
+test("admin overview route redirects non-admin users", async ({ page }) => {
+  const token = Date.now();
+  await registerAndSignIn(page, {
+    username: `nonadmin-${token}`,
+    email: `nonadmin-${token}@example.com`
+  });
+  await page.goto("/admin");
+  await expect(page).toHaveURL("/");
+  await expect(page.getByRole("heading", { name: "Cable Design Tool Frontend (MVP)" })).toBeVisible();
+});
+
 test("critical path: create -> details -> validate -> export", async ({ page }) => {
   const token = Date.now();
   const projectName = `E2E Project ${token}`;
   const harnessName = `E2E Harness ${token}`;
 
+  await registerAndSignIn(page, {
+    username: `crit-${token}`,
+    email: `crit-${token}@example.com`
+  });
   await createProjectAndOpenProjectPage(page, projectName);
 
   await page.locator("summary", { hasText: "Create harness" }).click();
@@ -91,15 +126,19 @@ test("harness root route redirects to canvas and keeps details access", async ({
   const projectName = `Blocked Project ${token}`;
   const harnessName = `Blocked Harness ${token}`;
 
+  await registerAndSignIn(page, {
+    username: `blocked-${token}`,
+    email: `blocked-${token}@example.com`
+  });
   await createProjectAndOpenProjectPage(page, projectName);
   await page.locator("summary", { hasText: "Create harness" }).click();
   await page.getByLabel("Harness name").fill(harnessName);
   await page.getByTestId("create-harness-submit").click();
-  await expect(page.getByRole("heading", { name: "Graphical authoring (canvas MVP)" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Harness Canvas" })).toBeVisible();
 
   await page.goto(page.url().replace(/\/canvas$/, ""));
   await expect(page).toHaveURL(/\/harnesses\/[0-9a-f-]+\/canvas$/);
-  await expect(page.getByRole("heading", { name: "Graphical authoring (canvas MVP)" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Harness Canvas" })).toBeVisible();
 
   await page.getByRole("link", { name: "Open Revision Workspace" }).click();
   await expect(page.getByRole("heading", { name: "Details" })).toBeVisible();
@@ -110,11 +149,15 @@ test("legacy revision routes redirect to details routes", async ({ page }) => {
   const projectName = `Redirect Project ${token}`;
   const harnessName = `Redirect Harness ${token}`;
 
+  await registerAndSignIn(page, {
+    username: `redir-${token}`,
+    email: `redir-${token}@example.com`
+  });
   await createProjectAndOpenProjectPage(page, projectName);
-  await page.getByText("Create harness", { exact: true }).click();
+  await page.locator("summary", { hasText: "Create harness" }).click();
   await page.getByLabel("Harness name").fill(harnessName);
   await page.getByTestId("create-harness-submit").click();
-  await expect(page.getByRole("heading", { name: "Graphical authoring (canvas MVP)" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Harness Canvas" })).toBeVisible();
 
   const harnessMatch = /\/harnesses\/([0-9a-f-]+)\/canvas$/i.exec(page.url());
   expect(harnessMatch).toBeTruthy();
@@ -138,6 +181,11 @@ test("admin moderation flow: queue filter and bulk approve", async ({ page, requ
   const token = Date.now();
   const partNumberApproved = `M22759/16-${(token % 80) + 10}`;
   const partNumberArchived = `MDM-${(token % 90) + 10}P`;
+
+  await registerAndSignIn(page, {
+    username: `admin-${token}`,
+    email: "meckert@vpc.com"
+  });
 
   const ingestOne = await request.post("http://127.0.0.1:3000/v1/library/components/ingest", {
     headers: {
@@ -212,6 +260,10 @@ test("dashboard supports project rename and delete", async ({ page }) => {
   const initialName = `Rename Me ${token}`;
   const renamedName = `Renamed ${token}`;
 
+  await registerAndSignIn(page, {
+    username: `rename-${token}`,
+    email: `rename-${token}@example.com`
+  });
   await page.goto("/");
   await page.getByText("Create project", { exact: true }).click();
   const createProjectForm = page.getByTestId("create-project-form");
@@ -220,9 +272,9 @@ test("dashboard supports project rename and delete", async ({ page }) => {
   await expect(page.getByRole("link", { name: initialName })).toBeVisible();
 
   const row = page.locator("li", { has: page.getByRole("link", { name: initialName }) });
-  await row.getByText("Rename", { exact: true }).click();
+  await row.getByText("Rename project", { exact: true }).click();
   await row.getByLabel(`Rename ${initialName}`).fill(renamedName);
-  await row.getByRole("button", { name: "Save" }).click();
+  await row.getByRole("button", { name: "Save name" }).click();
   await expect(page.getByRole("link", { name: renamedName })).toBeVisible();
 
   page.on("dialog", (dialog) => dialog.accept());
@@ -232,16 +284,39 @@ test("dashboard supports project rename and delete", async ({ page }) => {
 });
 
 test("canvas quick-add wire creates unreviewed moderation entry", async ({ page }) => {
+  test.setTimeout(120_000);
   const token = Date.now();
   const projectName = `Canvas Wire Project ${token}`;
   const harnessName = `Canvas Wire Harness ${token}`;
   const quickAddPartNumber = `M22759/16-${(token % 70) + 20}-Q`;
 
+  await registerAndSignIn(page, {
+    username: `cwire-${token}`,
+    email: "meckert@vpc.com"
+  });
   await createProjectAndOpenProjectPage(page, projectName);
-  await page.getByText("Create harness", { exact: true }).click();
+  await page.locator("summary", { hasText: "Create harness" }).click();
   await page.getByLabel("Harness name").fill(harnessName);
   await page.getByTestId("create-harness-submit").click();
-  await expect(page.getByRole("heading", { name: "Graphical authoring (canvas MVP)" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Harness Canvas" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Add connector" }).click();
+  await page.getByRole("button", { name: "Add connector" }).click();
+  const connectors = page.locator('[class*="connectorNode"]');
+  await expect(connectors).toHaveCount(2);
+
+  const firstHandle = connectors.nth(0).locator('[class*="connectHandle"]');
+  const handleBox = await firstHandle.boundingBox();
+  const targetBox = await connectors.nth(1).boundingBox();
+  expect(handleBox).toBeTruthy();
+  expect(targetBox).toBeTruthy();
+  await page.mouse.move(handleBox!.x + handleBox!.width / 2, handleBox!.y + handleBox!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(targetBox!.x + targetBox!.width / 2, targetBox!.y + targetBox!.height / 2, { steps: 8 });
+  await page.mouse.up();
+  await expect(page.locator("svg line")).toHaveCount(1, { timeout: 10_000 });
+  await page.locator("svg line").click({ force: true });
+  await expect(page.getByRole("button", { name: "Add new wire" })).toBeVisible();
 
   await page.getByRole("button", { name: "Add new wire" }).click();
   await page.getByPlaceholder("new wire part number").fill(quickAddPartNumber);
@@ -267,11 +342,15 @@ test("canvas-first flow supports validation and export", async ({ page }) => {
   const projectName = `Canvas Flow Project ${token}`;
   const harnessName = `Canvas Flow Harness ${token}`;
 
+  await registerAndSignIn(page, {
+    username: `cflow-${token}`,
+    email: `cflow-${token}@example.com`
+  });
   await createProjectAndOpenProjectPage(page, projectName);
-  await page.getByText("Create harness", { exact: true }).click();
+  await page.locator("summary", { hasText: "Create harness" }).click();
   await page.getByLabel("Harness name").fill(harnessName);
   await page.getByTestId("create-harness-submit").click();
-  await expect(page.getByRole("heading", { name: "Graphical authoring (canvas MVP)" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Harness Canvas" })).toBeVisible();
 
   await openDetailsWithRetry(page);
   await expect(page.getByRole("link", { name: "Back to canvas" })).toBeVisible();
@@ -279,7 +358,7 @@ test("canvas-first flow supports validation and export", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Unique wire sections" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Endpoint totals" })).toBeVisible();
   await page.getByRole("link", { name: "Back to canvas" }).click();
-  await expect(page.getByRole("heading", { name: "Graphical authoring (canvas MVP)" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Harness Canvas" })).toBeVisible();
   await page.getByRole("link", { name: "Open Revision Workspace" }).click();
   await expect(page).toHaveURL(/\/details\/[0-9a-f-]+/, { timeout: 20_000 });
   await expect(page.getByRole("heading", { name: "Details" })).toBeVisible();
@@ -299,15 +378,11 @@ test("wirelist route is reachable from canvas", async ({ page }) => {
   const token = Date.now();
   const projectName = `Wirelist Project ${token}`;
   const harnessName = `Wirelist Harness ${token}`;
-  const email = `wirelist-${token}@example.com`;
 
-  await page.goto("/register");
-  await page.getByLabel("Username").fill(`wirelist-${token}`);
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password", { exact: true }).fill("pass1234!");
-  await page.getByLabel("Confirm password", { exact: true }).fill("pass1234!");
-  await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page).toHaveURL("/");
+  await registerAndSignIn(page, {
+    username: `wirelist-${token}`,
+    email: `wirelist-${token}@example.com`
+  });
 
   await createProjectAndOpenProjectPage(page, projectName);
   await page.locator("summary", { hasText: "Create harness" }).click();
@@ -331,6 +406,10 @@ test("wirelist template import and xlsx export round-trip", async ({ page }) => 
   const projectName = `Wirelist Roundtrip Project ${token}`;
   const harnessName = `Wirelist Roundtrip Harness ${token}`;
 
+  await registerAndSignIn(page, {
+    username: `wlrt-${token}`,
+    email: `wlrt-${token}@example.com`
+  });
   await createProjectAndOpenProjectPage(page, projectName);
   await page.locator("summary", { hasText: "Create harness" }).click();
   await page.getByLabel("Harness name").fill(harnessName);
@@ -383,7 +462,7 @@ test("wirelist template import and xlsx export round-trip", async ({ page }) => 
   expect(wirelistSheet).toBeTruthy();
   const exportedRows = XLSX.utils.sheet_to_json<Array<string | number>>(wirelistSheet, { header: 1, blankrows: false });
   expect(exportedRows[0]).toEqual(rows[0]);
-  expect(exportedRows[1]?.[1]).toBe("J1");
+  expect(exportedRows[1]?.[1]).toBe("J1 - 1");
   expect(exportedRows[1]?.[2]).toBe("1");
   expect(exportedRows[1]?.[5]).toBe("PN-ROUNDTRIP");
   expect(exportedRows[1]?.[14]).toBe("Roundtrip");

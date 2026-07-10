@@ -162,6 +162,7 @@ export class SqliteStore extends MemoryStore {
     revisionId: string;
     rulesetVersion: string;
     mode: "quick" | "full";
+    snapshotHash: string;
     summary: ValidationRun["summary"];
     results: ValidationRun["results"];
   }): Promise<ValidationRun> {

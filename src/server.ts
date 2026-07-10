@@ -17,6 +17,7 @@ import { FileArtifactStorage } from "./infra/storage/file-artifact-storage.js";
 import { S3ArtifactStorage } from "./infra/storage/s3-artifact-storage.js";
 import type { AuthStore } from "./infra/auth/auth-store.js";
 import { MemoryAuthStore } from "./infra/auth/memory-auth-store.js";
+import { PostgresAuthStore } from "./infra/auth/postgres-auth-store.js";
 import { SqliteAuthStore } from "./infra/auth/sqlite-auth-store.js";
 import { MemoryStore } from "./infra/store/memory-store.js";
 import { PostgresStore } from "./infra/store/postgres-store.js";
@@ -42,6 +43,9 @@ async function main() {
     pgPool = new Pool({ connectionString: databaseUrl });
     await pgPool.query("SELECT 1");
     store = new PostgresStore(pgPool);
+    const postgresAuthStore = new PostgresAuthStore(pgPool);
+    await postgresAuthStore.syncAdminRolesFromEnv();
+    authStore = postgresAuthStore;
   } else if (storeBackend === "sqlite") {
     const sqlitePath = process.env.SQLITE_PATH
       ? path.resolve(process.env.SQLITE_PATH)

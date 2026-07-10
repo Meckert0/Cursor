@@ -122,6 +122,7 @@ export interface ValidationRun {
   rulesetVersion: string;
   mode: "quick" | "full";
   status: "completed";
+  snapshotHash: string;
   summary: {
     errors: number;
     warnings: number;

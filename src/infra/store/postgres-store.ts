@@ -94,6 +94,7 @@ type ValidationRunRow = {
   ruleset_version: string;
   mode: "quick" | "full";
   status: "completed";
+  snapshot_hash: string;
   errors: number;
   warnings: number;
   infos: number;
@@ -278,6 +279,7 @@ function mapValidationRun(row: ValidationRunRow): ValidationRun {
     rulesetVersion: row.ruleset_version,
     mode: row.mode,
     status: row.status,
+    snapshotHash: row.snapshot_hash,
     summary: {
       errors: row.errors,
       warnings: row.warnings,
@@ -987,6 +989,7 @@ export class PostgresStore implements Store {
     revisionId: string;
     rulesetVersion: string;
     mode: "quick" | "full";
+    snapshotHash: string;
     summary: ValidationRun["summary"];
     results: ValidationRun["results"];
   }): Promise<ValidationRun> {
@@ -1002,14 +1005,15 @@ export class PostgresStore implements Store {
     const now = new Date();
     const result = await this.pool.query<ValidationRunRow>(
       `INSERT INTO validation_runs (
-         id, revision_id, ruleset_version, mode, status, errors, warnings, infos, results, created_at
-       ) VALUES ($1, $2, $3, $4, 'completed', $5, $6, $7, $8::jsonb, $9)
-       RETURNING id, revision_id, ruleset_version, mode, status, errors, warnings, infos, results, created_at`,
+         id, revision_id, ruleset_version, mode, status, snapshot_hash, errors, warnings, infos, results, created_at
+       ) VALUES ($1, $2, $3, $4, 'completed', $5, $6, $7, $8, $9::jsonb, $10)
+       RETURNING id, revision_id, ruleset_version, mode, status, snapshot_hash, errors, warnings, infos, results, created_at`,
       [
         id,
         input.revisionId,
         input.rulesetVersion,
         input.mode,
+        input.snapshotHash,
         input.summary.errors,
         input.summary.warnings,
         input.summary.infos,
@@ -1022,7 +1026,7 @@ export class PostgresStore implements Store {
 
   async getValidationRun(validationRunId: string): Promise<ValidationRun | null> {
     const result = await this.pool.query<ValidationRunRow>(
-      `SELECT id, revision_id, ruleset_version, mode, status, errors, warnings, infos, results, created_at
+      `SELECT id, revision_id, ruleset_version, mode, status, snapshot_hash, errors, warnings, infos, results, created_at
        FROM validation_runs
        WHERE id = $1`,
       [validationRunId]
@@ -1032,7 +1036,7 @@ export class PostgresStore implements Store {
 
   async getLatestValidationRunForRevision(revisionId: string): Promise<ValidationRun | null> {
     const result = await this.pool.query<ValidationRunRow>(
-      `SELECT id, revision_id, ruleset_version, mode, status, errors, warnings, infos, results, created_at
+      `SELECT id, revision_id, ruleset_version, mode, status, snapshot_hash, errors, warnings, infos, results, created_at
        FROM validation_runs
        WHERE revision_id = $1
        ORDER BY created_at DESC

@@ -1,9 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { isAdminEmail } from "../auth/admin.js";
 import { createSessionToken, getSessionTtlMs, hashPassword, hashSessionToken, verifyPassword } from "../auth/session.js";
 import { requireAdmin, requireRole } from "../auth/rbac.js";
-
-const ADMIN_EMAIL = "meckert@vpc.com";
 
 const registerPayloadSchema = z.object({
   username: z
@@ -26,8 +25,12 @@ const updatePageDescriptionsPayloadSchema = z.object({
   harnessHeaderDescription: z.string().trim().min(1).max(600).optional()
 });
 
+function allowLegacyHeaderAuth(): boolean {
+  return (process.env.ENABLE_LEGACY_HEADER_AUTH ?? "false").toLowerCase() === "true";
+}
+
 function resolveAccountRoleForEmail(email: string): "regular" | "admin" {
-  return email.trim().toLowerCase() === ADMIN_EMAIL ? "admin" : "regular";
+  return isAdminEmail(email) ? "admin" : "regular";
 }
 
 function serializeUser(user: { id: string; email: string; role: string; accountRole: string; createdAt: string }) {
@@ -138,6 +141,9 @@ export function registerAuthRoutes(app: FastifyInstance) {
       return {
         user: serializeUser(request.currentUser)
       };
+    }
+    if (!allowLegacyHeaderAuth()) {
+      return reply.unauthorized("Not authenticated.");
     }
     const userHeader = request.headers["x-user-id"];
     const userIdRaw = Array.isArray(userHeader) ? userHeader[0] : userHeader;

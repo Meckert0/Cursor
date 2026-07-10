@@ -10,7 +10,12 @@ export default defineConfig({
     command: "npm run dev:full",
     cwd: "../..",
     port: 3001,
-    reuseExistingServer: true,
-    timeout: 180_000
+    reuseExistingServer: !process.env.CI,
+    timeout: 180_000,
+    env: {
+      ...process.env,
+      ENABLE_LEGACY_HEADER_AUTH: "true",
+      STORE_BACKEND: "memory"
+    }
   }
 });

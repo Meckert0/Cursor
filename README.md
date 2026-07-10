@@ -12,7 +12,8 @@ Current project roadmap: `docs/roadmap.md` (single canonical source).
   - `STORE_BACKEND=memory` (default)
   - `STORE_BACKEND=postgres` (durable persistence)
   - `STORE_BACKEND=sqlite` (durable local file persistence via `SQLITE_PATH`)
-- Auth/session endpoints with username + email/password registration, email/password login, and HTTP-only session cookie flow
+- Auth/session endpoints with username + email/password registration, email/password login, and HTTP-only session cookie flow (Next.js sets `cdt_session`)
+- Durable auth for `memory` (ephemeral), `sqlite`, and `postgres` store backends
 - Queued JSON/PDF/XLSX export processing with deterministic content hashing, startup recovery, transient retry/backoff, and artifact retention cleanup
 - Template-style PDF/XLSX artifact rendering in the export worker
 - Configurable artifact storage backend:
@@ -23,7 +24,8 @@ Current project roadmap: `docs/roadmap.md` (single canonical source).
 - Per-project ruleset policy (default + allow-list enforcement)
 - Project membership enforcement on all project-scoped resources
 - Lock/unlock workflow with Redis support (falls back to memory lock manager)
-- Basic revision validation endpoint for topology integrity checks
+- Revision validation for topology integrity plus library existence/policy checks; submit/state transitions require a non-stale validation of the current snapshot
+- Library catalog, ingest/moderation, and admin console APIs
 - Initial PostgreSQL migration scaffold in `db/migrations/`
 
 ## Quick start
@@ -55,10 +57,12 @@ Current project roadmap: `docs/roadmap.md` (single canonical source).
    - `STORE_BACKEND=postgres`
    - `DATABASE_URL=postgres://...`
    - `ARTIFACT_STORAGE_BACKEND=file` and `ARTIFACTS_DIR=./artifacts` (or set S3 values below)
-   - `REQUIRE_ROLE_HEADER=false` (set `true` to enforce explicit `x-role`)
-   - `REQUIRE_USER_HEADER=false` (set `true` to enforce explicit `x-user-id`)
+   - `ENABLE_LEGACY_HEADER_AUTH=false` (default; set `true` only for temporary header-based auth)
+   - `ADMIN_EMAILS=meckert@vpc.com` (comma-separated admin account emails)
+   - `REQUIRE_ROLE_HEADER=false` (only relevant when legacy header auth is enabled)
+   - `REQUIRE_USER_HEADER=false` (only relevant when legacy header auth is enabled)
 
-2. Apply all migrations in `db/migrations/` to your database.
+2. Apply all migrations in `db/migrations/` to your database (includes auth tables and validation snapshot hashing).
 
 3. Start server. The app validates DB connectivity at startup.
 
@@ -102,6 +106,7 @@ Set these env vars to enable object storage:
 - `GET /v1/auth/me`
 - `POST /v1/projects`
 - `GET /v1/projects`
+- `PATCH /v1/projects/{projectId}`
 - `POST /v1/projects/{projectId}/harnesses`
 - `GET /v1/projects/{projectId}/harnesses`
 - `GET /v1/projects/{projectId}/ruleset-policy`
@@ -109,11 +114,15 @@ Set these env vars to enable object storage:
 - `GET /v1/projects/{projectId}/members`
 - `PUT /v1/projects/{projectId}/members/{userId}`
 - `GET /v1/harnesses/{harnessId}`
+- `PATCH /v1/harnesses/{harnessId}`
+- `DELETE /v1/harnesses/{harnessId}`
+- `GET /v1/harnesses/{harnessId}/revisions`
 - `GET /v1/rulesets`
 - `GET /v1/rulesets/active`
 - `PUT /v1/rulesets/{version}`
 - `POST /v1/harnesses/{harnessId}/revisions`
 - `GET /v1/revisions/{revisionId}`
+- `PATCH /v1/revisions/{revisionId}/snapshot`
 - `POST /v1/revisions/{revisionId}/validate`
 - `GET /v1/revisions/{revisionId}/bom`
 - `GET /v1/validations/{validationRunId}`
@@ -127,6 +136,16 @@ Set these env vars to enable object storage:
 - `GET /v1/harnesses/{harnessId}/submissions`
 - `POST /v1/harnesses/{harnessId}/lock`
 - `POST /v1/harnesses/{harnessId}/unlock`
+- `GET /v1/library/components`
+- `GET /v1/library/components/{componentId}`
+- `POST /v1/library/components/ingest`
+- `GET /v1/library/components/review-queue`
+- `POST /v1/library/components/{componentId}/review`
+- `POST /v1/library/components/{componentId}/archive`
+- `GET /v1/ui/page-descriptions`
+- `GET /v1/admin/users`
+- `GET /v1/admin/projects-overview`
+- `PUT /v1/admin/ui/page-descriptions`
 
 ## Tests
 

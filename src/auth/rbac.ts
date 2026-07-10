@@ -6,7 +6,7 @@ export type UserRole = "viewer" | "editor" | "owner" | "supplier_reviewer";
 const VALID_ROLES: UserRole[] = ["viewer", "editor", "owner", "supplier_reviewer"];
 
 function allowLegacyHeaderAuth(): boolean {
-  return (process.env.ENABLE_LEGACY_HEADER_AUTH ?? "true").toLowerCase() === "true";
+  return (process.env.ENABLE_LEGACY_HEADER_AUTH ?? "false").toLowerCase() === "true";
 }
 
 function parseRole(request: FastifyRequest): UserRole | null {

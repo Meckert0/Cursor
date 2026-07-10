@@ -1,9 +1,8 @@
 import Database from "better-sqlite3";
+import { getAdminEmails } from "../../auth/admin.js";
 import type { UserRole } from "../../auth/rbac.js";
 import type { AuthSession, AuthUser } from "../../domain/auth.js";
 import type { AuthStore } from "./auth-store.js";
-
-const ADMIN_EMAIL = "meckert@vpc.com";
 
 export class SqliteAuthStore implements AuthStore {
   private readonly db: Database.Database;
@@ -39,12 +38,17 @@ export class SqliteAuthStore implements AuthStore {
     if (!hasAccountRole) {
       this.db.exec(`ALTER TABLE auth_users ADD COLUMN account_role TEXT NOT NULL DEFAULT 'regular';`);
     }
+    const adminEmails = getAdminEmails();
+    if (adminEmails.length === 0) {
+      return;
+    }
+    const placeholders = adminEmails.map(() => "?").join(", ");
     this.db
-      .prepare(`UPDATE auth_users SET account_role = ? WHERE lower(email) = ?`)
-      .run("admin", ADMIN_EMAIL);
+      .prepare(`UPDATE auth_users SET account_role = ? WHERE lower(email) IN (${placeholders})`)
+      .run("admin", ...adminEmails);
     this.db
-      .prepare(`UPDATE auth_users SET account_role = ? WHERE lower(email) <> ?`)
-      .run("regular", ADMIN_EMAIL);
+      .prepare(`UPDATE auth_users SET account_role = ? WHERE lower(email) NOT IN (${placeholders})`)
+      .run("regular", ...adminEmails);
   }
 
   async createUser(input: {

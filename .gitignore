@@ -13,4 +13,5 @@ apps/web/.next/
 apps/web/coverage/
 apps/web/test-results/
 apps/web/playwright-report/
+test-results/
 *.tsbuildinfo

@@ -8,6 +8,8 @@ import { FileArtifactStorage } from "../infra/storage/file-artifact-storage.js";
 import { PassthroughArtifactDownloadUrlResolver } from "../infra/storage/artifact-download-url-resolver.js";
 import { ExportQueueService } from "../services/export-queue.js";
 
+process.env.ENABLE_LEGACY_HEADER_AUTH = "true";
+
 function buildTestApp() {
   const store = new MemoryStore();
   const exportQueue = new ExportQueueService(store, new FileArtifactStorage(process.cwd()));
@@ -91,6 +93,31 @@ test("auth register/login/me/logout lifecycle", async () => {
     assert.equal(meAfterLogout.statusCode, 401);
   } finally {
     await app.close();
+  }
+});
+
+test("auth/me does not fabricate users from headers when legacy auth is disabled", async () => {
+  const previous = process.env.ENABLE_LEGACY_HEADER_AUTH;
+  process.env.ENABLE_LEGACY_HEADER_AUTH = "false";
+  const app = buildTestApp();
+
+  try {
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/auth/me",
+      headers: {
+        "x-user-id": "spoofed-user",
+        "x-role": "owner"
+      }
+    });
+    assert.equal(response.statusCode, 401);
+  } finally {
+    await app.close();
+    if (previous === undefined) {
+      delete process.env.ENABLE_LEGACY_HEADER_AUTH;
+    } else {
+      process.env.ENABLE_LEGACY_HEADER_AUTH = previous;
+    }
   }
 });
 

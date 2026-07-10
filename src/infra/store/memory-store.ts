@@ -668,6 +668,7 @@ export class MemoryStore implements Store {
     revisionId: string;
     rulesetVersion: string;
     mode: "quick" | "full";
+    snapshotHash: string;
     summary: ValidationRun["summary"];
     results: ValidationRun["results"];
   }): Promise<ValidationRun> {
@@ -682,6 +683,7 @@ export class MemoryStore implements Store {
       rulesetVersion: input.rulesetVersion,
       mode: input.mode,
       status: "completed",
+      snapshotHash: input.snapshotHash,
       summary: input.summary,
       results: input.results,
       createdAt: new Date().toISOString()

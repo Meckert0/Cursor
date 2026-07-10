@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireProjectMembership } from "../auth/membership.js";
 import { requireRole } from "../auth/rbac.js";
 import { buildBom, createLibraryLookup } from "../domain/bom.js";
+import { hashDesignSnapshot } from "../domain/snapshot-hash.js";
 import { validateSnapshot } from "../domain/validator.js";
 import type { DesignSnapshot } from "../domain/types.js";
 import type { Store } from "../infra/store/store.js";
@@ -340,6 +341,7 @@ export function registerRevisionRoutes(app: FastifyInstance) {
       revisionId: params.revisionId,
       rulesetVersion: resolvedRulesetVersion,
       mode: body.mode,
+      snapshotHash: hashDesignSnapshot(revision.snapshot),
       summary: {
         errors: report.errors,
         warnings: report.warnings,

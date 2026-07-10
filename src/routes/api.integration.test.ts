@@ -10,6 +10,8 @@ import { MemoryStore } from "../infra/store/memory-store.js";
 import { ExportQueueService } from "../services/export-queue.js";
 import XLSX from "xlsx";
 
+process.env.ENABLE_LEGACY_HEADER_AUTH = "true";
+
 function buildTestApp() {
   const store = new MemoryStore();
   const exportQueue = new ExportQueueService(store, new FileArtifactStorage(process.cwd()));
@@ -617,24 +619,49 @@ test("API flow: project -> design -> validation -> state transitions/audit -> su
     const submissions = listSubmissionsResponse.json() as { items: Array<{ id: string }> };
     assert.ok(submissions.items.some((item) => item.id === submission.id));
 
+    const addUserAMember = await app.inject({
+      method: "PUT",
+      url: `/v1/projects/${project.id}/members/user-a`,
+      payload: { role: "owner" }
+    });
+    assert.equal(addUserAMember.statusCode, 200);
+    const addUserBMember = await app.inject({
+      method: "PUT",
+      url: `/v1/projects/${project.id}/members/user-b`,
+      payload: { role: "owner" }
+    });
+    assert.equal(addUserBMember.statusCode, 200);
+
     const lockResponse = await app.inject({
       method: "POST",
       url: `/v1/designs/${design.id}/lock`,
-      payload: { userId: "user-a", ttlSeconds: 300 }
+      headers: {
+        "x-user-id": "user-a",
+        "x-role": "owner"
+      },
+      payload: { ttlSeconds: 300 }
     });
     assert.equal(lockResponse.statusCode, 201);
 
     const conflictingLockResponse = await app.inject({
       method: "POST",
       url: `/v1/designs/${design.id}/lock`,
-      payload: { userId: "user-b", ttlSeconds: 300 }
+      headers: {
+        "x-user-id": "user-b",
+        "x-role": "owner"
+      },
+      payload: { ttlSeconds: 300 }
     });
     assert.equal(conflictingLockResponse.statusCode, 409);
 
     const unlockResponse = await app.inject({
       method: "POST",
       url: `/v1/designs/${design.id}/unlock`,
-      payload: { userId: "user-a" }
+      headers: {
+        "x-user-id": "user-a",
+        "x-role": "owner"
+      },
+      payload: {}
     });
     assert.equal(unlockResponse.statusCode, 204);
   } finally {
@@ -793,6 +820,138 @@ test("submit-for-quote enforces latest validation pass precondition", async () =
       payload: { revisionId: invalidRevision.id }
     });
     assert.equal(submitWithFailingValidation.statusCode, 409);
+  } finally {
+    await app.close();
+  }
+});
+
+test("submit-for-quote rejects stale validation after snapshot edit", async () => {
+  const app = buildTestApp();
+
+  await app.ready();
+  try {
+    const projectResponse = await app.inject({
+      method: "POST",
+      url: "/v1/projects",
+      payload: { name: "Project Stale Validation", createdBy: "user-a" }
+    });
+    assert.equal(projectResponse.statusCode, 201);
+    const project = projectResponse.json() as { id: string };
+
+    const designResponse = await app.inject({
+      method: "POST",
+      url: `/v1/projects/${project.id}/designs`,
+      payload: { name: "Harness Stale", createdBy: "user-a" }
+    });
+    assert.equal(designResponse.statusCode, 201);
+    const design = designResponse.json() as { id: string };
+
+    const validSnapshot = {
+      connectors: [
+        {
+          id: "c1",
+          reference: "J1",
+          pins: [
+            { id: "1", number: "1" },
+            { id: "2", number: "2" }
+          ]
+        },
+        {
+          id: "c2",
+          reference: "J2",
+          pins: [
+            { id: "1", number: "1" },
+            { id: "2", number: "2" }
+          ]
+        }
+      ],
+      paths: [{ id: "p1", fromConnectorId: "c1", toConnectorId: "c2", pathType: "wire" }],
+      pinMappings: [
+        {
+          id: "m1",
+          pathId: "p1",
+          fromConnectorId: "c1",
+          fromPinId: "1",
+          toConnectorId: "c2",
+          toPinId: "1",
+          mappingType: "one_to_one"
+        },
+        {
+          id: "m2",
+          pathId: "p1",
+          fromConnectorId: "c1",
+          fromPinId: "2",
+          toConnectorId: "c2",
+          toPinId: "2",
+          mappingType: "one_to_one"
+        }
+      ],
+      bundles: [{ id: "b1", name: "main-bundle", pathIds: ["p1"] }],
+      annotations: []
+    };
+
+    const revisionResponse = await app.inject({
+      method: "POST",
+      url: `/v1/designs/${design.id}/revisions`,
+      payload: {
+        createdBy: "user-a",
+        snapshot: validSnapshot
+      }
+    });
+    assert.equal(revisionResponse.statusCode, 201);
+    const revision = revisionResponse.json() as { id: string };
+
+    const validateResponse = await app.inject({
+      method: "POST",
+      url: `/v1/revisions/${revision.id}/validate`,
+      payload: { mode: "full", rulesetVersion: "rules-2026.03" }
+    });
+    assert.equal(validateResponse.statusCode, 200);
+    const validation = validateResponse.json() as { summary: { errors: number } };
+    assert.equal(validation.summary.errors, 0);
+
+    const patchResponse = await app.inject({
+      method: "PATCH",
+      url: `/v1/revisions/${revision.id}/snapshot`,
+      payload: {
+        snapshot: {
+          ...validSnapshot,
+          annotations: [{ id: "a1", text: "edited after validation" }]
+        }
+      }
+    });
+    assert.equal(patchResponse.statusCode, 200);
+
+    const staleSubmitResponse = await app.inject({
+      method: "POST",
+      url: `/v1/designs/${design.id}/submit-for-quote`,
+      payload: { revisionId: revision.id }
+    });
+    assert.equal(staleSubmitResponse.statusCode, 409);
+    assert.match(staleSubmitResponse.json().message, /stale/i);
+
+    const staleTransitionResponse = await app.inject({
+      method: "POST",
+      url: `/v1/designs/${design.id}/state-transitions`,
+      payload: { targetState: "submitted", expectedCurrentState: "draft", changedBy: "user-a" }
+    });
+    assert.equal(staleTransitionResponse.statusCode, 409);
+    assert.match(staleTransitionResponse.json().message, /stale/i);
+
+    const revalidateResponse = await app.inject({
+      method: "POST",
+      url: `/v1/revisions/${revision.id}/validate`,
+      payload: { mode: "full", rulesetVersion: "rules-2026.03" }
+    });
+    assert.equal(revalidateResponse.statusCode, 200);
+    assert.equal((revalidateResponse.json() as { summary: { errors: number } }).summary.errors, 0);
+
+    const submitAfterRevalidate = await app.inject({
+      method: "POST",
+      url: `/v1/designs/${design.id}/submit-for-quote`,
+      payload: { revisionId: revision.id }
+    });
+    assert.equal(submitAfterRevalidate.statusCode, 201);
   } finally {
     await app.close();
   }

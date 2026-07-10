@@ -3,7 +3,7 @@ import type { ProjectMember } from "../domain/types.js";
 import type { Store } from "../infra/store/store.js";
 
 function allowLegacyHeaderAuth(): boolean {
-  return (process.env.ENABLE_LEGACY_HEADER_AUTH ?? "true").toLowerCase() === "true";
+  return (process.env.ENABLE_LEGACY_HEADER_AUTH ?? "false").toLowerCase() === "true";
 }
 
 function requireUserHeader(): boolean {

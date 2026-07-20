@@ -69,6 +69,9 @@ This document defines the canonical domain model for cable assembly design, incl
 - `pins: Pin[]`
 - `orientation?: string`
 - `backshellPartNumber?: string`
+- `backshellLibraryComponentId?: string`
+- `strainReliefPartNumber?: string`
+- `strainReliefLibraryComponentId?: string`
 - `location: CanvasPosition`
 - `metadata: Record<string, string>`
 
@@ -247,17 +250,19 @@ This document defines the canonical domain model for cable assembly design, incl
 - All pin mappings are complete and unambiguous.
 - Length/unit values are normalized before export.
 - Bundle and shielding rules must satisfy compatibility requirements.
-- BOM generation resolves connectors, wires, labels, contacts, and sleeving against the library and surfaces unresolved parts.
+- BOM generation resolves connectors, wires, labels, contacts, sleeving, backshells, and strain reliefs against the library and surfaces unresolved parts.
 
 ## Bill Of Materials
 
 A revision BOM is derived by joining the revision snapshot with the component library:
 
 - Connectors: counted by `partNumber` / `libraryComponentId`
-- Wires: aggregated length (inches) by wire part
+- Backshells: counted by `backshellPartNumber` / `backshellLibraryComponentId` (1 ea per connector)
+- Strain reliefs: counted by `strainReliefPartNumber` / `strainReliefLibraryComponentId` (1 ea per connector)
+- Wires: aggregated length (inches) by wire part; AWG/color surfaced from path or library
 - Labels: counted by `labelPartNumber`
 - Contacts: best-effort match of `fromContact` / `toContact` against library `contact` parts
-- Sleeving: aggregated by sleeving type and path length
+- Sleeving: resolved to `sleeve-tube-braid` library parts via compatibility hints (`Maps to {enum}`), falling back to the enum label when unmapped
 
 Exposed via `GET /v1/revisions/{revisionId}/bom` and included in JSON/PDF/XLSX exports.
 

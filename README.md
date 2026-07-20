@@ -4,6 +4,36 @@ This repository now includes a runnable TypeScript API starter aligned with the 
 
 Current project roadmap: `docs/roadmap.md` (single canonical source).
 
+## Run the local site
+
+Paste this into the terminal:
+
+```
+cd "C:\Users\meckert\Documents\New project"
+npm install
+npm --prefix apps/web install
+copy apps\web\.env.example apps\web\.env.local
+$env:STORE_BACKEND="sqlite"
+$env:SQLITE_PATH="./data/app.db"
+New-Item -ItemType Directory -Force -Path .\data | Out-Null
+npm run migrate:sqlite
+npm run dev:full
+```
+
+Then open this link in the browser:
+
+```
+http://localhost:3001
+```
+
+### Backup local data
+
+With the default SQLite + file-artifact setup, durable state lives in:
+
+- `data/app.db` (projects, harnesses, revisions, auth, library)
+- `artifacts/` (export files when `ARTIFACT_STORAGE_BACKEND=file`)
+
+Copy those paths to back up or move a local install.
 ## What is implemented
 
 - Fastify API with versioned routes under `/v1`
@@ -24,8 +54,9 @@ Current project roadmap: `docs/roadmap.md` (single canonical source).
 - Per-project ruleset policy (default + allow-list enforcement)
 - Project membership enforcement on all project-scoped resources
 - Lock/unlock workflow with Redis support (falls back to memory lock manager)
-- Revision validation for topology integrity plus library existence/policy checks; submit/state transitions require a non-stale validation of the current snapshot
+- Revision validation with ruleset/mode-gated topology, electrical, compatibility, and manufacturability checks; submit/state transitions require a non-stale validation of the current snapshot
 - Library catalog, ingest/moderation, and admin console APIs
+- Starter library catalog seeded on startup (modules, contacts, wires, labels, sleeving, backshells, strain reliefs) for memory, sqlite, and postgres
 - Initial PostgreSQL migration scaffold in `db/migrations/`
 
 ## Quick start
@@ -50,6 +81,8 @@ Current project roadmap: `docs/roadmap.md` (single canonical source).
 
    `GET http://localhost:3000/v1/health`
 
+   Returns store / lock / artifact backend status. Metrics: `GET http://localhost:3000/v1/metrics`.
+
 ## PostgreSQL mode
 
 1. Set env:
@@ -64,7 +97,7 @@ Current project roadmap: `docs/roadmap.md` (single canonical source).
 
 2. Apply all migrations in `db/migrations/` to your database (includes auth tables and validation snapshot hashing).
 
-3. Start server. The app validates DB connectivity at startup.
+3. Start server. The app validates DB connectivity at startup and seeds the starter library catalog if missing.
 
 4. Optional: run SQL migrations automatically:
 
@@ -81,7 +114,7 @@ Current project roadmap: `docs/roadmap.md` (single canonical source).
 
    `npm run migrate:sqlite`
 
-3. Start server. Project/harness data and auth sessions persist in the SQLite file across restarts.
+3. Start server. Project/harness data and auth sessions persist in the SQLite file across restarts. Missing starter library parts are backfilled on open.
 
 ## S3-compatible artifact storage
 
@@ -122,7 +155,7 @@ Set these env vars to enable object storage:
 - `PUT /v1/rulesets/{version}`
 - `POST /v1/harnesses/{harnessId}/revisions`
 - `GET /v1/revisions/{revisionId}`
-- `PATCH /v1/revisions/{revisionId}/snapshot`
+- `PATCH /v1/revisions/{revisionId}/snapshot` (requires `expectedSnapshotHash`; returns 409 on mismatch)
 - `POST /v1/revisions/{revisionId}/validate`
 - `GET /v1/revisions/{revisionId}/bom`
 - `GET /v1/validations/{validationRunId}`
@@ -137,11 +170,13 @@ Set these env vars to enable object storage:
 - `POST /v1/harnesses/{harnessId}/lock`
 - `POST /v1/harnesses/{harnessId}/unlock`
 - `GET /v1/library/components`
+- `GET /v1/library/components/archived`
 - `GET /v1/library/components/{componentId}`
 - `POST /v1/library/components/ingest`
 - `GET /v1/library/components/review-queue`
 - `POST /v1/library/components/{componentId}/review`
 - `POST /v1/library/components/{componentId}/archive`
+- `POST /v1/library/components/{componentId}/restore`
 - `GET /v1/ui/page-descriptions`
 - `GET /v1/admin/users`
 - `GET /v1/admin/projects-overview`

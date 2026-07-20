@@ -24,6 +24,18 @@ Conventions:
 
 ## API Surface
 
+### Platform
+
+`GET /v1/health`
+
+- Deep health check for store, lock manager, and artifact backend.
+- Returns HTTP 503 when any component check fails.
+- Echoes `x-request-id` / `x-correlation-id` response headers.
+
+`GET /v1/metrics`
+
+- In-process counters: validation latency, export enqueued/completed/failed/retried, lock acquired/contention.
+
 ### Projects
 
 `POST /v1/projects`
@@ -115,8 +127,11 @@ Request:
 
 `POST /v1/revisions/{revisionId}/validate`
 
-- Run full validation using explicit or default ruleset.
-- Includes library existence / inactive / unreviewed checks for referenced parts.
+- Run validation using explicit or default ruleset. Behavior varies by `rulesetVersion` and `mode`.
+- `mode: quick` runs structural + critical electrical checks; `mode: full` also runs coverage, library status, compatibility, and manufacturability rules.
+- `rules-2026.03` (default): topology + library existence; inactive/unreviewed warnings; out-of-stock info; compatibility matrix disabled.
+- `rules-2026.04`: enables connector/wire compatibility, unsupported length/gauge, and treats inactive/out-of-stock as errors (overridable via project ruleset policy severity fields including `unreviewedPartSeverity`).
+- Structured compatibility attributes are first-class library fields: `pinCount`, `pinIds`, `acceptedAwgMin`, `acceptedAwgMax`, `acceptedFamilies` (legacy customFieldValues keys are promoted on ingest/update only).
 
 `GET /v1/revisions/{revisionId}/bom`
 
@@ -173,7 +188,19 @@ Query params:
 
 `GET /v1/library/components/{componentId}`
 
-- Fetch component details and compatibility metadata.
+- Fetch component details and first-class compatibility metadata (`pinCount`, `pinIds`, `acceptedAwgMin`/`Max`, `acceptedFamilies`).
+
+`GET /v1/library/components/archived`
+
+- List archived library components (owner).
+
+`POST /v1/library/components/{componentId}/archive`
+
+- Soft-archive a component and deactivate it (`isActive=false`).
+
+`POST /v1/library/components/{componentId}/restore`
+
+- Restore an archived component; optional `reactivate` (default true).
 
 `POST /v1/library/custom-components`
 

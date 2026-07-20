@@ -6,16 +6,16 @@ Last updated: 2026-07-10
 
 This is the single canonical roadmap for the project. It defines current status, active work, priority order, deferred scope, and MVP exit criteria.
 
+## Goal
+
+Get one cable completely working from start to finish, with a complete bill of materials as the output. Topology and part selection are authored on the canvas; pin-level, wire, contact, signal, and label detail are authored on the wirelist. Both surfaces write the same revision snapshot, and the BOM must resolve every line against the component library.
+
 ## Current Status At A Glance
 
-- Core platform foundations are complete: RBAC, project/harness/revision lifecycle, persistence modes, locking, and artifact storage abstraction.
-- Core product workflow is mostly complete in browser and API: author revision, validate, export (JSON/PDF/XLSX), and submit for quote.
-- Frontend has meaningful quality gates in place (lint, unit/integration tests, Playwright E2E, CI workflow).
-- Active implementation focus is now split between:
-  - graphical authoring depth and hardening (canvas track),
-  - moderated datastore/admin workflows (ingest and review track),
-  - bill of materials generation from revision + library resolution.
-- Most important remaining gaps are deeper validation/rules coverage, canvas hardening, and broader datastore operational hardening.
+- Core platform foundations are complete: RBAC, project/harness/revision lifecycle, persistence modes, locking, artifact storage abstraction, and observability baseline.
+- The workflow shell works end to end in the browser: author on canvas/wirelist, validate, export (JSON/PDF/XLSX), and submit for quote.
+- Rules depth v2, the E2E journey matrix, library governance, canvas persistence/hardening, export reliability v1, wirelist pin-mapping authoring (Phase A), the starter library catalog (Phase B), BOM completeness (Phase C), canvas/wirelist data-integrity hardening (Phase D), and the full-cable E2E acceptance journey (Phase E) are shipped.
+- The Complete-Cable MVP exit criteria are met. Notifications and datastore-admin breadth remain deferred post-MVP.
 
 ## Delivery Status By Workstream
 
@@ -24,157 +24,100 @@ This is the single canonical roadmap for the project. It defines current status,
 - Foundations and platform baseline (service skeleton, auth roles, storage switching, lock manager, artifact backends).
 - Canonical revision model and immutable revision flow.
 - Project/design lifecycle APIs and browser flows.
-
-### Mostly Complete
-
-- Rules engine v1 and validation persistence (strong topology checks, incomplete manufacturability depth).
-- Library and inventory awareness (search/filter/detail, policy signals in authoring UX).
-- Export pipeline v1 (format support and deterministic output, not yet fully hardened for retries/retention).
-- Quote submission workflow and audit/traceability visibility.
-- Bill of materials v1 (API, details UI, JSON/PDF/XLSX inclusion, library existence validation).
+- Rules engine v2 (topology + electrical + compatibility + manufacturability; ruleset/mode-gated severity).
+- E2E journey matrix (auth, project/harness, canvas, validate/export, submit-for-quote, moderation, wirelist, failure paths) with CI trace upload.
+- Library governance v1 (first-class compatibility columns, archive/restore, review policies).
+- Canvas persistence and hardening v1 (server snapshot autosave, undo/redo, junction properties, module split).
 - Export reliability v1 (startup recovery, transient retry/backoff, permanent failure classification, retention cleanup, operations runbook).
+- Bill of materials v1 (API, details UI, JSON/PDF/XLSX inclusion, library existence validation, unresolved-part visibility).
+- Observability baseline v1 (request/correlation IDs, `/v1/metrics`, deepened `/v1/health`, export worker trace logs).
+- Datastore ingestion/admin moderation v1 (ingest dry-run/commit, review queue, archive flows, browser moderation coverage).
+- Pin-level mapping authored from the wirelist (Phase A: parse `Connector-Pin`, emit/load `pinMappings`, validate unresolved connector/pin refs).
+- Starter library catalog (Phase B: active reviewed modules/contacts/wires/labels/sleeving/backshells/strain reliefs seeded across memory, sqlite, and postgres).
+- BOM completeness (Phase C: backshell/strain-relief connector fields + canvas pickers, library-resolved sleeving, wire AWG/color on BOM lines).
+- Canvas/wirelist data-integrity hardening (Phase D: optimistic concurrency on snapshot PATCH, conflict UI, wirelist→canvas revalidation, sleeving column).
+- Full-cable E2E acceptance journey (Phase E: canonical fixture + browser journey through author → validate → resolved BOM → export → submit).
 
 ### In Progress
 
-- Phase 6: Graphical authoring (canvas) hardening and UX depth.
-- Phase 7: Datastore ingestion and admin console expansion with moderated workflow.
-
-## Active Workstreams
-
-### Graphical Authoring (Phase 6)
-
-Recent delivery includes junction modeling, canvas drag-connect flows, wire metadata round-tripping, inline length editing, wire quick-add with moderation handoff, and canvas-first E2E coverage.
-
-Current focus:
-
-- Continue canvas UX hardening and reliability.
-- Preserve deterministic structured snapshot integrity for all canvas-driven edits.
-- Expand critical-path testing for canvas-first authoring through validate/export/submit.
-
-### Datastore Ingestion/Admin (Phase 7)
-
-Recent delivery includes moderation data foundations, ingest dry-run/commit patterns, review/unreview/archive flows, owner review queue, and browser moderation coverage.
-
-Current focus:
-
-- Complete safe ingestion and admin breadth while preserving provenance/audit guarantees.
-- Keep visibility/review policy invariants strict and test-backed.
-- Extend operational guardrails for reliability and recovery.
+- None for the Complete-Cable MVP. Post-MVP items are listed under Deferred Scope.
 
 ## Near-Term Priorities (Ordered)
 
-Grounded against the current codebase (2026-07-10 review): validation is still topology + library-existence only, ruleset versions are stamped but do not change validator behavior, canvas edits persist only to browser localStorage (never to the server revision snapshot), E2E coverage is a single Playwright smoke spec, the canvas is one large component, and there is no notification or observability infrastructure yet.
+Phases A-E are complete. The ordered MVP plan below is retained as the shipped record.
 
-1. ~~Bill of materials generation from revision snapshots + library resolution (API, exports, validation, UI).~~ Done (v1).
-2. ~~Export reliability hardening (retry/backoff, transient vs permanent failure handling, retention controls).~~ Done (v1).
-3. ~~Host the repository on GitHub and activate CI.~~ Done.
+### Phase A: Pin-level mapping authored from the wirelist — DONE
 
-### ~~Priority 0: Host the repository on GitHub~~ Done
+Why: nothing in the product authored `pinMappings` before this phase. The wirelist `From/To Location (Conn - Pin)` columns already carry connector label and pin position in one cell separated by `-` (e.g. `J1-3`), but the save path resolved only the connector and silently dropped the pin.
 
-Completed 2026-07-10: repository is at https://github.com/Meckert0/Cursor with `origin` tracking `master`; GitHub Actions CI (backend checks + frontend E2E smoke) runs green on push.
+Shipped:
 
-Why: the project currently exists only as a local git repo (single baseline commit, no remote), so there is no off-machine backup, no collaboration surface, and the CI workflow in `.github/workflows/ci.yml` never runs. An empty GitHub repository named `Cursor` is already created for this.
+- Parse `Connector-Pin` in the From/To Location columns (split on the last `-`; resolve connector by reference, pin by number against that connector's pins).
+- Emit a `PinMapping` per wirelist row when both ends resolve, merged into the snapshot keyed by path ID.
+- Render `Connector-Pin` back from the associated pin mapping on load so the round trip is stable.
+- Wire `validNodeIds` into wirelist validation to flag unresolved connector/pin references inline.
 
-Scope:
+Acceptance: entering `J1-3` / `J2-A1` on a wirelist row produces a persisted pin mapping; reloading the wirelist shows the same cells; unit tests cover parse, round-trip, and validation.
 
-- Commit current local work-in-progress (there are uncommitted changes across backend, frontend, and docs).
-- Add the `Cursor` GitHub repository as the `origin` remote and push `master`.
-- Confirm secrets hygiene before pushing: `.env` is git-ignored and only `.env.example` is tracked (verify no credentials in tracked files).
-- Verify GitHub Actions picks up the existing CI workflow on the first push and the pipeline goes green.
+### Phase B: Starter library catalog — DONE
 
-Acceptance: repository visible on GitHub with full history; CI runs automatically on push; local development workflow unchanged.
+Why: `DEFAULT_LIBRARY_COMPONENTS` previously contained a single inactive backshell, so the catalog pickers were unusable out of the box and every part had to be quick-added as unreviewed.
 
-### Priority 1: Rules depth v2 — compatibility and manufacturability checks
+Shipped:
 
-Why: MVP exit criterion 2 ("deterministic validation blocks invalid progression") is the weakest today. `validateSnapshot` covers structural integrity and library part existence/status, but none of the compatibility or manufacturability categories the architecture defines.
+- Seed a small realistic catalog covering every category one real cable needs: connector modules with real pin counts, matching contacts, wire gauges/colors, labels, sleeving, backshells, strain reliefs.
+- Seed identically across memory, sqlite, and postgres backends (`ensureDefaultLibrarySeeded`, insert-missing / backfill).
+- Update README quick-start notes for seeding behavior.
 
-Scope:
+Acceptance: a fresh install lets a user pick every part of a complete cable from active, reviewed library entries in all three store backends.
 
-- Connector/pin compatibility: pin-count and pin-id validation against the resolved library connector definition; connector family restrictions.
-- Wire/contact compatibility: wire AWG vs contact and connector acceptance, driven by structured library data (see Priority 3).
-- Electrical checks: enforce `loopback` and `one_to_many` mapping-type semantics (currently declared but never validated), incomplete-mapping coverage per connector, and pin-mapping rules at junction endpoints (today only connector endpoints are checked).
-- Manufacturability checks: unsupported lengths/gauges, inactive/out-of-stock substitution policy as errors (not just warnings) when project policy requires it.
-- Make rulesets real: validator behavior must vary by `rulesetVersion` (rule enablement/severity per version), so the existing registry and per-project policy actually gate behavior. Give `mode: quick | full` real semantics (it is stored but currently changes nothing).
+### Phase C: BOM completeness for a fully accessorized cable — DONE
 
-Acceptance: new rule codes covered by unit + fixture tests (extend `known-good`/`known-bad` fixtures); submit-for-quote blocked by new error-severity rules; ruleset version selection changes validation output deterministically.
+Why: the BOM previously omitted backshells and strain reliefs, resolved sleeving from a hardcoded enum label instead of the library, and hid wire AWG/color.
 
-### Priority 2: E2E and regression matrix expansion
+Shipped:
 
-Why: MVP exit criterion 5 requires CI-gated coverage of primary journeys, but only `apps/web/tests/e2e/smoke.spec.ts` exists. This is also a prerequisite for safely doing the canvas refactor in Priority 4.
+- Add `backshellPartNumber` / `strainReliefPartNumber` (and library component IDs) to the runtime connector type with canvas property-panel pickers sourced from the `backshell` / `strain-relief` library categories.
+- Emit resolved backshell/strain-relief BOM lines per connector.
+- Resolve sleeving against the `sleeve-tube-braid` library category via compatibility hints, falling back to the enum label.
+- Surface wire AWG/color on wire BOM lines.
+- Extend BOM unit fixtures and API integration fixtures to a fully-specified cable exercising every line type.
 
-Scope:
+Acceptance: a fully accessorized cable produces a BOM where every line (connectors, contacts, wires, labels, sleeving, backshells, strain reliefs) resolves against the library with correct quantities.
 
-- Split the single smoke spec into journey specs: auth/registration, project + harness lifecycle, canvas authoring (create/connect/edit/delete), validate -> export -> download, submit-for-quote, and library moderation.
-- Cover failure paths that matter operationally: stale-validation submit rejection, lock contention, export failure surfacing.
-- Keep the suite CI-gated (already wired in `.github/workflows/ci.yml`); add artifact upload of Playwright traces on failure.
+### Phase D: Canvas/wirelist data-integrity hardening — DONE
 
-Acceptance: each MVP exit journey has at least one dedicated spec; CI runs the full matrix on every push.
+Why: both editors PATCH the same snapshot with last-write-wins semantics; a stale canvas tab can silently clobber wirelist edits and vice versa. The wirelist also lacks a sleeving column (canvas-only field) and does not revalidate the canvas page after saving.
 
-### Priority 3: Library governance depth and structured compatibility data
+Shipped:
 
-Why: `compatibilityHints` is free text and components carry no machine-usable compatibility attributes, which blocks Priority 1's compatibility rules. Lifecycle governance (inactive/custom parts) is also still shallow.
+- Optimistic concurrency on `PATCH /v1/revisions/{id}/snapshot` via `expectedSnapshotHash`; mismatch returns 409 `SNAPSHOT_MISMATCH`.
+- Visible conflict/reload state in canvas and wirelist UIs.
+- Wirelist saves revalidate the canvas path (parity with canvas already revalidating wirelist).
+- Sleeving column on the wirelist grid (including import/export template headers).
 
-Scope:
+Acceptance: concurrent stale saves are rejected instead of silently overwriting; sleeving survives edits from either surface.
 
-- Add structured compatibility fields to `LibraryComponentRecord` (e.g. accepted AWG range for contacts, pin count/family for modules) with migrations for all three store backends.
-- Inactive-part governance: project-level policy for whether inactive/unreviewed parts block validation vs warn.
-- Custom component lifecycle: clear draft -> reviewed -> active/archived transitions with provenance, replacing ad-hoc flags. Fix lifecycle inconsistencies: archiving does not deactivate a part, and there is no list/restore API for archived components.
-- Wire up `project_library_overrides` (schema exists in `db/migrations/011` with no store methods or routes) or remove it.
+### Phase E: Full-cable E2E acceptance journey (capstone) — DONE
 
-Acceptance: compatibility rules in Priority 1 consume structured fields (no free-text parsing); moderation flows and ingest dry-run/commit cover the new fields.
+Why: existing E2E specs exercise empty or minimal harnesses. Nothing proves the complete journey for one real cable, which is the definition of done for this roadmap.
 
-### Priority 4: Canvas persistence, hardening, and decomposition
+Shipped:
 
-Why: two problems. First, canvas edits are saved only to browser localStorage (`cable-canvas-draft:{revisionId}` / `cable-canvas-layout:{revisionId}` in `cable-canvas.tsx`) and are never written to the server revision snapshot — but validation, BOM, and export all read the server snapshot. Clearing storage or switching browsers loses canvas work, and validate/export can silently run against stale data, which directly threatens MVP exit criterion 1 ("author without data loss"). Second, `apps/web/src/components/cable-canvas.tsx` is a single ~50KB component carrying all interaction logic, making every hardening change risky.
+- Canonical fully-specified cable fixture (`src/domain/fixtures/full-cable.complete.json`) covering connectors, pin mappings, contacts, signals, labels, sleeving, backshells, and strain reliefs against seeded library parts.
+- Fixture-backed validation/BOM unit coverage.
+- E2E acceptance spec (`apps/web/tests/e2e/full-cable.spec.ts`): register → create project/harness → author topology and parts on canvas → complete pin/contact/signal/label detail on wirelist → validate clean → assert every BOM line resolves with expected part numbers and quantities → export JSON/PDF/XLSX → submit for quote.
 
-Scope:
-
-- Close the persistence gap first: save canvas drafts to the server via the snapshot PATCH endpoint (as the wirelist editor already does), with localStorage retained only as an offline/unsaved-changes buffer. Surface dirty-state so users know when canvas work is not yet on the revision.
-- Decompose into focused modules (interaction state machine, geometry/snap utilities already partly in `cable-canvas-utils.ts`, rendering layers) without behavior changes, protected by the Priority 2 canvas specs.
-- Undo/redo depth and reliability for all mutation types (canvas currently has undo-only with no redo and no Ctrl+Z); keyboard-shortcut coverage audit; junction property panel (currently empty on selection).
-- Preserve deterministic structured snapshot round-tripping for every canvas edit (extend unit coverage in `cable-canvas-utils.test.ts`).
-
-Acceptance: a canvas-authored design survives browser storage loss and validates/exports what the user drew; no snapshot-shape regressions (hash-stable round-trip tests); canvas E2E specs green before and after decomposition.
-
-### Priority 5: Observability baseline
-
-Why: the architecture doc specifies structured logs, metrics, and tracing; none exist today. This becomes the operational safety net as validation and export load grows.
-
-Scope:
-
-- Structured request logging with request/correlation IDs (Fastify logger configuration, propagated into the export worker).
-- Minimal metrics: validation latency, export success/failure rate, lock contention — exposed via a metrics endpoint.
-- Deepen `/v1/health` to report store/lock/artifact-backend status.
-
-Acceptance: an operator can trace a failed export from request ID to worker attempt logs; runbook (`docs/export-operations.md`) updated with the new signals.
-
-### Priority 6: Workflow tightening and notifications v1
-
-Why: state transitions and quote submissions produce audit events but notify no one; the collaboration service in the architecture is entirely unbuilt. A minimal version closes the review-loop gap without taking on real-time scope.
-
-Scope:
-
-- Notification records persisted on key events (submit-for-quote, state transitions, moderation decisions) with an in-app unread feed; email delivery optional/behind config.
-- Workflow policy tightening: role-gated transition matrix review, required-validation freshness already enforced — extend to submission review states.
-
-Acceptance: reviewers see pending submissions without polling; events are test-covered per store backend.
-
-### Priority 7: Datastore admin and operational breadth
-
-Why: valuable but not MVP-blocking; keep behind the items above.
-
-Scope: PostgreSQL operational tooling (migration status surfacing, admin overview depth), Redis lock-manager health/diagnostics, object storage artifact manifests and orphan detection.
+Acceptance: the spec passes in CI and is the standing acceptance test for "one cable working start to finish with a complete BOM."
 
 ## Deferred Scope (Post-MVP)
 
-The following are intentionally deferred beyond the current moderation-centric MVP cut:
-
+- Workflow notifications v1 (in-app unread feed on submit-for-quote, state transitions, moderation decisions; optional email delivery).
+- Datastore admin and operational breadth (migration status surfacing, Redis lock diagnostics, artifact manifests and orphan detection).
 - Pricing / manufacturer / inventory quantity columns on BOM (library schema does not yet carry these).
-- Backshell / strain-relief BOM lines until authoring surfaces those references on connectors.
 - Advanced export operational hardening beyond baseline reliability.
 - Broader non-critical rules families and policy permutations.
 - Advanced canvas polish (extended snap/grid/zoom/undo ergonomics).
-- Full datastore operational breadth beyond immediate moderation priorities.
 - Extended observability and large-scale admin throughput optimizations.
 - Collaboration and downstream integrations (comments, real-time, ERP/manufacturing integration).
 
@@ -182,21 +125,33 @@ The following are intentionally deferred beyond the current moderation-centric M
 
 MVP exit requires:
 
-1. Engineers can author and revise complete pin-mapped harnesses in browser without data loss.
-2. Deterministic validation blocks invalid progression and submission.
-3. JSON/PDF/XLSX exports are operationally reliable and include a complete bill of materials resolved against the library.
+1. One real cable can be authored end to end in the browser: topology and part selection on the canvas, pin mappings and wire/contact/signal/label detail on the wirelist, with no data loss between the two surfaces.
+2. Deterministic validation passes clean for the complete cable and blocks invalid progression and submission.
+3. The BOM resolves every line against the library — connectors, contacts, wires, labels, sleeving, backshells, and strain reliefs — with correct quantities, and is included in JSON/PDF/XLSX exports.
 4. Submission and review package flow is traceable end-to-end.
-5. CI-gated quality checks prevent regressions in primary user journeys.
+5. The full-cable E2E journey (Phase E) runs green in CI and prevents regressions in the complete path.
 
 ## Definition Of Done For Remaining MVP Work
 
-- Scope-locked moderation acceptance criteria are satisfied and test-backed.
+- Phases A-E acceptance criteria are satisfied and test-backed. **Complete-Cable MVP is done.**
 - This roadmap, `README.md`, and architecture guidance are aligned and non-contradictory.
 - Operational runbooks exist for export failure handling and artifact retention behavior (`docs/export-operations.md`).
 - BOM generation is available via API, details UI, and export artifacts with unresolved-part visibility.
 
 ## Changelog Notes
 
+- 2026-07-20: Confirmed local-only product mode for now (no cloud deploy packaging). Complete-Cable MVP remains the working local product via `npm run dev:full`; deferred notifications, BOM pricing, and deployment packaging stay post-MVP.
+- 2026-07-10: Completed Phase E — full-cable E2E acceptance journey (canonical fixture, fixture BOM/validation coverage, browser journey through author → validate → resolved BOM → JSON/PDF/XLSX export → submit for quote). Complete-Cable MVP exit criteria met.
+- 2026-07-10: Completed Phase D — canvas/wirelist data-integrity hardening (optimistic concurrency on snapshot PATCH, conflict UI, wirelist→canvas revalidation, sleeving column).
+- 2026-07-10: Completed Phase C — BOM completeness (backshell/strain-relief connector fields + canvas pickers, library-resolved sleeving via compatibility hints, wire AWG/color on BOM lines, fully-accessorized fixtures).
+- 2026-07-10: Completed Phase B — starter library catalog (modules/contacts/wires/labels/sleeving/backshells/strain reliefs; identical seed/backfill across memory, sqlite, and postgres via `ensureDefaultLibrarySeeded`).
+- 2026-07-10: Completed Phase A — wirelist pin-mapping authoring (`Connector-Pin` parse/save/load round-trip, `pinMappings` emission keyed by path ID, unresolved connector/pin validation via `validNodeIds`).
+- 2026-07-10: Recreated the roadmap around the Complete-Cable MVP goal (one cable start to finish with a complete, library-resolved BOM). Near-term priorities are now Phases A-E: wirelist pin-mapping authoring, starter library catalog, BOM completeness (backshell/strain-relief/sleeving), canvas/wirelist data-integrity hardening, and a full-cable E2E acceptance journey. Deferred notifications (old Priority 6) and datastore admin breadth (old Priority 7) to post-MVP.
+- 2026-07-10: Completed Priority 5 — observability baseline (request/correlation IDs, `/v1/metrics`, deepened `/v1/health`, export worker trace logs, runbook update).
+- 2026-07-10: Completed Priority 4 — canvas persistence/hardening (server snapshot autosave + dirty status, undo/redo + shortcuts, junction property panel, module split, hash-stable round-trip tests).
+- 2026-07-10: Completed Priority 3 — library governance v1 (first-class compatibility columns, archive deactivates + list/restore, unreviewedPartSeverity policy, dropped unused `project_library_overrides`).
+- 2026-07-10: Completed Priority 2 — E2E journey matrix (auth, project/harness, canvas, validate/export, submit-for-quote, moderation, failure paths); CI trace artifact upload; details submit/lock UI.
+- 2026-07-10: Completed Priority 1 — rules depth v2 (ruleset/mode-gated electrical, compatibility, and manufacturability checks; `rules-2026.04`; project policy inactive/OOS severity overrides; compatibility attrs via library `customFieldValues` bridge until Priority 3).
 - 2026-07-10: Completed Priority 0 — hosted at https://github.com/Meckert0/Cursor; CI green (backend + frontend E2E). Also fixed XLSX export hash determinism, CI web dependency install, and frontend typecheck blockers uncovered by the first CI runs.
 - 2026-07-10: Added Priority 0: push the project to the existing `Cursor` GitHub repository and activate CI.
 - 2026-07-10: Rewrote near-term priorities as a codebase-grounded, scoped plan (rules depth v2 first, then E2E matrix, library governance, canvas decomposition, observability, notifications, datastore breadth). Flagged canvas localStorage-only persistence as a data-loss risk and added server-side draft saving to canvas scope.

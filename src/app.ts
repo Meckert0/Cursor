@@ -1,7 +1,11 @@
 import Fastify from "fastify";
 import cookie from "@fastify/cookie";
 import sensible from "@fastify/sensible";
+import { buildHealthReport } from "./infra/observability/health.js";
+import { metricsRegistry, type MetricsRegistry } from "./infra/observability/metrics.js";
+import { resolveCorrelationId, resolveRequestId } from "./infra/observability/request-ids.js";
 import type { ArtifactDownloadUrlResolver } from "./infra/storage/artifact-download-url-resolver.js";
+import type { ArtifactStorage } from "./infra/storage/artifact-storage.js";
 import type { ExportQueueService } from "./services/export-queue.js";
 import type { LockManager } from "./infra/locks/lock-manager.js";
 import type { Store } from "./infra/store/store.js";
@@ -9,6 +13,7 @@ import type { AuthStore } from "./infra/auth/auth-store.js";
 import { hashSessionToken, parseCookieHeader } from "./auth/session.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerDesignRoutes } from "./routes/designs.js";
+import { registerE2eHookRoutes } from "./routes/e2e-hooks.js";
 import { registerLibraryRoutes } from "./routes/library.js";
 import { registerProjectRoutes } from "./routes/projects.js";
 import { registerRevisionRoutes } from "./routes/revisions.js";
@@ -20,11 +25,16 @@ export function buildApp(deps: {
   lockManager: LockManager;
   exportQueue: ExportQueueService;
   artifactDownloadUrlResolver: ArtifactDownloadUrlResolver;
+  artifactStorage: ArtifactStorage;
+  metrics?: MetricsRegistry;
 }) {
+  const metrics = deps.metrics ?? metricsRegistry;
   const app = Fastify({
     logger: {
       level: process.env.LOG_LEVEL ?? "info"
-    }
+    },
+    genReqId: resolveRequestId,
+    requestIdHeader: "x-request-id"
   });
 
   app.register(sensible);
@@ -35,6 +45,22 @@ export function buildApp(deps: {
   app.decorate("lockManager", deps.lockManager);
   app.decorate("exportQueue", deps.exportQueue);
   app.decorate("artifactDownloadUrlResolver", deps.artifactDownloadUrlResolver);
+  app.decorate("artifactStorage", deps.artifactStorage);
+  app.decorate("metrics", metrics);
+  app.decorateRequest("correlationId", "");
+
+  deps.exportQueue.setLogger({
+    info: (obj, msg) => app.log.info(obj, msg),
+    warn: (obj, msg) => app.log.warn(obj, msg),
+    error: (obj, msg) => app.log.error(obj, msg)
+  });
+
+  app.addHook("onRequest", async (request, reply) => {
+    const correlationId = resolveCorrelationId(request.raw, request.id);
+    request.correlationId = correlationId;
+    reply.header("x-request-id", request.id);
+    reply.header("x-correlation-id", correlationId);
+  });
 
   app.addHook("onRequest", async (request) => {
     const rawUrl = request.raw.url;
@@ -80,8 +106,24 @@ export function buildApp(deps: {
     };
   });
 
-  app.get("/v1/health", async () => {
-    return { ok: true, service: "cdt-api", now: new Date().toISOString() };
+  app.get("/v1/health", async (_request, reply) => {
+    const report = await buildHealthReport({
+      store: app.store,
+      lockManager: app.lockManager,
+      artifactStorage: app.artifactStorage
+    });
+    if (!report.ok) {
+      return reply.code(503).send(report);
+    }
+    return report;
+  });
+
+  app.get("/v1/metrics", async () => {
+    return {
+      service: "cdt-api",
+      now: new Date().toISOString(),
+      metrics: app.metrics.snapshot()
+    };
   });
 
   registerAuthRoutes(app);
@@ -90,6 +132,10 @@ export function buildApp(deps: {
   registerDesignRoutes(app);
   registerRevisionRoutes(app);
   registerRulesetRoutes(app);
+
+  if ((process.env.ENABLE_E2E_HOOKS ?? "false").toLowerCase() === "true") {
+    registerE2eHookRoutes(app);
+  }
 
   return app;
 }
@@ -101,9 +147,12 @@ declare module "fastify" {
     lockManager: LockManager;
     exportQueue: ExportQueueService;
     artifactDownloadUrlResolver: ArtifactDownloadUrlResolver;
+    artifactStorage: ArtifactStorage;
+    metrics: MetricsRegistry;
   }
 
   interface FastifyRequest {
+    correlationId: string;
     currentSessionToken?: string;
     currentUser?: {
       id: string;

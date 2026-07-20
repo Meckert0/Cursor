@@ -1,4 +1,4 @@
-import { mkdir, unlink, writeFile } from "node:fs/promises";
+import { access, mkdir, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ArtifactStorage } from "./artifact-storage.js";
 
@@ -35,6 +35,20 @@ export class FileArtifactStorage implements ArtifactStorage {
         return;
       }
       throw error;
+    }
+  }
+
+  async healthCheck(): Promise<{ ok: boolean; backend: string; detail?: string }> {
+    try {
+      await mkdir(this.baseDirectory, { recursive: true });
+      await access(this.baseDirectory);
+      return { ok: true, backend: "file", detail: this.baseDirectory };
+    } catch (error) {
+      return {
+        ok: false,
+        backend: "file",
+        detail: error instanceof Error ? error.message : "Artifact directory is not accessible."
+      };
     }
   }
 }

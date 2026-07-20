@@ -24,6 +24,8 @@ import {
   BUILTIN_FIELDS_BY_CATEGORY,
   builtinFieldDefinitionId
 } from "../../domain/library-builtin-fields.js";
+import { promoteCompatibilityFields } from "../../domain/library-compatibility.js";
+import { hashDesignSnapshot } from "../../domain/snapshot-hash.js";
 import type { TablePreferencesRecord } from "../../domain/table-preferences.js";
 import type { Store } from "./store.js";
 
@@ -73,7 +75,41 @@ type StoredLibraryComponent = LibraryComponentRecord & {
   reviewedByUserId?: string;
   reviewedAt?: string;
   isArchived: boolean;
+  archivedAt?: string;
+  archivedByUserId?: string;
 };
+
+function toLibraryComponentRecord(component: StoredLibraryComponent): LibraryComponentRecord {
+  return {
+    id: component.id,
+    category: component.category,
+    family: component.family,
+    partNumber: component.partNumber,
+    description: component.description,
+    awg: component.awg,
+    color: component.color,
+    isActive: component.isActive,
+    isReviewed: component.isReviewed,
+    reviewedByUserId: component.reviewedByUserId,
+    reviewedAt: component.reviewedAt,
+    stockStatus: component.stockStatus,
+    compatibilityHints: component.compatibilityHints,
+    pinCount: component.pinCount,
+    pinIds: component.pinIds,
+    acceptedAwgMin: component.acceptedAwgMin,
+    acceptedAwgMax: component.acceptedAwgMax,
+    acceptedFamilies: component.acceptedFamilies,
+    isArchived: component.isArchived,
+    archivedAt: component.archivedAt,
+    archivedByUserId: component.archivedByUserId,
+    customFieldValues: component.customFieldValues ?? {},
+    createdByUserId: component.createdByUserId,
+    createdAt: component.createdAt,
+    lastEditedByUserId: component.lastEditedByUserId,
+    lastEditedAt: component.lastEditedAt,
+    updatedAt: component.updatedAt
+  };
+}
 
 export interface MemoryStoreState {
   uiCopySettings?: {
@@ -124,7 +160,14 @@ export class MemoryStore implements Store {
     this.rulesets.set("rules-2026.03", {
       version: "rules-2026.03",
       isActive: true,
-      notes: "Default ruleset.",
+      notes: "Default ruleset (topology + library existence).",
+      createdAt: now,
+      updatedAt: now
+    });
+    this.rulesets.set("rules-2026.04", {
+      version: "rules-2026.04",
+      isActive: false,
+      notes: "Manufacturability ruleset (compatibility + strict inactive/OOS).",
       createdAt: now,
       updatedAt: now
     });
@@ -134,15 +177,37 @@ export class MemoryStore implements Store {
         customFieldValues: component.customFieldValues ?? {},
         enteredByUserId: "seed",
         enteredAt: component.updatedAt,
-        isReviewed: true,
-        reviewedByUserId: "seed",
-        reviewedAt: component.updatedAt,
+        isReviewed: component.isReviewed,
+        reviewedByUserId: component.reviewedByUserId ?? "seed",
+        reviewedAt: component.reviewedAt ?? component.updatedAt,
         isArchived: false
       });
     }
     for (const definition of getDefaultFieldDefinitions()) {
       this.libraryFieldDefinitions.set(definition.id, definition);
     }
+  }
+
+  private backfillDefaultLibraryComponents(): void {
+    for (const component of DEFAULT_LIBRARY_COMPONENTS) {
+      if (this.libraryComponents.has(component.id)) {
+        continue;
+      }
+      this.libraryComponents.set(component.id, {
+        ...component,
+        customFieldValues: component.customFieldValues ?? {},
+        enteredByUserId: "seed",
+        enteredAt: component.updatedAt,
+        isReviewed: component.isReviewed,
+        reviewedByUserId: component.reviewedByUserId ?? "seed",
+        reviewedAt: component.reviewedAt ?? component.updatedAt,
+        isArchived: false
+      });
+    }
+  }
+
+  async ensureDefaultLibrarySeeded(): Promise<void> {
+    this.backfillDefaultLibraryComponents();
   }
 
   static fromState(state: MemoryStoreState): MemoryStore {
@@ -261,6 +326,7 @@ export class MemoryStore implements Store {
         lastEditedAt: component.lastEditedAt ?? component.updatedAt
       });
     }
+    this.backfillDefaultLibraryComponents();
 
     this.libraryFieldDefinitions.clear();
     const loadedDefinitions = state.libraryFieldDefinitions ?? getDefaultFieldDefinitions();
@@ -639,10 +705,17 @@ export class MemoryStore implements Store {
   async updateRevisionSnapshot(input: {
     revisionId: string;
     snapshot: Revision["snapshot"];
+    expectedSnapshotHash?: string;
   }): Promise<Revision | null> {
     const existing = this.revisions.get(input.revisionId);
     if (!existing) {
       return null;
+    }
+    if (input.expectedSnapshotHash !== undefined) {
+      const currentHash = hashDesignSnapshot(existing.snapshot);
+      if (currentHash !== input.expectedSnapshotHash) {
+        throw new Error("SNAPSHOT_MISMATCH");
+      }
     }
     const updatedRevision: Revision = {
       ...existing,
@@ -903,6 +976,9 @@ export class MemoryStore implements Store {
     projectId: string;
     defaultRulesetVersion?: string;
     allowedRulesetVersions: string[];
+    inactivePartSeverity?: "error" | "warning";
+    outOfStockSeverity?: "error" | "warning" | "info";
+    unreviewedPartSeverity?: "error" | "warning" | "info";
   }): Promise<ProjectRulesetPolicy> {
     const now = new Date().toISOString();
     const existing = this.projectRulesetPolicies.get(input.projectId);
@@ -910,6 +986,9 @@ export class MemoryStore implements Store {
       projectId: input.projectId,
       defaultRulesetVersion: input.defaultRulesetVersion,
       allowedRulesetVersions: [...input.allowedRulesetVersions].sort((left, right) => left.localeCompare(right)),
+      inactivePartSeverity: input.inactivePartSeverity,
+      outOfStockSeverity: input.outOfStockSeverity,
+      unreviewedPartSeverity: input.unreviewedPartSeverity,
       createdAt: existing?.createdAt ?? now,
       updatedAt: now
     };
@@ -986,36 +1065,47 @@ export class MemoryStore implements Store {
       const now = new Date().toISOString();
       for (const entry of accepted) {
         const existing = entry.existing;
+        const item = promoteCompatibilityFields(entry.item);
         const editedReviewedEntry =
           Boolean(existing?.isReviewed) &&
           Boolean(
             existing &&
-              (existing.category !== entry.item.category ||
-                existing.family !== entry.item.family.trim() ||
-                existing.partNumber !== entry.item.partNumber.trim() ||
-                existing.description !== entry.item.description.trim() ||
-                existing.awg !== entry.item.awg?.trim() ||
-                existing.color !== entry.item.color?.trim() ||
-                existing.isActive !== entry.item.isActive ||
-                existing.stockStatus !== entry.item.stockStatus ||
-                JSON.stringify(existing.compatibilityHints) !== JSON.stringify(entry.item.compatibilityHints))
+              (existing.category !== item.category ||
+                existing.family !== item.family.trim() ||
+                existing.partNumber !== item.partNumber.trim() ||
+                existing.description !== item.description.trim() ||
+                existing.awg !== item.awg?.trim() ||
+                existing.color !== item.color?.trim() ||
+                existing.isActive !== item.isActive ||
+                existing.stockStatus !== item.stockStatus ||
+                JSON.stringify(existing.compatibilityHints) !== JSON.stringify(item.compatibilityHints) ||
+                existing.pinCount !== item.pinCount ||
+                JSON.stringify(existing.pinIds ?? []) !== JSON.stringify(item.pinIds ?? []) ||
+                existing.acceptedAwgMin !== item.acceptedAwgMin ||
+                existing.acceptedAwgMax !== item.acceptedAwgMax ||
+                JSON.stringify(existing.acceptedFamilies ?? []) !== JSON.stringify(item.acceptedFamilies ?? []))
           );
-        const isReviewed = editedReviewedEntry ? false : entry.item.isReviewed;
+        const isReviewed = editedReviewedEntry ? false : item.isReviewed;
         this.libraryComponents.set(entry.componentId, {
           id: entry.componentId,
-          category: entry.item.category,
-          family: entry.item.family.trim(),
-          partNumber: entry.item.partNumber.trim(),
-          description: entry.item.description.trim(),
-          awg: entry.item.awg?.trim(),
-          color: entry.item.color?.trim(),
-          isActive: entry.item.isActive,
+          category: item.category,
+          family: item.family.trim(),
+          partNumber: item.partNumber.trim(),
+          description: item.description.trim(),
+          awg: item.awg?.trim(),
+          color: item.color?.trim(),
+          isActive: item.isActive,
           isReviewed,
-          reviewedByUserId: isReviewed ? entry.item.reviewedByUserId ?? input.requestedByUserId : undefined,
-          reviewedAt: isReviewed ? entry.item.reviewedAt ?? now : undefined,
-          stockStatus: entry.item.stockStatus,
-          compatibilityHints: entry.item.compatibilityHints,
-          customFieldValues: entry.item.customFieldValues ?? existing?.customFieldValues ?? {},
+          reviewedByUserId: isReviewed ? item.reviewedByUserId ?? input.requestedByUserId : undefined,
+          reviewedAt: isReviewed ? item.reviewedAt ?? now : undefined,
+          stockStatus: item.stockStatus,
+          compatibilityHints: item.compatibilityHints,
+          pinCount: item.pinCount,
+          pinIds: item.pinIds,
+          acceptedAwgMin: item.acceptedAwgMin,
+          acceptedAwgMax: item.acceptedAwgMax,
+          acceptedFamilies: item.acceptedFamilies,
+          customFieldValues: item.customFieldValues ?? existing?.customFieldValues ?? {},
           createdByUserId: existing?.createdByUserId ?? input.requestedByUserId,
           createdAt: existing?.createdAt ?? now,
           lastEditedByUserId: input.requestedByUserId,
@@ -1023,7 +1113,9 @@ export class MemoryStore implements Store {
           updatedAt: now,
           enteredByUserId: existing?.enteredByUserId ?? input.requestedByUserId,
           enteredAt: existing?.enteredAt ?? now,
-          isArchived: false
+          isArchived: false,
+          archivedAt: undefined,
+          archivedByUserId: undefined
         });
       }
     }
@@ -1059,27 +1151,7 @@ export class MemoryStore implements Store {
           (component.isActive || input.canViewInactive) &&
           (component.isReviewed || component.enteredByUserId === input.requestingUserId || input.canViewAllUnreviewed)
       )
-      .map((component) => ({
-        id: component.id,
-        category: component.category,
-        family: component.family,
-        partNumber: component.partNumber,
-        description: component.description,
-        awg: component.awg,
-        color: component.color,
-        isActive: component.isActive,
-        isReviewed: component.isReviewed,
-        reviewedByUserId: component.reviewedByUserId,
-        reviewedAt: component.reviewedAt,
-        stockStatus: component.stockStatus,
-        compatibilityHints: component.compatibilityHints,
-        customFieldValues: component.customFieldValues ?? {},
-        createdByUserId: component.createdByUserId,
-        createdAt: component.createdAt,
-        lastEditedByUserId: component.lastEditedByUserId,
-        lastEditedAt: component.lastEditedAt,
-        updatedAt: component.updatedAt
-      }))
+      .map(toLibraryComponentRecord)
       .sort((left, right) => left.partNumber.localeCompare(right.partNumber));
   }
 
@@ -1101,27 +1173,7 @@ export class MemoryStore implements Store {
     if (!visible) {
       return null;
     }
-    return {
-      id: component.id,
-      category: component.category,
-      family: component.family,
-      partNumber: component.partNumber,
-      description: component.description,
-      awg: component.awg,
-      color: component.color,
-      isActive: component.isActive,
-      isReviewed: component.isReviewed,
-      reviewedByUserId: component.reviewedByUserId,
-      reviewedAt: component.reviewedAt,
-      stockStatus: component.stockStatus,
-      compatibilityHints: component.compatibilityHints,
-      customFieldValues: component.customFieldValues ?? {},
-      createdByUserId: component.createdByUserId,
-      createdAt: component.createdAt,
-      lastEditedByUserId: component.lastEditedByUserId,
-      lastEditedAt: component.lastEditedAt,
-      updatedAt: component.updatedAt
-    };
+    return toLibraryComponentRecord(component);
   }
 
   async setLibraryComponentReview(input: {
@@ -1145,31 +1197,10 @@ export class MemoryStore implements Store {
       updatedAt: now
     };
     this.libraryComponents.set(input.componentId, updated);
-    return {
-      id: updated.id,
-      category: updated.category,
-      family: updated.family,
-      partNumber: updated.partNumber,
-      description: updated.description,
-      awg: updated.awg,
-      color: updated.color,
-      isActive: updated.isActive,
-      isReviewed: updated.isReviewed,
-      reviewedByUserId: updated.reviewedByUserId,
-      reviewedAt: updated.reviewedAt,
-      stockStatus: updated.stockStatus,
-      compatibilityHints: updated.compatibilityHints,
-      customFieldValues: updated.customFieldValues ?? {},
-      createdByUserId: updated.createdByUserId,
-      createdAt: updated.createdAt,
-      lastEditedByUserId: updated.lastEditedByUserId,
-      lastEditedAt: updated.lastEditedAt,
-      updatedAt: updated.updatedAt
-    };
+    return toLibraryComponentRecord(updated);
   }
 
   async archiveLibraryComponent(input: { componentId: string; archivedByUserId: string }): Promise<LibraryComponentRecord | null> {
-    void input.archivedByUserId;
     const component = this.libraryComponents.get(input.componentId);
     if (!component || component.isArchived) {
       return null;
@@ -1178,32 +1209,47 @@ export class MemoryStore implements Store {
     const updated: StoredLibraryComponent = {
       ...component,
       isArchived: true,
+      isActive: false,
+      archivedAt: now,
+      archivedByUserId: input.archivedByUserId,
       lastEditedByUserId: input.archivedByUserId,
       lastEditedAt: now,
       updatedAt: now
     };
     this.libraryComponents.set(input.componentId, updated);
-    return {
-      id: updated.id,
-      category: updated.category,
-      family: updated.family,
-      partNumber: updated.partNumber,
-      description: updated.description,
-      awg: updated.awg,
-      color: updated.color,
-      isActive: updated.isActive,
-      isReviewed: updated.isReviewed,
-      reviewedByUserId: updated.reviewedByUserId,
-      reviewedAt: updated.reviewedAt,
-      stockStatus: updated.stockStatus,
-      compatibilityHints: updated.compatibilityHints,
-      customFieldValues: updated.customFieldValues ?? {},
-      createdByUserId: updated.createdByUserId,
-      createdAt: updated.createdAt,
-      lastEditedByUserId: updated.lastEditedByUserId,
-      lastEditedAt: updated.lastEditedAt,
-      updatedAt: updated.updatedAt
+    return toLibraryComponentRecord(updated);
+  }
+
+  async listArchivedLibraryComponents(): Promise<LibraryComponentRecord[]> {
+    return Array.from(this.libraryComponents.values())
+      .filter((component) => component.isArchived === true)
+      .map(toLibraryComponentRecord)
+      .sort((left, right) => left.partNumber.localeCompare(right.partNumber));
+  }
+
+  async restoreLibraryComponent(input: {
+    componentId: string;
+    restoredByUserId: string;
+    reactivate?: boolean;
+  }): Promise<LibraryComponentRecord | null> {
+    const component = this.libraryComponents.get(input.componentId);
+    if (!component || !component.isArchived) {
+      return null;
+    }
+    const now = new Date().toISOString();
+    const reactivate = input.reactivate !== false;
+    const updated: StoredLibraryComponent = {
+      ...component,
+      isArchived: false,
+      archivedAt: undefined,
+      archivedByUserId: undefined,
+      isActive: reactivate ? true : component.isActive,
+      lastEditedByUserId: input.restoredByUserId,
+      lastEditedAt: now,
+      updatedAt: now
     };
+    this.libraryComponents.set(input.componentId, updated);
+    return toLibraryComponentRecord(updated);
   }
 
   async deleteLibraryComponent(input: { componentId: string }): Promise<boolean> {
@@ -1228,6 +1274,11 @@ export class MemoryStore implements Store {
     reviewedAt?: string;
     stockStatus?: LibraryComponentRecord["stockStatus"];
     compatibilityHints?: string[];
+    pinCount?: number;
+    pinIds?: string[];
+    acceptedAwgMin?: number;
+    acceptedAwgMax?: number;
+    acceptedFamilies?: string[];
     createdByUserId?: string;
     createdAt?: string;
     lastEditedByUserId?: string;
@@ -1244,6 +1295,15 @@ export class MemoryStore implements Store {
     if (component.category === "wire" && (!nextAwg || !nextColor)) {
       throw new Error("WIRE_FIELDS_REQUIRED");
     }
+    const nextCustomFieldValues = input.customFieldValues ?? component.customFieldValues ?? {};
+    const promoted = promoteCompatibilityFields({
+      pinCount: input.pinCount ?? component.pinCount,
+      pinIds: input.pinIds ?? component.pinIds,
+      acceptedAwgMin: input.acceptedAwgMin ?? component.acceptedAwgMin,
+      acceptedAwgMax: input.acceptedAwgMax ?? component.acceptedAwgMax,
+      acceptedFamilies: input.acceptedFamilies ?? component.acceptedFamilies,
+      customFieldValues: nextCustomFieldValues
+    });
     const nextIsReviewed = input.isReviewed ?? component.isReviewed;
     const nextReviewedByUserId = nextIsReviewed
       ? (input.reviewedByUserId ?? component.reviewedByUserId)
@@ -1262,7 +1322,12 @@ export class MemoryStore implements Store {
       reviewedAt: nextReviewedAt,
       stockStatus: input.stockStatus ?? component.stockStatus,
       compatibilityHints: input.compatibilityHints ?? component.compatibilityHints,
-      customFieldValues: input.customFieldValues ?? component.customFieldValues ?? {},
+      pinCount: promoted.pinCount,
+      pinIds: promoted.pinIds,
+      acceptedAwgMin: promoted.acceptedAwgMin,
+      acceptedAwgMax: promoted.acceptedAwgMax,
+      acceptedFamilies: promoted.acceptedFamilies,
+      customFieldValues: nextCustomFieldValues,
       createdByUserId: input.createdByUserId ?? component.createdByUserId,
       createdAt: input.createdAt ?? component.createdAt,
       lastEditedByUserId: input.lastEditedByUserId ?? input.editedByUserId ?? component.lastEditedByUserId,
@@ -1270,27 +1335,7 @@ export class MemoryStore implements Store {
       updatedAt: new Date().toISOString()
     };
     this.libraryComponents.set(input.componentId, updated);
-    return {
-      id: updated.id,
-      category: updated.category,
-      family: updated.family,
-      partNumber: updated.partNumber,
-      description: updated.description,
-      awg: updated.awg,
-      color: updated.color,
-      isActive: updated.isActive,
-      isReviewed: updated.isReviewed,
-      reviewedByUserId: updated.reviewedByUserId,
-      reviewedAt: updated.reviewedAt,
-      stockStatus: updated.stockStatus,
-      compatibilityHints: updated.compatibilityHints,
-      customFieldValues: updated.customFieldValues ?? {},
-      createdByUserId: updated.createdByUserId,
-      createdAt: updated.createdAt,
-      lastEditedByUserId: updated.lastEditedByUserId,
-      lastEditedAt: updated.lastEditedAt,
-      updatedAt: updated.updatedAt
-    };
+    return toLibraryComponentRecord(updated);
   }
 
   async listLibraryFieldDefinitions(input: {
@@ -1399,25 +1444,7 @@ export class MemoryStore implements Store {
       )
       .sort((left, right) => left.enteredAt.localeCompare(right.enteredAt))
       .map((component) => ({
-        id: component.id,
-        category: component.category,
-        family: component.family,
-        partNumber: component.partNumber,
-        description: component.description,
-        awg: component.awg,
-        color: component.color,
-        isActive: component.isActive,
-        isReviewed: component.isReviewed,
-        reviewedByUserId: component.reviewedByUserId,
-        reviewedAt: component.reviewedAt,
-        stockStatus: component.stockStatus,
-        compatibilityHints: component.compatibilityHints,
-        customFieldValues: component.customFieldValues ?? {},
-        createdByUserId: component.createdByUserId,
-        createdAt: component.createdAt,
-        lastEditedByUserId: component.lastEditedByUserId,
-        lastEditedAt: component.lastEditedAt,
-        updatedAt: component.updatedAt,
+        ...toLibraryComponentRecord(component),
         enteredByUserId: component.enteredByUserId,
         enteredAt: component.enteredAt
       }));

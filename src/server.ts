@@ -7,6 +7,7 @@ import { buildApp } from "./app.js";
 import type { LockManager } from "./infra/locks/lock-manager.js";
 import { MemoryLockManager } from "./infra/locks/memory-lock-manager.js";
 import { RedisLockManager } from "./infra/locks/redis-lock-manager.js";
+import { metricsRegistry } from "./infra/observability/metrics.js";
 import {
   PassthroughArtifactDownloadUrlResolver,
   S3PresigningArtifactDownloadUrlResolver,
@@ -54,6 +55,8 @@ async function main() {
     store = new SqliteStore(sqlitePath);
     authStore = new SqliteAuthStore(sqlitePath);
   }
+
+  await store.ensureDefaultLibrarySeeded();
 
   if (redisUrl) {
     redis = new Redis(redisUrl, { lazyConnect: true, maxRetriesPerRequest: 2 });
@@ -113,7 +116,7 @@ async function main() {
     artifactStorage = new FileArtifactStorage(artifactsDirectory);
   }
 
-  const exportQueue = new ExportQueueService(store, artifactStorage);
+  const exportQueue = new ExportQueueService(store, artifactStorage, { metrics: metricsRegistry });
   const recovery = await exportQueue.recoverOrphanedExports();
   if (recovery.recovered > 0 || recovery.scheduled > 0) {
     console.info(
@@ -125,7 +128,15 @@ async function main() {
     console.info(`Export retention cleanup deleted ${retention.deleted} expired artifact(s).`);
   }
 
-  const app = buildApp({ store, authStore, lockManager, exportQueue, artifactDownloadUrlResolver });
+  const app = buildApp({
+    store,
+    authStore,
+    lockManager,
+    exportQueue,
+    artifactDownloadUrlResolver,
+    artifactStorage,
+    metrics: metricsRegistry
+  });
   const port = Number(process.env.PORT ?? 3000);
   const host = "0.0.0.0";
 

@@ -21,12 +21,20 @@ import type {
   LibraryReviewQueueRecord,
   LibraryFieldDefinitionRecord
 } from "../../domain/library.js";
+import { DEFAULT_LIBRARY_COMPONENTS } from "../../domain/library.js";
 import {
   BUILTIN_FIELDS_BY_CATEGORY,
   builtinFieldDefinitionId
 } from "../../domain/library-builtin-fields.js";
+import { promoteCompatibilityFields } from "../../domain/library-compatibility.js";
+import { hashDesignSnapshot } from "../../domain/snapshot-hash.js";
 import type { TablePreferencesRecord } from "../../domain/table-preferences.js";
 import type { Store } from "./store.js";
+
+const LIBRARY_COMPONENT_COLUMNS = `id, category, family, part_number, description, awg, color, is_active, stock_status, compatibility_hints_json,
+              pin_count, pin_ids_json, accepted_awg_min, accepted_awg_max, accepted_families_json,
+              entered_by_user_id, entered_at, last_edited_by_user_id, last_edited_at, is_reviewed, reviewed_by_user_id, reviewed_at,
+              is_archived, archived_at, archived_by_user_id, updated_at`;
 
 const EMPTY_SNAPSHOT: DesignSnapshot = {
   connectors: [],
@@ -150,6 +158,9 @@ type ProjectRulesetPolicyRow = {
   project_id: string;
   default_ruleset_version: string | null;
   allowed_ruleset_versions: string[];
+  inactive_part_severity: "error" | "warning" | null;
+  out_of_stock_severity: "error" | "warning" | "info" | null;
+  unreviewed_part_severity: "error" | "warning" | "info" | null;
   created_at: Date;
   updated_at: Date;
 };
@@ -165,6 +176,11 @@ type LibraryComponentRow = {
   is_active: boolean;
   stock_status: "in_stock" | "low_stock" | "out_of_stock";
   compatibility_hints_json: string[];
+  pin_count: number | null;
+  pin_ids_json: string[] | null;
+  accepted_awg_min: number | null;
+  accepted_awg_max: number | null;
+  accepted_families_json: string[] | null;
   entered_by_user_id: string;
   entered_at: Date;
   last_edited_by_user_id: string | null;
@@ -173,6 +189,8 @@ type LibraryComponentRow = {
   reviewed_by_user_id: string | null;
   reviewed_at: Date | null;
   is_archived: boolean;
+  archived_at: Date | null;
+  archived_by_user_id: string | null;
   updated_at: Date;
 };
 
@@ -347,9 +365,19 @@ function mapProjectRulesetPolicy(row: ProjectRulesetPolicyRow): ProjectRulesetPo
     projectId: row.project_id,
     defaultRulesetVersion: row.default_ruleset_version ?? undefined,
     allowedRulesetVersions: row.allowed_ruleset_versions,
+    inactivePartSeverity: row.inactive_part_severity ?? undefined,
+    outOfStockSeverity: row.out_of_stock_severity ?? undefined,
+    unreviewedPartSeverity: row.unreviewed_part_severity ?? undefined,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString()
   };
+}
+
+function optionalStringArray(value: string[] | null | undefined): string[] | undefined {
+  if (!value || value.length === 0) {
+    return undefined;
+  }
+  return value;
 }
 
 function mapLibraryComponent(
@@ -370,6 +398,14 @@ function mapLibraryComponent(
     reviewedAt: row.reviewed_at?.toISOString(),
     stockStatus: row.stock_status,
     compatibilityHints: row.compatibility_hints_json ?? [],
+    pinCount: row.pin_count ?? undefined,
+    pinIds: optionalStringArray(row.pin_ids_json),
+    acceptedAwgMin: row.accepted_awg_min ?? undefined,
+    acceptedAwgMax: row.accepted_awg_max ?? undefined,
+    acceptedFamilies: optionalStringArray(row.accepted_families_json),
+    isArchived: row.is_archived,
+    archivedAt: row.archived_at?.toISOString(),
+    archivedByUserId: row.archived_by_user_id ?? undefined,
     createdByUserId: row.entered_by_user_id,
     createdAt: row.entered_at.toISOString(),
     lastEditedByUserId: row.last_edited_by_user_id ?? row.entered_by_user_id,
@@ -384,25 +420,7 @@ function mapLibraryReviewQueueRecord(
   customFieldValues: Record<string, string> = {}
 ): LibraryReviewQueueRecord {
   return {
-    id: row.id,
-    category: row.category,
-    family: row.family,
-    partNumber: row.part_number,
-    description: row.description,
-    awg: row.awg ?? undefined,
-    color: row.color ?? undefined,
-    isActive: row.is_active,
-    isReviewed: row.is_reviewed,
-    reviewedByUserId: row.reviewed_by_user_id ?? undefined,
-    reviewedAt: row.reviewed_at?.toISOString(),
-    stockStatus: row.stock_status,
-    compatibilityHints: row.compatibility_hints_json ?? [],
-    createdByUserId: row.entered_by_user_id,
-    createdAt: row.entered_at.toISOString(),
-    lastEditedByUserId: row.last_edited_by_user_id ?? row.entered_by_user_id,
-    lastEditedAt: (row.last_edited_at ?? row.entered_at).toISOString(),
-    updatedAt: row.updated_at.toISOString(),
-    customFieldValues,
+    ...mapLibraryComponent(row, customFieldValues),
     enteredByUserId: row.entered_by_user_id,
     enteredAt: row.entered_at.toISOString()
   };
@@ -664,7 +682,6 @@ export class PostgresStore implements Store {
       await client.query(`DELETE FROM designs WHERE project_id = $1`, [projectId]);
       await client.query(`DELETE FROM project_members WHERE project_id = $1`, [projectId]);
       await client.query(`DELETE FROM project_ruleset_policies WHERE project_id = $1`, [projectId]);
-      await client.query(`DELETE FROM project_library_overrides WHERE project_id = $1`, [projectId]);
       await client.query(`DELETE FROM artifact_manifests WHERE project_id = $1`, [projectId]);
 
       const deleteProjectResult = await client.query<{ id: string }>(`DELETE FROM projects WHERE id = $1 RETURNING id`, [projectId]);
@@ -889,10 +906,30 @@ export class PostgresStore implements Store {
   async updateRevisionSnapshot(input: {
     revisionId: string;
     snapshot: DesignSnapshot;
+    expectedSnapshotHash?: string;
   }): Promise<Revision | null> {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
+      const existingResult = await client.query<RevisionRow>(
+        `SELECT id, design_id, revision_number, base_revision_id, created_by, created_at, ruleset_version, library_version, snapshot
+         FROM design_revisions
+         WHERE id = $1
+         FOR UPDATE`,
+        [input.revisionId]
+      );
+      if (!existingResult.rows[0]) {
+        await client.query("COMMIT");
+        return null;
+      }
+      const existing = mapRevision(existingResult.rows[0]);
+      if (input.expectedSnapshotHash !== undefined) {
+        const currentHash = hashDesignSnapshot(existing.snapshot);
+        if (currentHash !== input.expectedSnapshotHash) {
+          await client.query("ROLLBACK");
+          throw new Error("SNAPSHOT_MISMATCH");
+        }
+      }
       const result = await client.query<RevisionRow>(
         `UPDATE design_revisions
          SET snapshot = $2::jsonb
@@ -1318,7 +1355,8 @@ export class PostgresStore implements Store {
 
   async getProjectRulesetPolicy(projectId: string): Promise<ProjectRulesetPolicy | null> {
     const result = await this.pool.query<ProjectRulesetPolicyRow>(
-      `SELECT project_id, default_ruleset_version, allowed_ruleset_versions, created_at, updated_at
+      `SELECT project_id, default_ruleset_version, allowed_ruleset_versions,
+              inactive_part_severity, out_of_stock_severity, unreviewed_part_severity, created_at, updated_at
        FROM project_ruleset_policies
        WHERE project_id = $1`,
       [projectId]
@@ -1330,6 +1368,9 @@ export class PostgresStore implements Store {
     projectId: string;
     defaultRulesetVersion?: string;
     allowedRulesetVersions: string[];
+    inactivePartSeverity?: "error" | "warning";
+    outOfStockSeverity?: "error" | "warning" | "info";
+    unreviewedPartSeverity?: "error" | "warning" | "info";
   }): Promise<ProjectRulesetPolicy> {
     const projectExists = await this.pool.query<{ exists: boolean }>(
       `SELECT EXISTS(SELECT 1 FROM projects WHERE id = $1) AS exists`,
@@ -1341,15 +1382,27 @@ export class PostgresStore implements Store {
 
     const result = await this.pool.query<ProjectRulesetPolicyRow>(
       `INSERT INTO project_ruleset_policies (
-         project_id, default_ruleset_version, allowed_ruleset_versions, created_at, updated_at
-       ) VALUES ($1, $2, $3, NOW(), NOW())
+         project_id, default_ruleset_version, allowed_ruleset_versions,
+         inactive_part_severity, out_of_stock_severity, unreviewed_part_severity, created_at, updated_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
        ON CONFLICT (project_id)
        DO UPDATE SET
          default_ruleset_version = EXCLUDED.default_ruleset_version,
          allowed_ruleset_versions = EXCLUDED.allowed_ruleset_versions,
+         inactive_part_severity = EXCLUDED.inactive_part_severity,
+         out_of_stock_severity = EXCLUDED.out_of_stock_severity,
+         unreviewed_part_severity = EXCLUDED.unreviewed_part_severity,
          updated_at = NOW()
-       RETURNING project_id, default_ruleset_version, allowed_ruleset_versions, created_at, updated_at`,
-      [input.projectId, input.defaultRulesetVersion ?? null, input.allowedRulesetVersions]
+       RETURNING project_id, default_ruleset_version, allowed_ruleset_versions,
+                 inactive_part_severity, out_of_stock_severity, unreviewed_part_severity, created_at, updated_at`,
+      [
+        input.projectId,
+        input.defaultRulesetVersion ?? null,
+        input.allowedRulesetVersions,
+        input.inactivePartSeverity ?? null,
+        input.outOfStockSeverity ?? null,
+        input.unreviewedPartSeverity ?? null
+      ]
     );
     return mapProjectRulesetPolicy(result.rows[0]);
   }
@@ -1402,7 +1455,7 @@ export class PostgresStore implements Store {
 
       for (let index = 0; index < input.items.length; index += 1) {
         const rowNumber = index + 1;
-        const item = input.items[index];
+        const item = promoteCompatibilityFields(input.items[index]);
         const componentId = item.id?.trim() || `cmp-${item.category}-${crypto.randomUUID().slice(0, 8)}`;
         const candidateKey = `${item.category}:${item.family.trim().toLowerCase()}:${item.partNumber.trim().toLowerCase()}`;
         if (seenKeys.has(candidateKey)) {
@@ -1461,8 +1514,7 @@ export class PostgresStore implements Store {
 
         accepted += 1;
         const existingResult = await client.query<LibraryComponentRow>(
-          `SELECT id, category, family, part_number, description, awg, color, is_active, stock_status, compatibility_hints_json,
-                  entered_by_user_id, entered_at, last_edited_by_user_id, last_edited_at, is_reviewed, reviewed_by_user_id, reviewed_at, is_archived, updated_at
+          `SELECT ${LIBRARY_COMPONENT_COLUMNS}
            FROM library_components
            WHERE id = $1`,
           [componentId]
@@ -1483,7 +1535,12 @@ export class PostgresStore implements Store {
                 (existing.color ?? undefined) !== item.color?.trim() ||
                 existing.is_active !== item.isActive ||
                 existing.stock_status !== item.stockStatus ||
-                JSON.stringify(existing.compatibility_hints_json ?? []) !== JSON.stringify(item.compatibilityHints ?? []))
+                JSON.stringify(existing.compatibility_hints_json ?? []) !== JSON.stringify(item.compatibilityHints ?? []) ||
+                (existing.pin_count ?? undefined) !== item.pinCount ||
+                JSON.stringify(existing.pin_ids_json ?? []) !== JSON.stringify(item.pinIds ?? []) ||
+                (existing.accepted_awg_min ?? undefined) !== item.acceptedAwgMin ||
+                (existing.accepted_awg_max ?? undefined) !== item.acceptedAwgMax ||
+                JSON.stringify(existing.accepted_families_json ?? []) !== JSON.stringify(item.acceptedFamilies ?? []))
           );
         const effectiveIsReviewed = editedReviewedEntry ? false : item.isReviewed;
         const normalizedReviewedAt = effectiveIsReviewed ? new Date(item.reviewedAt ?? now.toISOString()) : null;
@@ -1492,8 +1549,13 @@ export class PostgresStore implements Store {
           await client.query(
             `INSERT INTO library_components (
                id, category, family, part_number, description, awg, color, is_active, stock_status, compatibility_hints_json,
+               pin_count, pin_ids_json, accepted_awg_min, accepted_awg_max, accepted_families_json,
                entered_by_user_id, entered_at, last_edited_by_user_id, last_edited_at, is_reviewed, reviewed_by_user_id, reviewed_at, is_archived, updated_at
-             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $16, $12, $13, $14, $15, FALSE, $12)
+             ) VALUES (
+               $1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb,
+               $11, $12::jsonb, $13, $14, $15::jsonb,
+               $16, $17, $21, $17, $18, $19, $20, FALSE, $17
+             )
              ON CONFLICT (id)
              DO UPDATE SET
                category = EXCLUDED.category,
@@ -1505,6 +1567,11 @@ export class PostgresStore implements Store {
                is_active = EXCLUDED.is_active,
                stock_status = EXCLUDED.stock_status,
                compatibility_hints_json = EXCLUDED.compatibility_hints_json,
+               pin_count = EXCLUDED.pin_count,
+               pin_ids_json = EXCLUDED.pin_ids_json,
+               accepted_awg_min = EXCLUDED.accepted_awg_min,
+               accepted_awg_max = EXCLUDED.accepted_awg_max,
+               accepted_families_json = EXCLUDED.accepted_families_json,
                is_reviewed = EXCLUDED.is_reviewed,
                reviewed_by_user_id = EXCLUDED.reviewed_by_user_id,
                reviewed_at = EXCLUDED.reviewed_at,
@@ -1522,6 +1589,11 @@ export class PostgresStore implements Store {
               item.isActive,
               item.stockStatus,
               JSON.stringify(item.compatibilityHints ?? []),
+              item.pinCount ?? null,
+              JSON.stringify(item.pinIds ?? []),
+              item.acceptedAwgMin ?? null,
+              item.acceptedAwgMax ?? null,
+              JSON.stringify(item.acceptedFamilies ?? []),
               input.requestedByUserId,
               now,
               effectiveIsReviewed,
@@ -1615,8 +1687,7 @@ export class PostgresStore implements Store {
     canViewInactive: boolean;
   }): Promise<LibraryComponentRecord[]> {
     const result = await this.pool.query<LibraryComponentRow>(
-      `SELECT id, category, family, part_number, description, awg, color, is_active, stock_status, compatibility_hints_json,
-              entered_by_user_id, entered_at, last_edited_by_user_id, last_edited_at, is_reviewed, reviewed_by_user_id, reviewed_at, is_archived, updated_at
+      `SELECT ${LIBRARY_COMPONENT_COLUMNS}
        FROM library_components
        WHERE is_archived = FALSE
          AND (is_active = TRUE OR $3 = TRUE)
@@ -1633,6 +1704,76 @@ export class PostgresStore implements Store {
     return result.rows.map((row) => mapLibraryComponent(row, valueMap.get(row.id) ?? {}));
   }
 
+  async ensureDefaultLibrarySeeded(): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      for (const component of DEFAULT_LIBRARY_COMPONENTS) {
+        const existing = await client.query<{ id: string }>(
+          `SELECT id FROM library_components WHERE id = $1`,
+          [component.id]
+        );
+        if (existing.rows.length > 0) {
+          continue;
+        }
+        try {
+          await client.query(
+            `INSERT INTO library_components (
+               id, category, family, part_number, description, awg, color, is_active, stock_status, compatibility_hints_json,
+               pin_count, pin_ids_json, accepted_awg_min, accepted_awg_max, accepted_families_json,
+               entered_by_user_id, entered_at, last_edited_by_user_id, last_edited_at, is_reviewed, reviewed_by_user_id, reviewed_at,
+               is_archived, updated_at
+             ) VALUES (
+               $1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb,
+               $11, $12::jsonb, $13, $14, $15::jsonb,
+               $16, $17::timestamptz, $16, $17::timestamptz, $18, $19, $20::timestamptz,
+               FALSE, $17::timestamptz
+             )`,
+            [
+              component.id,
+              component.category,
+              component.family,
+              component.partNumber,
+              component.description,
+              component.awg ?? null,
+              component.color ?? null,
+              component.isActive,
+              component.stockStatus,
+              JSON.stringify(component.compatibilityHints ?? []),
+              component.pinCount ?? null,
+              JSON.stringify(component.pinIds ?? []),
+              component.acceptedAwgMin ?? null,
+              component.acceptedAwgMax ?? null,
+              JSON.stringify(component.acceptedFamilies ?? []),
+              component.createdByUserId,
+              component.createdAt,
+              component.isReviewed,
+              component.reviewedByUserId ?? null,
+              component.reviewedAt ?? null
+            ]
+          );
+        } catch (error) {
+          // Skip when an existing non-seed row already owns the same active part key.
+          if (
+            typeof error === "object" &&
+            error !== null &&
+            "code" in error &&
+            (error as { code?: string }).code === "23505"
+          ) {
+            continue;
+          }
+          throw error;
+        }
+      }
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async getLibraryComponent(input: {
     componentId: string;
     requestingUserId: string;
@@ -1640,8 +1781,7 @@ export class PostgresStore implements Store {
     canViewInactive: boolean;
   }): Promise<LibraryComponentRecord | null> {
     const result = await this.pool.query<LibraryComponentRow>(
-      `SELECT id, category, family, part_number, description, awg, color, is_active, stock_status, compatibility_hints_json,
-              entered_by_user_id, entered_at, last_edited_by_user_id, last_edited_at, is_reviewed, reviewed_by_user_id, reviewed_at, is_archived, updated_at
+      `SELECT ${LIBRARY_COMPONENT_COLUMNS}
        FROM library_components
        WHERE id = $1
          AND is_archived = FALSE
@@ -1678,8 +1818,7 @@ export class PostgresStore implements Store {
            last_edited_at = NOW(),
            updated_at = NOW()
        WHERE id = $5 AND is_archived = FALSE
-       RETURNING id, category, family, part_number, description, awg, color, is_active, stock_status, compatibility_hints_json,
-                 entered_by_user_id, entered_at, last_edited_by_user_id, last_edited_at, is_reviewed, reviewed_by_user_id, reviewed_at, is_archived, updated_at`,
+       RETURNING ${LIBRARY_COMPONENT_COLUMNS}`,
       [input.isReviewed, reviewedBy, reviewedAt, editedBy, input.componentId]
     );
     if (!result.rows[0]) {
@@ -1696,15 +1835,52 @@ export class PostgresStore implements Store {
     const result = await this.pool.query<LibraryComponentRow>(
       `UPDATE library_components
        SET is_archived = TRUE,
+           is_active = FALSE,
            archived_at = NOW(),
            archived_by_user_id = $1,
            last_edited_by_user_id = $1,
            last_edited_at = NOW(),
            updated_at = NOW()
        WHERE id = $2 AND is_archived = FALSE
-       RETURNING id, category, family, part_number, description, awg, color, is_active, stock_status, compatibility_hints_json,
-                 entered_by_user_id, entered_at, last_edited_by_user_id, last_edited_at, is_reviewed, reviewed_by_user_id, reviewed_at, is_archived, updated_at`,
+       RETURNING ${LIBRARY_COMPONENT_COLUMNS}`,
       [input.archivedByUserId, input.componentId]
+    );
+    if (!result.rows[0]) {
+      return null;
+    }
+    const valueMap = await this.getCustomFieldValuesByComponentIds([result.rows[0].id]);
+    return mapLibraryComponent(result.rows[0], valueMap.get(result.rows[0].id) ?? {});
+  }
+
+  async listArchivedLibraryComponents(): Promise<LibraryComponentRecord[]> {
+    const result = await this.pool.query<LibraryComponentRow>(
+      `SELECT ${LIBRARY_COMPONENT_COLUMNS}
+       FROM library_components
+       WHERE is_archived = TRUE
+       ORDER BY part_number ASC`
+    );
+    const valueMap = await this.getCustomFieldValuesByComponentIds(result.rows.map((row) => row.id));
+    return result.rows.map((row) => mapLibraryComponent(row, valueMap.get(row.id) ?? {}));
+  }
+
+  async restoreLibraryComponent(input: {
+    componentId: string;
+    restoredByUserId: string;
+    reactivate?: boolean;
+  }): Promise<LibraryComponentRecord | null> {
+    const reactivate = input.reactivate !== false;
+    const result = await this.pool.query<LibraryComponentRow>(
+      `UPDATE library_components
+       SET is_archived = FALSE,
+           archived_at = NULL,
+           archived_by_user_id = NULL,
+           is_active = CASE WHEN $1 THEN TRUE ELSE is_active END,
+           last_edited_by_user_id = $2,
+           last_edited_at = NOW(),
+           updated_at = NOW()
+       WHERE id = $3 AND is_archived = TRUE
+       RETURNING ${LIBRARY_COMPONENT_COLUMNS}`,
+      [reactivate, input.restoredByUserId, input.componentId]
     );
     if (!result.rows[0]) {
       return null;
@@ -1736,6 +1912,11 @@ export class PostgresStore implements Store {
     reviewedAt?: string;
     stockStatus?: LibraryComponentRecord["stockStatus"];
     compatibilityHints?: string[];
+    pinCount?: number;
+    pinIds?: string[];
+    acceptedAwgMin?: number;
+    acceptedAwgMax?: number;
+    acceptedFamilies?: string[];
     createdByUserId?: string;
     createdAt?: string;
     lastEditedByUserId?: string;
@@ -1746,6 +1927,28 @@ export class PostgresStore implements Store {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
+      const existingResult = await client.query<LibraryComponentRow>(
+        `SELECT ${LIBRARY_COMPONENT_COLUMNS}
+         FROM library_components
+         WHERE id = $1 AND is_archived = FALSE`,
+        [input.componentId]
+      );
+      if (!existingResult.rows[0]) {
+        await client.query("COMMIT");
+        return null;
+      }
+      const existing = existingResult.rows[0];
+      const existingCustomValues =
+        (await this.getCustomFieldValuesByComponentIds([input.componentId], client)).get(input.componentId) ?? {};
+      const nextCustomFieldValues = input.customFieldValues ?? existingCustomValues;
+      const promoted = promoteCompatibilityFields({
+        pinCount: input.pinCount ?? existing.pin_count ?? undefined,
+        pinIds: input.pinIds ?? optionalStringArray(existing.pin_ids_json),
+        acceptedAwgMin: input.acceptedAwgMin ?? existing.accepted_awg_min ?? undefined,
+        acceptedAwgMax: input.acceptedAwgMax ?? existing.accepted_awg_max ?? undefined,
+        acceptedFamilies: input.acceptedFamilies ?? optionalStringArray(existing.accepted_families_json),
+        customFieldValues: nextCustomFieldValues
+      });
       const result = await client.query<LibraryComponentRow>(
       `UPDATE library_components
        SET part_number = COALESCE($1, part_number),
@@ -1756,23 +1959,27 @@ export class PostgresStore implements Store {
            is_active = COALESCE($6, is_active),
            stock_status = COALESCE($7, stock_status),
            compatibility_hints_json = COALESCE($8::jsonb, compatibility_hints_json),
-           is_reviewed = COALESCE($9, is_reviewed),
+           pin_count = $9,
+           pin_ids_json = $10::jsonb,
+           accepted_awg_min = $11,
+           accepted_awg_max = $12,
+           accepted_families_json = $13::jsonb,
+           is_reviewed = COALESCE($14, is_reviewed),
            reviewed_by_user_id = CASE
-             WHEN COALESCE($9, is_reviewed) = FALSE THEN NULL
-             ELSE COALESCE($10, reviewed_by_user_id)
+             WHEN COALESCE($14, is_reviewed) = FALSE THEN NULL
+             ELSE COALESCE($15, reviewed_by_user_id)
            END,
            reviewed_at = CASE
-             WHEN COALESCE($9, is_reviewed) = FALSE THEN NULL
-             ELSE COALESCE($11::timestamptz, reviewed_at)
+             WHEN COALESCE($14, is_reviewed) = FALSE THEN NULL
+             ELSE COALESCE($16::timestamptz, reviewed_at)
            END,
-           entered_by_user_id = COALESCE($12, entered_by_user_id),
-           entered_at = COALESCE($13::timestamptz, entered_at),
-           last_edited_by_user_id = COALESCE($14, $15, last_edited_by_user_id),
-           last_edited_at = COALESCE($16::timestamptz, NOW()),
+           entered_by_user_id = COALESCE($17, entered_by_user_id),
+           entered_at = COALESCE($18::timestamptz, entered_at),
+           last_edited_by_user_id = COALESCE($19, $20, last_edited_by_user_id),
+           last_edited_at = COALESCE($21::timestamptz, NOW()),
            updated_at = NOW()
-       WHERE id = $17 AND is_archived = FALSE
-       RETURNING id, category, family, part_number, description, awg, color, is_active, stock_status, compatibility_hints_json,
-                 entered_by_user_id, entered_at, last_edited_by_user_id, last_edited_at, is_reviewed, reviewed_by_user_id, reviewed_at, is_archived, updated_at`,
+       WHERE id = $22 AND is_archived = FALSE
+       RETURNING ${LIBRARY_COMPONENT_COLUMNS}`,
       [
         input.partNumber ?? null,
         input.family ?? null,
@@ -1782,6 +1989,11 @@ export class PostgresStore implements Store {
         input.isActive ?? null,
         input.stockStatus ?? null,
         input.compatibilityHints ? JSON.stringify(input.compatibilityHints) : null,
+        promoted.pinCount ?? null,
+        JSON.stringify(promoted.pinIds ?? []),
+        promoted.acceptedAwgMin ?? null,
+        promoted.acceptedAwgMax ?? null,
+        JSON.stringify(promoted.acceptedFamilies ?? []),
         input.isReviewed ?? null,
         input.reviewedByUserId ?? null,
         input.reviewedAt ?? null,
@@ -1922,8 +2134,7 @@ export class PostgresStore implements Store {
     enteredByUserId?: string;
   }): Promise<LibraryReviewQueueRecord[]> {
     const result = await this.pool.query<LibraryComponentRow>(
-      `SELECT id, category, family, part_number, description, awg, color, is_active, stock_status, compatibility_hints_json,
-              entered_by_user_id, entered_at, last_edited_by_user_id, last_edited_at, is_reviewed, reviewed_by_user_id, reviewed_at, is_archived, updated_at
+      `SELECT ${LIBRARY_COMPONENT_COLUMNS}
        FROM library_components
        WHERE is_archived = FALSE
          AND is_reviewed = FALSE

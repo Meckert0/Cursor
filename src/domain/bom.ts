@@ -16,6 +16,8 @@ export interface BomLine {
   libraryComponentId?: string;
   designRefs: string[];
   notes?: string;
+  awg?: string;
+  color?: string;
 }
 
 export interface BomResult {
@@ -32,19 +34,23 @@ export interface BomResult {
 export interface LibraryLookup {
   byId(id: string): LibraryComponentRecord | undefined;
   byPartNumber(partNumber: string, category?: LibraryCategory | LibraryCategory[]): LibraryComponentRecord | undefined;
+  listByCategory?(category: LibraryCategory): LibraryComponentRecord[];
 }
 
 export function createLibraryLookup(components: LibraryComponentRecord[]): LibraryLookup {
   const byId = new Map(components.map((component) => [component.id, component]));
   const byPartNumber = new Map<string, LibraryComponentRecord[]>();
+  const byCategory = new Map<LibraryCategory, LibraryComponentRecord[]>();
   for (const component of components) {
     const key = normalizePartNumber(component.partNumber);
-    if (!key) {
-      continue;
+    if (key) {
+      const existing = byPartNumber.get(key) ?? [];
+      existing.push(component);
+      byPartNumber.set(key, existing);
     }
-    const existing = byPartNumber.get(key) ?? [];
-    existing.push(component);
-    byPartNumber.set(key, existing);
+    const categoryItems = byCategory.get(component.category) ?? [];
+    categoryItems.push(component);
+    byCategory.set(component.category, categoryItems);
   }
 
   return {
@@ -62,6 +68,9 @@ export function createLibraryLookup(components: LibraryComponentRecord[]): Libra
       }
       const categories = Array.isArray(category) ? category : [category];
       return matches.find((component) => categories.includes(component.category));
+    },
+    listByCategory(category: LibraryCategory) {
+      return byCategory.get(category) ?? [];
     }
   };
 }
@@ -96,6 +105,8 @@ interface AggregateLine {
   libraryComponentId?: string;
   designRefs: Set<string>;
   notes?: string;
+  awg?: string;
+  color?: string;
 }
 
 function aggregateKey(category: BomCategory, partNumber: string, unit: BomUnit, resolution: BomResolution): AggregateKey {
@@ -115,6 +126,8 @@ function upsertAggregate(
     libraryComponentId?: string;
     designRef: string;
     notes?: string;
+    awg?: string;
+    color?: string;
   }
 ) {
   const key = aggregateKey(input.category, input.partNumber, input.unit, input.resolution);
@@ -130,7 +143,9 @@ function upsertAggregate(
       resolution: input.resolution,
       libraryComponentId: input.libraryComponentId,
       designRefs: new Set([input.designRef]),
-      notes: input.notes
+      notes: input.notes,
+      awg: input.awg,
+      color: input.color
     });
     return;
   }
@@ -147,6 +162,12 @@ function upsertAggregate(
   }
   if (!existing.notes && input.notes) {
     existing.notes = input.notes;
+  }
+  if (!existing.awg && input.awg) {
+    existing.awg = input.awg;
+  }
+  if (!existing.color && input.color) {
+    existing.color = input.color;
   }
 }
 
@@ -175,6 +196,61 @@ const SLEEVING_LABELS: Record<string, string> = {
   wire_braid_under_expandable_sleeving: "Wire braid under expandable sleeving"
 };
 
+function formatWireAwgColorNote(awg?: string, color?: string): string | undefined {
+  const parts: string[] = [];
+  if (awg?.trim()) {
+    parts.push(`${awg.trim()} AWG`);
+  }
+  if (color?.trim()) {
+    parts.push(color.trim());
+  }
+  return parts.length > 0 ? parts.join(", ") : undefined;
+}
+
+function emitAccessoryLine(
+  aggregates: Map<AggregateKey, AggregateLine>,
+  input: {
+    connectorReference: string;
+    category: LibraryCategory;
+    partNumber?: string;
+    libraryComponentId?: string;
+    lookup: LibraryLookup;
+    missingLabel: string;
+  }
+) {
+  const partNumber = input.partNumber?.trim();
+  if (!partNumber && !input.libraryComponentId) {
+    return;
+  }
+  const component = resolveComponent(input.lookup, {
+    libraryComponentId: input.libraryComponentId,
+    partNumber,
+    categories: input.category
+  });
+  const resolvedPartNumber = component?.partNumber ?? partNumber ?? input.libraryComponentId ?? "UNKNOWN";
+  upsertAggregate(aggregates, {
+    category: component?.category ?? input.category,
+    partNumber: resolvedPartNumber,
+    description: component?.description ?? `${input.missingLabel} ${resolvedPartNumber}`,
+    family: component?.family,
+    quantity: 1,
+    unit: "ea",
+    resolution: resolutionFor(component),
+    libraryComponentId: component?.id ?? input.libraryComponentId,
+    designRef: input.connectorReference
+  });
+}
+
+function resolveSleevingComponent(
+  lookup: LibraryLookup,
+  sleeving: NonNullable<DesignSnapshot["paths"][number]["sleeving"]>
+): LibraryComponentRecord | undefined {
+  const hintNeedle = `maps to ${sleeving}`.toLowerCase();
+  return (lookup.listByCategory?.("sleeve-tube-braid") ?? []).find((component) =>
+    component.compatibilityHints.some((hint) => hint.toLowerCase().includes(hintNeedle))
+  );
+}
+
 export function buildBom(revision: Revision, lookup: LibraryLookup): BomResult {
   const aggregates = new Map<AggregateKey, AggregateLine>();
   const snapshot: DesignSnapshot = revision.snapshot;
@@ -192,25 +268,41 @@ export function buildBom(revision: Revision, lookup: LibraryLookup): BomResult {
         designRef: connector.reference,
         notes: "Missing connector part number"
       });
-      continue;
+    } else {
+      const component = resolveComponent(lookup, {
+        libraryComponentId: connector.libraryComponentId,
+        partNumber,
+        categories: ["module", "contact"]
+      });
+      const resolvedPartNumber = component?.partNumber ?? partNumber ?? connector.libraryComponentId ?? "UNKNOWN";
+      upsertAggregate(aggregates, {
+        category: component?.category ?? "connector",
+        partNumber: resolvedPartNumber,
+        description: component?.description ?? `Connector ${connector.reference}`,
+        family: component?.family,
+        quantity: 1,
+        unit: "ea",
+        resolution: resolutionFor(component),
+        libraryComponentId: component?.id ?? connector.libraryComponentId,
+        designRef: connector.reference
+      });
     }
 
-    const component = resolveComponent(lookup, {
-      libraryComponentId: connector.libraryComponentId,
-      partNumber,
-      categories: ["module", "contact"]
+    emitAccessoryLine(aggregates, {
+      connectorReference: connector.reference,
+      category: "backshell",
+      partNumber: connector.backshellPartNumber,
+      libraryComponentId: connector.backshellLibraryComponentId,
+      lookup,
+      missingLabel: "Backshell"
     });
-    const resolvedPartNumber = component?.partNumber ?? partNumber ?? connector.libraryComponentId ?? "UNKNOWN";
-    upsertAggregate(aggregates, {
-      category: component?.category ?? "connector",
-      partNumber: resolvedPartNumber,
-      description: component?.description ?? `Connector ${connector.reference}`,
-      family: component?.family,
-      quantity: 1,
-      unit: "ea",
-      resolution: resolutionFor(component),
-      libraryComponentId: component?.id ?? connector.libraryComponentId,
-      designRef: connector.reference
+    emitAccessoryLine(aggregates, {
+      connectorReference: connector.reference,
+      category: "strain-relief",
+      partNumber: connector.strainReliefPartNumber,
+      libraryComponentId: connector.strainReliefLibraryComponentId,
+      lookup,
+      missingLabel: "Strain relief"
     });
   }
 
@@ -226,6 +318,11 @@ export function buildBom(revision: Revision, lookup: LibraryLookup): BomResult {
       const hasLength = typeof path.length === "number" && Number.isFinite(path.length);
       const quantity = hasLength ? path.length! : 1;
       const unit: BomUnit = hasLength ? "in" : "ea";
+      const awg = path.wireAwg?.trim() || component?.awg?.trim() || undefined;
+      const color = path.wireColor?.trim() || component?.color?.trim() || undefined;
+      const awgColorNote = formatWireAwgColorNote(awg, color);
+      const lengthNote = hasLength ? undefined : "Path length missing; counted as 1 ea";
+      const notes = [awgColorNote, lengthNote].filter(Boolean).join("; ") || undefined;
       upsertAggregate(aggregates, {
         category: "wire",
         partNumber: resolvedPartNumber,
@@ -236,7 +333,9 @@ export function buildBom(revision: Revision, lookup: LibraryLookup): BomResult {
         resolution: resolutionFor(component),
         libraryComponentId: component?.id ?? path.wireComponentId,
         designRef: `run:${path.runNumber ?? path.id}`,
-        notes: hasLength ? undefined : "Path length missing; counted as 1 ea"
+        notes,
+        awg,
+        color
       });
     }
 
@@ -268,9 +367,6 @@ export function buildBom(revision: Revision, lookup: LibraryLookup): BomResult {
         partNumber: contactPartNumber,
         categories: "contact"
       });
-      // Only include contacts that look like catalog part numbers (resolved or unmatched non-pin-like strings).
-      // Pure pin numbers that do not match the catalog are still reported as unresolved contact lines
-      // so free-text contact fields remain visible in the BOM.
       upsertAggregate(aggregates, {
         category: "contact",
         partNumber: component?.partNumber ?? contactPartNumber,
@@ -288,16 +384,34 @@ export function buildBom(revision: Revision, lookup: LibraryLookup): BomResult {
       const hasLength = typeof path.length === "number" && Number.isFinite(path.length);
       const quantity = hasLength ? path.length! : 1;
       const unit: BomUnit = hasLength ? "in" : "ea";
-      upsertAggregate(aggregates, {
-        category: "sleeving",
-        partNumber: path.sleeving,
-        description: SLEEVING_LABELS[path.sleeving] ?? path.sleeving,
-        quantity,
-        unit,
-        resolution: "resolved",
-        designRef: `run:${path.runNumber ?? path.id}`,
-        notes: hasLength ? undefined : "Path length missing; counted as 1 ea"
-      });
+      const component = resolveSleevingComponent(lookup, path.sleeving);
+      if (component) {
+        upsertAggregate(aggregates, {
+          category: "sleeve-tube-braid",
+          partNumber: component.partNumber,
+          description: component.description,
+          family: component.family,
+          quantity,
+          unit,
+          resolution: resolutionFor(component),
+          libraryComponentId: component.id,
+          designRef: `run:${path.runNumber ?? path.id}`,
+          notes: hasLength ? undefined : "Path length missing; counted as 1 ea"
+        });
+      } else {
+        upsertAggregate(aggregates, {
+          category: "sleeving",
+          partNumber: path.sleeving,
+          description: SLEEVING_LABELS[path.sleeving] ?? path.sleeving,
+          quantity,
+          unit,
+          resolution: "not_found",
+          designRef: `run:${path.runNumber ?? path.id}`,
+          notes: hasLength
+            ? "No sleeve-tube-braid library part mapped for this sleeving type"
+            : "Path length missing; counted as 1 ea. No sleeve-tube-braid library part mapped for this sleeving type"
+        });
+      }
     }
   }
 
@@ -312,7 +426,9 @@ export function buildBom(revision: Revision, lookup: LibraryLookup): BomResult {
       resolution: line.resolution,
       libraryComponentId: line.libraryComponentId,
       designRefs: Array.from(line.designRefs).sort((left, right) => left.localeCompare(right)),
-      notes: line.notes
+      notes: line.notes,
+      awg: line.awg,
+      color: line.color
     }))
     .sort((left, right) => {
       const leftKey = `${left.category}|${left.partNumber}|${left.unit}|${left.resolution}`;

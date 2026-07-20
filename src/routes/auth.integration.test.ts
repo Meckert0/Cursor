@@ -12,13 +12,15 @@ process.env.ENABLE_LEGACY_HEADER_AUTH = "true";
 
 function buildTestApp() {
   const store = new MemoryStore();
-  const exportQueue = new ExportQueueService(store, new FileArtifactStorage(process.cwd()));
+  const artifactStorage = new FileArtifactStorage(process.cwd());
+  const exportQueue = new ExportQueueService(store, artifactStorage);
   return buildApp({
     store,
     authStore: new MemoryAuthStore(),
     lockManager: new MemoryLockManager(),
     exportQueue,
-    artifactDownloadUrlResolver: new PassthroughArtifactDownloadUrlResolver()
+    artifactDownloadUrlResolver: new PassthroughArtifactDownloadUrlResolver(),
+    artifactStorage
   });
 }
 

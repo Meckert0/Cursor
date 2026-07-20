@@ -1,4 +1,4 @@
-import { DeleteObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, HeadBucketCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import type { ArtifactStorage } from "./artifact-storage.js";
 
 export interface S3ArtifactStorageConfig {
@@ -55,6 +55,23 @@ export class S3ArtifactStorage implements ArtifactStorage {
         Key: key
       })
     );
+  }
+
+  async healthCheck(): Promise<{ ok: boolean; backend: string; detail?: string }> {
+    try {
+      await this.client.send(
+        new HeadBucketCommand({
+          Bucket: this.config.bucket
+        })
+      );
+      return { ok: true, backend: "s3", detail: this.config.bucket };
+    } catch (error) {
+      return {
+        ok: false,
+        backend: "s3",
+        detail: error instanceof Error ? error.message : "S3 bucket health check failed."
+      };
+    }
   }
 
   private resolveObjectKey(artifactUri: string): string | null {

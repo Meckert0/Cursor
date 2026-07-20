@@ -23,7 +23,10 @@ const createDesignSchema = z.object({
 
 const upsertProjectRulesetPolicySchema = z.object({
   defaultRulesetVersion: z.string().optional(),
-  allowedRulesetVersions: z.array(z.string()).default([])
+  allowedRulesetVersions: z.array(z.string()).default([]),
+  inactivePartSeverity: z.enum(["error", "warning"]).optional(),
+  unreviewedPartSeverity: z.enum(["error", "warning", "info"]).optional(),
+  outOfStockSeverity: z.enum(["error", "warning", "info"]).optional()
 });
 
 const upsertProjectMemberSchema = z.object({
@@ -251,7 +254,10 @@ export function registerProjectRoutes(app: FastifyInstance) {
     const policy = await app.store.upsertProjectRulesetPolicy({
       projectId: params.projectId,
       defaultRulesetVersion: body.defaultRulesetVersion,
-      allowedRulesetVersions: body.allowedRulesetVersions
+      allowedRulesetVersions: body.allowedRulesetVersions,
+      inactivePartSeverity: body.inactivePartSeverity,
+      unreviewedPartSeverity: body.unreviewedPartSeverity,
+      outOfStockSeverity: body.outOfStockSeverity
     });
     return reply.code(200).send(policy);
   });

@@ -71,6 +71,7 @@ export interface Store {
   updateRevisionSnapshot(input: {
     revisionId: string;
     snapshot: DesignSnapshot;
+    expectedSnapshotHash?: string;
   }): Promise<Revision | null>;
   createValidationRun(input: {
     revisionId: string;
@@ -131,6 +132,9 @@ export interface Store {
     projectId: string;
     defaultRulesetVersion?: string;
     allowedRulesetVersions: string[];
+    inactivePartSeverity?: "error" | "warning";
+    outOfStockSeverity?: "error" | "warning" | "info";
+    unreviewedPartSeverity?: "error" | "warning" | "info";
   }): Promise<ProjectRulesetPolicy>;
   ingestLibraryComponents(input: {
     items: LibraryComponentIngestItem[];
@@ -143,6 +147,8 @@ export interface Store {
     canViewAllUnreviewed: boolean;
     canViewInactive: boolean;
   }): Promise<LibraryComponentRecord[]>;
+  /** Idempotently seed DEFAULT_LIBRARY_COMPONENTS (insert-missing only). */
+  ensureDefaultLibrarySeeded(): Promise<void>;
   getLibraryComponent(input: {
     componentId: string;
     requestingUserId: string;
@@ -159,6 +165,12 @@ export interface Store {
     componentId: string;
     archivedByUserId: string;
   }): Promise<LibraryComponentRecord | null>;
+  listArchivedLibraryComponents(): Promise<LibraryComponentRecord[]>;
+  restoreLibraryComponent(input: {
+    componentId: string;
+    restoredByUserId: string;
+    reactivate?: boolean;
+  }): Promise<LibraryComponentRecord | null>;
   deleteLibraryComponent(input: { componentId: string }): Promise<boolean>;
   updateLibraryComponent(input: {
     componentId: string;
@@ -173,6 +185,11 @@ export interface Store {
     reviewedAt?: string;
     stockStatus?: LibraryComponentRecord["stockStatus"];
     compatibilityHints?: string[];
+    pinCount?: number;
+    pinIds?: string[];
+    acceptedAwgMin?: number;
+    acceptedAwgMax?: number;
+    acceptedFamilies?: string[];
     createdByUserId?: string;
     createdAt?: string;
     lastEditedByUserId?: string;

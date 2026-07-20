@@ -1,0 +1,94 @@
+{
+  "connectors": [
+    {
+      "id": "c1",
+      "reference": "J1",
+      "partNumber": "MDM-15P",
+      "libraryComponentId": "cmp-module-001",
+      "backshellPartNumber": "BS-EMI-15",
+      "backshellLibraryComponentId": "cmp-backshell-15",
+      "strainReliefPartNumber": "SR-CLAMP-15",
+      "strainReliefLibraryComponentId": "cmp-sr-15",
+      "pins": [
+        { "id": "1", "number": "1" },
+        { "id": "2", "number": "2" },
+        { "id": "3", "number": "3" },
+        { "id": "4", "number": "4" },
+        { "id": "5", "number": "5" },
+        { "id": "6", "number": "6" },
+        { "id": "7", "number": "7" },
+        { "id": "8", "number": "8" },
+        { "id": "9", "number": "9" },
+        { "id": "10", "number": "10" },
+        { "id": "11", "number": "11" },
+        { "id": "12", "number": "12" },
+        { "id": "13", "number": "13" },
+        { "id": "14", "number": "14" },
+        { "id": "15", "number": "15" }
+      ]
+    },
+    {
+      "id": "c2",
+      "reference": "J2",
+      "partNumber": "MDM-15P",
+      "libraryComponentId": "cmp-module-001",
+      "backshellPartNumber": "BS-EMI-15",
+      "backshellLibraryComponentId": "cmp-backshell-15",
+      "strainReliefPartNumber": "SR-CLAMP-15",
+      "strainReliefLibraryComponentId": "cmp-sr-15",
+      "pins": [
+        { "id": "1", "number": "1" },
+        { "id": "2", "number": "2" },
+        { "id": "3", "number": "3" },
+        { "id": "4", "number": "4" },
+        { "id": "5", "number": "5" },
+        { "id": "6", "number": "6" },
+        { "id": "7", "number": "7" },
+        { "id": "8", "number": "8" },
+        { "id": "9", "number": "9" },
+        { "id": "10", "number": "10" },
+        { "id": "11", "number": "11" },
+        { "id": "12", "number": "12" },
+        { "id": "13", "number": "13" },
+        { "id": "14", "number": "14" },
+        { "id": "15", "number": "15" }
+      ]
+    }
+  ],
+  "junctions": [],
+  "paths": [
+    {
+      "id": "p1",
+      "runNumber": 1,
+      "wireName": "wire1",
+      "fromConnectorId": "c1",
+      "toConnectorId": "c2",
+      "pathType": "wire",
+      "length": 12,
+      "sleeving": "expandable_sleeving",
+      "wireComponentId": "cmp-wire-001",
+      "wirePartNumber": "M22759/16-22",
+      "wireAwg": "22",
+      "wireColor": "white",
+      "fromContact": "CNT-22",
+      "toContact": "CNT-22",
+      "fromSignalDescription": "PWR+",
+      "toSignalDescription": "PWR-RTN",
+      "labelPartNumber": "LBL-22",
+      "labelText": "W1"
+    }
+  ],
+  "pinMappings": [
+    {
+      "id": "m1",
+      "pathId": "p1",
+      "fromConnectorId": "c1",
+      "fromPinId": "1",
+      "toConnectorId": "c2",
+      "toPinId": "1",
+      "mappingType": "one_to_one"
+    }
+  ],
+  "bundles": [],
+  "annotations": []
+}

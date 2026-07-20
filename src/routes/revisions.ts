@@ -5,7 +5,7 @@ import { requireRole } from "../auth/rbac.js";
 import { buildBom, createLibraryLookup } from "../domain/bom.js";
 import { hashDesignSnapshot } from "../domain/snapshot-hash.js";
 import { validateSnapshot } from "../domain/validator.js";
-import type { DesignSnapshot } from "../domain/types.js";
+import type { DesignSnapshot, Revision } from "../domain/types.js";
 import type { Store } from "../infra/store/store.js";
 
 async function loadLibraryLookup(store: Store) {
@@ -17,6 +17,13 @@ async function loadLibraryLookup(store: Store) {
   return createLibraryLookup(components);
 }
 
+function withSnapshotHash(revision: Revision) {
+  return {
+    ...revision,
+    snapshotHash: hashDesignSnapshot(revision.snapshot)
+  };
+}
+
 const snapshotSchema = z.object({
   connectors: z
     .array(
@@ -25,6 +32,10 @@ const snapshotSchema = z.object({
         reference: z.string(),
         partNumber: z.string().optional(),
         libraryComponentId: z.string().optional(),
+        backshellPartNumber: z.string().optional(),
+        backshellLibraryComponentId: z.string().optional(),
+        strainReliefPartNumber: z.string().optional(),
+        strainReliefLibraryComponentId: z.string().optional(),
         pins: z.array(z.object({ id: z.string(), number: z.string() })),
         location: z.object({ x: z.number(), y: z.number() }).optional()
       })
@@ -219,7 +230,7 @@ export function registerRevisionRoutes(app: FastifyInstance) {
     if (!memberCheck.ok) {
       return;
     }
-    return revision;
+    return withSnapshotHash(revision);
   });
 
   const createDesignRevisionHandler = async (request: FastifyRequest, reply: FastifyReply) => {
@@ -258,7 +269,7 @@ export function registerRevisionRoutes(app: FastifyInstance) {
         libraryVersion: body.libraryVersion,
         snapshot: body.snapshot as DesignSnapshot
       });
-      return reply.code(201).send(revision);
+      return reply.code(201).send(withSnapshotHash(revision));
     } catch (error) {
       if (error instanceof Error && error.message === "DESIGN_NOT_FOUND") {
         return reply.notFound("Design not found.");
@@ -274,7 +285,12 @@ export function registerRevisionRoutes(app: FastifyInstance) {
       return;
     }
     const params = z.object({ revisionId: z.string().uuid() }).parse(request.params);
-    const body = z.object({ snapshot: snapshotSchema }).parse(request.body);
+    const body = z
+      .object({
+        snapshot: snapshotSchema,
+        expectedSnapshotHash: z.string().min(1)
+      })
+      .parse(request.body);
     const revision = await app.store.getRevision(params.revisionId);
     if (!revision) {
       return reply.notFound("Revision not found.");
@@ -293,14 +309,22 @@ export function registerRevisionRoutes(app: FastifyInstance) {
     if (!memberCheck.ok) {
       return;
     }
-    const updated = await app.store.updateRevisionSnapshot({
-      revisionId: params.revisionId,
-      snapshot: body.snapshot as DesignSnapshot
-    });
-    if (!updated) {
-      return reply.notFound("Revision not found.");
+    try {
+      const updated = await app.store.updateRevisionSnapshot({
+        revisionId: params.revisionId,
+        snapshot: body.snapshot as DesignSnapshot,
+        expectedSnapshotHash: body.expectedSnapshotHash
+      });
+      if (!updated) {
+        return reply.notFound("Revision not found.");
+      }
+      return withSnapshotHash(updated);
+    } catch (error) {
+      if (error instanceof Error && error.message === "SNAPSHOT_MISMATCH") {
+        return reply.conflict("Snapshot was modified elsewhere. Reload and retry.");
+      }
+      throw error;
     }
-    return updated;
   });
 
   app.post("/v1/revisions/:revisionId/validate", async (request, reply) => {
@@ -336,7 +360,24 @@ export function registerRevisionRoutes(app: FastifyInstance) {
     }
 
     const libraryLookup = await loadLibraryLookup(app.store);
-    const report = validateSnapshot(revision.snapshot, { libraryLookup });
+    const startedAt = Date.now();
+    let report;
+    try {
+      report = validateSnapshot(revision.snapshot, {
+        libraryLookup,
+        rulesetVersion: resolvedRulesetVersion,
+        mode: body.mode,
+        policy: {
+          inactivePartSeverity: policy?.inactivePartSeverity,
+          unreviewedPartSeverity: policy?.unreviewedPartSeverity,
+          outOfStockSeverity: policy?.outOfStockSeverity
+        }
+      });
+      app.metrics.recordValidationLatency(Date.now() - startedAt, true);
+    } catch (error) {
+      app.metrics.recordValidationLatency(Date.now() - startedAt, false);
+      throw error;
+    }
     const validationRun = await app.store.createValidationRun({
       revisionId: params.revisionId,
       rulesetVersion: resolvedRulesetVersion,
@@ -349,6 +390,18 @@ export function registerRevisionRoutes(app: FastifyInstance) {
       },
       results: report.results
     });
+    request.log.info(
+      {
+        validationRunId: validationRun.id,
+        revisionId: params.revisionId,
+        rulesetVersion: resolvedRulesetVersion,
+        mode: body.mode,
+        latencyMs: Date.now() - startedAt,
+        requestId: request.id,
+        correlationId: request.correlationId
+      },
+      "validation.completed"
+    );
     return {
       validationRunId: validationRun.id,
       rulesetVersion: validationRun.rulesetVersion,
@@ -413,7 +466,9 @@ export function registerRevisionRoutes(app: FastifyInstance) {
 
     const exportArtifact = await app.exportQueue.enqueueExport({
       revisionId: revision.id,
-      format: body.format
+      format: body.format,
+      requestId: request.id,
+      correlationId: request.correlationId
     });
 
     return reply.code(202).send(exportArtifact);

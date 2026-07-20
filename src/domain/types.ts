@@ -57,6 +57,10 @@ export interface DesignSnapshot {
     reference: string;
     partNumber?: string;
     libraryComponentId?: string;
+    backshellPartNumber?: string;
+    backshellLibraryComponentId?: string;
+    strainReliefPartNumber?: string;
+    strainReliefLibraryComponentId?: string;
     pins: Array<{ id: string; number: string }>;
     location?: { x: number; y: number };
   }>;
@@ -180,6 +184,12 @@ export interface ProjectRulesetPolicy {
   projectId: string;
   defaultRulesetVersion?: string;
   allowedRulesetVersions: string[];
+  /** When set, overrides ruleset default severity for inactive library parts. */
+  inactivePartSeverity?: "error" | "warning";
+  /** When set, overrides ruleset default severity for unreviewed library parts. */
+  unreviewedPartSeverity?: "error" | "warning" | "info";
+  /** When set, overrides ruleset default severity for out-of-stock library parts. */
+  outOfStockSeverity?: "error" | "warning" | "info";
   createdAt: string;
   updatedAt: string;
 }

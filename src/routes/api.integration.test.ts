@@ -14,13 +14,15 @@ process.env.ENABLE_LEGACY_HEADER_AUTH = "true";
 
 function buildTestApp() {
   const store = new MemoryStore();
-  const exportQueue = new ExportQueueService(store, new FileArtifactStorage(process.cwd()));
+  const artifactStorage = new FileArtifactStorage(process.cwd());
+  const exportQueue = new ExportQueueService(store, artifactStorage);
   return buildApp({
     store,
     authStore: new MemoryAuthStore(),
     lockManager: new MemoryLockManager(),
     exportQueue,
-    artifactDownloadUrlResolver: new PassthroughArtifactDownloadUrlResolver()
+    artifactDownloadUrlResolver: new PassthroughArtifactDownloadUrlResolver(),
+    artifactStorage
   });
 }
 
@@ -59,6 +61,115 @@ function readXlsxFromArtifactUri(uri: string): XLSX.WorkBook {
   const normalized = process.platform === "win32" ? filePath.replace(/^\/([A-Za-z]:\/)/, "$1") : filePath;
   return XLSX.readFile(path.normalize(normalized));
 }
+
+test("observability: health, metrics, and request/correlation ids", async () => {
+  const app = buildTestApp();
+  await app.ready();
+  try {
+    const healthResponse = await app.inject({
+      method: "GET",
+      url: "/v1/health",
+      headers: {
+        "x-request-id": "req-health-1",
+        "x-correlation-id": "corr-health-1"
+      }
+    });
+    assert.equal(healthResponse.statusCode, 200);
+    assert.equal(healthResponse.headers["x-request-id"], "req-health-1");
+    assert.equal(healthResponse.headers["x-correlation-id"], "corr-health-1");
+    const health = healthResponse.json() as {
+      ok: boolean;
+      checks: {
+        store: { ok: boolean; backend: string };
+        lockManager: { ok: boolean; backend: string };
+        artifactBackend: { ok: boolean; backend: string };
+      };
+    };
+    assert.equal(health.ok, true);
+    assert.equal(health.checks.store.ok, true);
+    assert.equal(health.checks.lockManager.backend, "memory");
+    assert.equal(health.checks.artifactBackend.backend, "file");
+
+    const beforeMetrics = (
+      await app.inject({
+        method: "GET",
+        url: "/v1/metrics"
+      })
+    ).json() as { metrics: { validation: { count: number }; locks: { contention: number } } };
+
+    const createProjectResponse = await app.inject({
+      method: "POST",
+      url: "/v1/projects",
+      payload: { name: "Observability Project", createdBy: "user-a" }
+    });
+    assert.equal(createProjectResponse.statusCode, 201);
+    const project = createProjectResponse.json() as { id: string };
+
+    const createDesignResponse = await app.inject({
+      method: "POST",
+      url: `/v1/projects/${project.id}/designs`,
+      payload: { name: "Observability Harness", createdBy: "user-a" }
+    });
+    assert.equal(createDesignResponse.statusCode, 201);
+    const design = createDesignResponse.json() as { id: string; currentRevisionId: string };
+
+    const addUserAMember = await app.inject({
+      method: "PUT",
+      url: `/v1/projects/${project.id}/members/user-a`,
+      payload: { role: "owner" }
+    });
+    assert.equal(addUserAMember.statusCode, 200);
+    const addUserBMember = await app.inject({
+      method: "PUT",
+      url: `/v1/projects/${project.id}/members/user-b`,
+      payload: { role: "owner" }
+    });
+    assert.equal(addUserBMember.statusCode, 200);
+
+    const validateResponse = await app.inject({
+      method: "POST",
+      url: `/v1/revisions/${design.currentRevisionId}/validate`,
+      payload: { mode: "quick" },
+      headers: {
+        "x-user-id": "user-a",
+        "x-role": "owner"
+      }
+    });
+    assert.equal(validateResponse.statusCode, 200);
+
+    const lockResponse = await app.inject({
+      method: "POST",
+      url: `/v1/designs/${design.id}/lock`,
+      payload: { ttlSeconds: 300 },
+      headers: { "x-user-id": "user-a", "x-role": "owner" }
+    });
+    assert.equal(lockResponse.statusCode, 201);
+    const conflict = await app.inject({
+      method: "POST",
+      url: `/v1/designs/${design.id}/lock`,
+      payload: { ttlSeconds: 300 },
+      headers: { "x-user-id": "user-b", "x-role": "owner" }
+    });
+    assert.equal(conflict.statusCode, 409);
+
+    const afterMetrics = (
+      await app.inject({
+        method: "GET",
+        url: "/v1/metrics"
+      })
+    ).json() as {
+      metrics: {
+        validation: { count: number };
+        locks: { acquired: number; contention: number };
+      };
+    };
+    assert.ok(afterMetrics.metrics.validation.count >= beforeMetrics.metrics.validation.count + 1);
+    assert.ok(afterMetrics.metrics.locks.acquired >= 1);
+    assert.ok(afterMetrics.metrics.locks.contention >= beforeMetrics.metrics.locks.contention + 1);
+  } finally {
+    await app.close();
+  }
+});
 
 async function registerAdminAndGetCookie(app: ReturnType<typeof buildApp>): Promise<string> {
   const registerResponse = await app.inject({
@@ -158,8 +269,8 @@ test("API flow: project -> design -> validation -> state transitions/audit -> su
             id: "cmp-contact-001",
             category: "contact",
             family: "Micro-D",
-            partNumber: "1",
-            description: "Pin contact 1",
+            partNumber: "CNT-22",
+            description: "Size 22 Micro-D socket contact",
             isActive: true,
             stockStatus: "in_stock",
             compatibilityHints: [],
@@ -191,6 +302,10 @@ test("API flow: project -> design -> validation -> state transitions/audit -> su
               reference: "J1",
               partNumber: "MDM-15P",
               libraryComponentId: "cmp-module-001",
+              backshellPartNumber: "BS-EMI-15",
+              backshellLibraryComponentId: "cmp-backshell-15",
+              strainReliefPartNumber: "SR-CLAMP-15",
+              strainReliefLibraryComponentId: "cmp-sr-15",
               pins: [{ id: "1", number: "1" }],
               location: { x: 120, y: 80 }
             },
@@ -199,6 +314,10 @@ test("API flow: project -> design -> validation -> state transitions/audit -> su
               reference: "J2",
               partNumber: "MDM-15P",
               libraryComponentId: "cmp-module-001",
+              backshellPartNumber: "BS-EMI-15",
+              backshellLibraryComponentId: "cmp-backshell-15",
+              strainReliefPartNumber: "SR-CLAMP-15",
+              strainReliefLibraryComponentId: "cmp-sr-15",
               pins: [{ id: "1", number: "1" }],
               location: { x: 360, y: 180 }
             }
@@ -215,13 +334,13 @@ test("API flow: project -> design -> validation -> state transitions/audit -> su
               length: 2.5,
               sleeving: "expandable_sleeving",
               wireComponentId: "cmp-wire-001",
-              fromContact: "1",
+              fromContact: "CNT-22",
               fromSignalDescription: "Source signal",
               wireAwg: "22",
               wirePartNumber: "M22759/16-22",
               wireColor: "white",
               wireGroup: "Group A",
-              toContact: "1",
+              toContact: "CNT-22",
               toSignalDescription: "Destination signal",
               labelPartNumber: "LBL-22",
               labelText: "WIRE-1",
@@ -291,13 +410,31 @@ test("API flow: project -> design -> validation -> state transitions/audit -> su
     const bom = bomResponse.json() as {
       revisionId: string;
       summary: { totalLines: number; resolved: number; unresolved: number };
-      lines: Array<{ category: string; partNumber: string; quantity: number; resolution: string }>;
+      lines: Array<{
+        category: string;
+        partNumber: string;
+        quantity: number;
+        resolution: string;
+        awg?: string;
+        color?: string;
+      }>;
     };
     assert.equal(bom.revisionId, revision.id);
     assert.equal(bom.summary.unresolved, 0);
     assert.ok(bom.lines.some((line) => line.category === "module" && line.partNumber === "MDM-15P" && line.quantity === 2));
+    assert.ok(bom.lines.some((line) => line.category === "backshell" && line.partNumber === "BS-EMI-15" && line.quantity === 2));
+    assert.ok(
+      bom.lines.some((line) => line.category === "strain-relief" && line.partNumber === "SR-CLAMP-15" && line.quantity === 2)
+    );
     assert.ok(bom.lines.some((line) => line.category === "wire" && line.partNumber === "M22759/16-22"));
     assert.ok(bom.lines.some((line) => line.category === "label" && line.partNumber === "LBL-22"));
+    assert.ok(bom.lines.some((line) => line.category === "contact" && line.partNumber === "CNT-22" && line.quantity === 2));
+    assert.ok(
+      bom.lines.some((line) => line.category === "sleeve-tube-braid" && line.partNumber === "SLV-EXP-025" && line.quantity === 2.5)
+    );
+    const wireLine = bom.lines.find((line) => line.category === "wire" && line.partNumber === "M22759/16-22");
+    assert.equal(wireLine?.awg, "22");
+    assert.equal(wireLine?.color, "white");
 
     const validateResponse = await app.inject({
       method: "POST",
@@ -461,6 +598,7 @@ test("API flow: project -> design -> validation -> state transitions/audit -> su
       "Wire AWG",
       "Wire/Patchcord P/N",
       "Length (in)",
+      "Sleeving",
       "Wire Color",
       "Wire Group",
       "To Location (Conn-Pin)",
@@ -476,10 +614,10 @@ test("API flow: project -> design -> validation -> state transitions/audit -> su
       blankrows: false
     })[0];
     assert.equal(firstDataRow?.[0], 1);
-    assert.equal(firstDataRow?.[1], "J1 - 1");
+    assert.equal(firstDataRow?.[1], "J1 - CNT-22");
     assert.equal(firstDataRow?.[5], "M22759/16-22");
-    assert.equal(firstDataRow?.[9], "J2 - 1");
-    assert.equal(firstDataRow?.[14], "Harness note");
+    assert.equal(firstDataRow?.[10], "J2 - CNT-22");
+    assert.equal(firstDataRow?.[15], "Harness note");
 
     const bomSheet = workbook.Sheets.BOM;
     assert.ok(bomSheet);
@@ -716,12 +854,14 @@ test("revision snapshot patch updates wirelist data", async () => {
       }
     });
     assert.equal(createRevisionResponse.statusCode, 201);
-    const revision = createRevisionResponse.json() as { id: string };
+    const revision = createRevisionResponse.json() as { id: string; snapshotHash: string };
+    assert.ok(revision.snapshotHash);
 
     const patchResponse = await app.inject({
       method: "PATCH",
       url: `/v1/revisions/${revision.id}/snapshot`,
       payload: {
+        expectedSnapshotHash: revision.snapshotHash,
         snapshot: {
           connectors: [
             { id: "c1", reference: "J1", pins: [{ id: "1", number: "1" }] },
@@ -747,14 +887,47 @@ test("revision snapshot patch updates wirelist data", async () => {
     });
     assert.equal(patchResponse.statusCode, 200);
     const patched = patchResponse.json() as {
+      snapshotHash: string;
       snapshot: {
         paths: Array<{ wireName?: string; length?: number; sleeving?: string; wireComponentId?: string }>;
       };
     };
+    assert.ok(patched.snapshotHash);
+    assert.notEqual(patched.snapshotHash, revision.snapshotHash);
     assert.equal(patched.snapshot.paths[0]?.wireName, "wireA");
     assert.equal(patched.snapshot.paths[0]?.length, 12.5);
     assert.equal(patched.snapshot.paths[0]?.sleeving, "expandable_sleeving");
     assert.equal(patched.snapshot.paths[0]?.wireComponentId, "cmp-wire-001");
+
+    const stalePatchResponse = await app.inject({
+      method: "PATCH",
+      url: `/v1/revisions/${revision.id}/snapshot`,
+      payload: {
+        expectedSnapshotHash: revision.snapshotHash,
+        snapshot: {
+          connectors: [
+            { id: "c1", reference: "J1", pins: [{ id: "1", number: "1" }] },
+            { id: "c2", reference: "J2", pins: [{ id: "1", number: "1" }] }
+          ],
+          paths: [
+            {
+              id: "p1",
+              wireName: "wireA-stale",
+              fromConnectorId: "c1",
+              toConnectorId: "c2",
+              pathType: "wire",
+              length: 1,
+              sleeving: "none"
+            }
+          ],
+          pinMappings: [],
+          bundles: [],
+          annotations: []
+        }
+      }
+    });
+    assert.equal(stalePatchResponse.statusCode, 409);
+    assert.match(stalePatchResponse.json().message, /modified elsewhere/i);
   } finally {
     await app.close();
   }
@@ -899,7 +1072,8 @@ test("submit-for-quote rejects stale validation after snapshot edit", async () =
       }
     });
     assert.equal(revisionResponse.statusCode, 201);
-    const revision = revisionResponse.json() as { id: string };
+    const revision = revisionResponse.json() as { id: string; snapshotHash: string };
+    assert.ok(revision.snapshotHash);
 
     const validateResponse = await app.inject({
       method: "POST",
@@ -914,6 +1088,7 @@ test("submit-for-quote rejects stale validation after snapshot edit", async () =
       method: "PATCH",
       url: `/v1/revisions/${revision.id}/snapshot`,
       payload: {
+        expectedSnapshotHash: revision.snapshotHash,
         snapshot: {
           ...validSnapshot,
           annotations: [{ id: "a1", text: "edited after validation" }]
@@ -1637,7 +1812,7 @@ test("library review endpoints update review state with owner role", async () =>
             id: "cmp-wire-099",
             category: "wire",
             family: "MIL-W-22759",
-            partNumber: "M22759/16-22",
+            partNumber: "M22759/16-22-REVIEW",
             description: "22 AWG lightweight hookup wire",
             awg: "22",
             color: "white",
@@ -1841,6 +2016,29 @@ test("library review queue endpoint is owner-only and filterable", async () => {
       payload: {}
     });
     assert.equal(archiveResponse.statusCode, 200);
+    const archived = archiveResponse.json() as { id: string; isActive: boolean; isArchived?: boolean };
+    assert.equal(archived.isActive, false);
+    assert.equal(archived.isArchived, true);
+
+    const archivedList = await app.inject({
+      method: "GET",
+      url: "/v1/library/components/archived",
+      headers: { "x-role": "owner", "x-user-id": "owner-a" }
+    });
+    assert.equal(archivedList.statusCode, 200);
+    const archivedItems = archivedList.json() as { items: Array<{ id: string }> };
+    assert.ok(archivedItems.items.some((item) => item.id === "cmp-queue-002"));
+
+    const restoreResponse = await app.inject({
+      method: "POST",
+      url: "/v1/library/components/cmp-queue-002/restore",
+      headers: { "x-role": "owner", "x-user-id": "owner-a" },
+      payload: { reactivate: true }
+    });
+    assert.equal(restoreResponse.statusCode, 200);
+    const restored = restoreResponse.json() as { id: string; isActive: boolean; isArchived?: boolean };
+    assert.equal(restored.isActive, true);
+    assert.equal(restored.isArchived, false);
 
     const queueAfterArchive = await app.inject({
       method: "GET",
@@ -1849,7 +2047,87 @@ test("library review queue endpoint is owner-only and filterable", async () => {
     });
     assert.equal(queueAfterArchive.statusCode, 200);
     const queueAfterArchivePayload = queueAfterArchive.json() as { items: Array<{ id: string }> };
-    assert.ok(!queueAfterArchivePayload.items.some((item) => item.id === "cmp-queue-002"));
+    assert.ok(queueAfterArchivePayload.items.some((item) => item.id === "cmp-queue-002"));
+  } finally {
+    await app.close();
+  }
+});
+
+test("library ingest and patch persist first-class compatibility fields", async () => {
+  const app = buildTestApp();
+  await app.ready();
+  try {
+    const adminCookie = await registerAdminAndGetCookie(app);
+    const ingestResponse = await app.inject({
+      method: "POST",
+      url: "/v1/library/components/ingest",
+      headers: { cookie: adminCookie },
+      payload: {
+        items: [
+          {
+            id: "cmp-compat-001",
+            category: "module",
+            family: "Micro-D",
+            partNumber: "MDM-COMPAT-9",
+            description: "Compatibility module",
+            isActive: true,
+            stockStatus: "in_stock",
+            compatibilityHints: [],
+            pinCount: 9,
+            pinIds: ["1", "2", "3", "4", "5", "6", "7", "8", "9"],
+            acceptedAwgMin: 20,
+            acceptedAwgMax: 24,
+            acceptedFamilies: ["MIL-W-22759"],
+            isReviewed: false
+          }
+        ]
+      }
+    });
+    assert.equal(ingestResponse.statusCode, 201);
+
+    const getResponse = await app.inject({
+      method: "GET",
+      url: "/v1/library/components/cmp-compat-001",
+      headers: { cookie: adminCookie }
+    });
+    assert.equal(getResponse.statusCode, 200);
+    const component = getResponse.json() as {
+      pinCount?: number;
+      pinIds?: string[];
+      acceptedAwgMin?: number;
+      acceptedAwgMax?: number;
+      acceptedFamilies?: string[];
+    };
+    assert.equal(component.pinCount, 9);
+    assert.deepEqual(component.pinIds, ["1", "2", "3", "4", "5", "6", "7", "8", "9"]);
+    assert.equal(component.acceptedAwgMin, 20);
+    assert.equal(component.acceptedAwgMax, 24);
+    assert.deepEqual(component.acceptedFamilies, ["MIL-W-22759"]);
+
+    const dryRun = await app.inject({
+      method: "POST",
+      url: "/v1/library/components/ingest/dry-run",
+      headers: { cookie: adminCookie },
+      payload: {
+        items: [
+          {
+            category: "contact",
+            family: "Micro-D",
+            partNumber: "CNT-COMPAT",
+            description: "Contact with promoted custom fields",
+            isActive: true,
+            stockStatus: "in_stock",
+            compatibilityHints: [],
+            isReviewed: false,
+            customFieldValues: {
+              acceptedAwgMin: "22",
+              acceptedAwgMax: "26"
+            }
+          }
+        ]
+      }
+    });
+    assert.equal(dryRun.statusCode, 200);
   } finally {
     await app.close();
   }

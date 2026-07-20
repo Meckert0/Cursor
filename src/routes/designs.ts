@@ -152,7 +152,12 @@ export function registerDesignRoutes(app: FastifyInstance) {
       return;
     }
     const revisions = await app.store.listRevisions(params.designId);
-    return { items: revisions };
+    return {
+      items: revisions.map((revision) => ({
+        ...revision,
+        snapshotHash: hashDesignSnapshot(revision.snapshot)
+      }))
+    };
   };
   app.get("/v1/designs/:designId/revisions", listDesignRevisionsHandler);
   app.get("/v1/harnesses/:designId/revisions", listDesignRevisionsHandler);
@@ -255,9 +260,11 @@ export function registerDesignRoutes(app: FastifyInstance) {
     const body = lockSchema.parse(request.body ?? {});
     try {
       const lock = await app.lockManager.lock(params.designId, memberCheck.userId, body.ttlSeconds);
+      app.metrics.recordLockAcquired();
       return reply.code(201).send(lock);
     } catch (error) {
       if (error instanceof Error && error.message.startsWith("LOCK_CONFLICT")) {
+        app.metrics.recordLockContention();
         return reply.conflict("Design is locked by another user.");
       }
       throw error;

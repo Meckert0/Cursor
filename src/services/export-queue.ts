@@ -1,9 +1,17 @@
+import { randomUUID } from "node:crypto";
 import { buildDeterministicDocumentExport, buildDeterministicJsonExport } from "../domain/exporter.js";
 import type { ExportArtifact } from "../domain/types.js";
+import type { MetricsRegistry } from "../infra/observability/metrics.js";
 import type { ArtifactStorage } from "../infra/storage/artifact-storage.js";
 import type { Store } from "../infra/store/store.js";
 
 export type ExportFailureKind = "transient" | "permanent";
+
+export type ExportLogger = {
+  info: (obj: Record<string, unknown>, msg?: string) => void;
+  warn: (obj: Record<string, unknown>, msg?: string) => void;
+  error: (obj: Record<string, unknown>, msg?: string) => void;
+};
 
 export interface ExportQueueOptions {
   maxAttempts?: number;
@@ -11,7 +19,14 @@ export interface ExportQueueOptions {
   retentionDays?: number;
   now?: () => Date;
   scheduleDelayed?: (callback: () => void, delayMs: number) => void;
+  logger?: ExportLogger;
+  metrics?: MetricsRegistry;
 }
+
+type ExportTraceContext = {
+  requestId: string;
+  correlationId: string;
+};
 
 const PERMANENT_MESSAGE_PATTERNS = [
   /revision not found/i,
@@ -37,6 +52,12 @@ const TRANSIENT_CODE_PATTERNS = [
   "Throttling",
   "PriorRequestNotComplete"
 ];
+
+const silentLogger: ExportLogger = {
+  info() {},
+  warn() {},
+  error() {}
+};
 
 export function classifyExportError(error: unknown): ExportFailureKind {
   const message = error instanceof Error ? error.message : String(error);
@@ -64,11 +85,14 @@ export class ExportQueueService {
   private running = false;
   private readonly pendingExportIds: string[] = [];
   private readonly scheduledExportIds = new Set<string>();
+  private readonly exportContext = new Map<string, ExportTraceContext>();
   private readonly maxAttempts: number;
   private readonly retryBaseDelayMs: number;
   private readonly retentionDays: number;
   private readonly now: () => Date;
   private readonly scheduleDelayed: (callback: () => void, delayMs: number) => void;
+  private logger: ExportLogger;
+  private readonly metrics?: MetricsRegistry;
 
   constructor(
     private readonly store: Store,
@@ -84,14 +108,40 @@ export class ExportQueueService {
       ((callback, delayMs) => {
         setTimeout(callback, delayMs);
       });
+    this.logger = options.logger ?? silentLogger;
+    this.metrics = options.metrics;
   }
 
-  async enqueueExport(input: { revisionId: string; format: ExportArtifact["format"] }): Promise<ExportArtifact> {
+  setLogger(logger: ExportLogger): void {
+    this.logger = logger;
+  }
+
+  async enqueueExport(input: {
+    revisionId: string;
+    format: ExportArtifact["format"];
+    requestId?: string;
+    correlationId?: string;
+  }): Promise<ExportArtifact> {
     const exportArtifact = await this.store.createExportArtifact({
       revisionId: input.revisionId,
       format: input.format,
       status: "queued"
     });
+
+    const requestId = input.requestId ?? randomUUID();
+    const correlationId = input.correlationId ?? requestId;
+    this.exportContext.set(exportArtifact.id, { requestId, correlationId });
+    this.metrics?.recordExportEnqueued();
+    this.logger.info(
+      {
+        exportId: exportArtifact.id,
+        revisionId: input.revisionId,
+        format: input.format,
+        requestId,
+        correlationId
+      },
+      "export.enqueued"
+    );
 
     this.enqueueExisting(exportArtifact.id);
     return exportArtifact;
@@ -112,6 +162,10 @@ export class ExportQueueService {
     const queued = await this.store.listExportArtifactsByStatuses(["queued"]);
     let scheduled = 0;
     for (const artifact of queued) {
+      if (!this.exportContext.has(artifact.id)) {
+        const recoveryId = randomUUID();
+        this.exportContext.set(artifact.id, { requestId: recoveryId, correlationId: recoveryId });
+      }
       this.scheduleExport(artifact);
       scheduled += 1;
     }
@@ -201,6 +255,17 @@ export class ExportQueueService {
     });
   }
 
+  private resolveTraceContext(exportId: string): ExportTraceContext {
+    const existing = this.exportContext.get(exportId);
+    if (existing) {
+      return existing;
+    }
+    const fallbackId = randomUUID();
+    const context = { requestId: fallbackId, correlationId: fallbackId };
+    this.exportContext.set(exportId, context);
+    return context;
+  }
+
   private async processExport(exportId: string): Promise<void> {
     const existing = await this.store.getExportArtifact(exportId);
     if (!existing || existing.status === "completed") {
@@ -210,6 +275,7 @@ export class ExportQueueService {
       return;
     }
 
+    const trace = this.resolveTraceContext(exportId);
     const attemptCount = (existing.attemptCount ?? 0) + 1;
     await this.store.updateExportArtifact({
       exportId,
@@ -222,6 +288,18 @@ export class ExportQueueService {
     if (!exportArtifact) {
       return;
     }
+
+    this.logger.info(
+      {
+        exportId,
+        revisionId: exportArtifact.revisionId,
+        format: exportArtifact.format,
+        attemptCount,
+        requestId: trace.requestId,
+        correlationId: trace.correlationId
+      },
+      "export.attempt.start"
+    );
 
     try {
       const revision = await this.store.getRevision(exportArtifact.revisionId);
@@ -259,6 +337,21 @@ export class ExportQueueService {
         nextAttemptAt: null,
         attemptCount
       });
+      this.metrics?.recordExportCompleted();
+      this.logger.info(
+        {
+          exportId,
+          revisionId: exportArtifact.revisionId,
+          format: exportArtifact.format,
+          attemptCount,
+          contentHash,
+          artifactUri,
+          requestId: trace.requestId,
+          correlationId: trace.correlationId
+        },
+        "export.attempt.completed"
+      );
+      this.exportContext.delete(exportId);
     } catch (error) {
       const failureKind = classifyExportError(error);
       const errorMessage = error instanceof Error ? error.message : "Unknown export failure.";
@@ -275,6 +368,21 @@ export class ExportQueueService {
           attemptCount,
           nextAttemptAt
         });
+        this.metrics?.recordExportRetried();
+        this.logger.warn(
+          {
+            exportId,
+            revisionId: exportArtifact.revisionId,
+            format: exportArtifact.format,
+            attemptCount,
+            failureKind,
+            errorMessage,
+            nextAttemptAt,
+            requestId: trace.requestId,
+            correlationId: trace.correlationId
+          },
+          "export.attempt.retry"
+        );
         if (updated) {
           this.scheduleExport(updated);
         }
@@ -289,6 +397,21 @@ export class ExportQueueService {
         attemptCount,
         nextAttemptAt: null
       });
+      this.metrics?.recordExportFailed();
+      this.logger.error(
+        {
+          exportId,
+          revisionId: exportArtifact.revisionId,
+          format: exportArtifact.format,
+          attemptCount,
+          failureKind,
+          errorMessage,
+          requestId: trace.requestId,
+          correlationId: trace.correlationId
+        },
+        "export.attempt.failed"
+      );
+      this.exportContext.delete(exportId);
     }
   }
 }

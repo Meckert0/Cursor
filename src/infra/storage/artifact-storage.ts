@@ -5,4 +5,5 @@ export interface ArtifactStorage {
     content: string | Buffer;
   }): Promise<string>;
   deleteArtifact(artifactUri: string): Promise<void>;
+  healthCheck(): Promise<{ ok: boolean; backend: string; detail?: string }>;
 }

@@ -33,4 +33,17 @@ export class RedisLockManager implements LockManager {
     }
     await this.redis.del(key);
   }
+
+  async healthCheck(): Promise<{ ok: boolean; backend: string; detail?: string }> {
+    try {
+      const pong = await this.redis.ping();
+      return { ok: pong === "PONG", backend: "redis", detail: pong === "PONG" ? undefined : `Unexpected ping response: ${pong}` };
+    } catch (error) {
+      return {
+        ok: false,
+        backend: "redis",
+        detail: error instanceof Error ? error.message : "Redis ping failed."
+      };
+    }
+  }
 }

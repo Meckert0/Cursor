@@ -159,6 +159,7 @@ function toWirelistRows(artifact: JsonObject): Array<Array<string | number>> {
     wirePartNumber?: string;
     wireColor?: string;
     wireGroup?: string;
+    sleeving?: string;
     toContact?: string;
     toSignalDescription?: string;
     labelPartNumber?: string;
@@ -178,6 +179,7 @@ function toWirelistRows(artifact: JsonObject): Array<Array<string | number>> {
       wirePath.wireAwg ?? "",
       wirePath.wirePartNumber ?? "",
       wirePath.length !== undefined ? String(wirePath.length) : "",
+      wirePath.sleeving ?? "none",
       wirePath.wireColor ?? "",
       wirePath.wireGroup ?? "",
       formatLocation(toReference, wirePath.toContact ?? ""),

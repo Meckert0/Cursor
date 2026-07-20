@@ -18,6 +18,14 @@ const AUDIT_AND_REVIEW_FIELDS: BuiltinLibraryField[] = [
   { key: "lastEditedAt", label: "Last edited at", isVisibleInViewer: true }
 ];
 
+const COMPATIBILITY_FIELDS: BuiltinLibraryField[] = [
+  { key: "pinCount", label: "Pin count", isVisibleInViewer: true, showOnAddForm: true },
+  { key: "pinIds", label: "Pin IDs", isVisibleInViewer: false, showOnAddForm: true },
+  { key: "acceptedAwgMin", label: "Accepted AWG min", isVisibleInViewer: true, showOnAddForm: true },
+  { key: "acceptedAwgMax", label: "Accepted AWG max", isVisibleInViewer: true, showOnAddForm: true },
+  { key: "acceptedFamilies", label: "Accepted wire families", isVisibleInViewer: true, showOnAddForm: true }
+];
+
 const COMMON_ITEM_FIELDS: BuiltinLibraryField[] = [
   { key: "partNumber", label: "Part number", isVisibleInViewer: true, showOnAddForm: true, showInSearch: true },
   { key: "family", label: "Family", isVisibleInViewer: true, showOnAddForm: true, showInSearch: true },
@@ -28,8 +36,19 @@ const COMMON_ITEM_FIELDS: BuiltinLibraryField[] = [
   ...AUDIT_AND_REVIEW_FIELDS
 ];
 
+const MODULE_AND_CONTACT_FIELDS: BuiltinLibraryField[] = [
+  { key: "partNumber", label: "Part number", isVisibleInViewer: true, showOnAddForm: true, showInSearch: true },
+  { key: "family", label: "Family", isVisibleInViewer: true, showOnAddForm: true, showInSearch: true },
+  { key: "description", label: "Description", isVisibleInViewer: true, showInSearch: true },
+  ...COMPATIBILITY_FIELDS,
+  { key: "isActive", label: "Active", isVisibleInViewer: true },
+  { key: "stockStatus", label: "Stock status", isVisibleInViewer: false },
+  { key: "compatibilityHints", label: "Compatibility hints", isVisibleInViewer: false },
+  ...AUDIT_AND_REVIEW_FIELDS
+];
+
 export const BUILTIN_FIELDS_BY_CATEGORY: Record<LibraryCategory, BuiltinLibraryField[]> = {
-  contact: COMMON_ITEM_FIELDS,
+  contact: MODULE_AND_CONTACT_FIELDS,
   wire: [
     { key: "partNumber", label: "Part number", isVisibleInViewer: true, showOnAddForm: true, showInSearch: true },
     { key: "family", label: "Family", isVisibleInViewer: true, showOnAddForm: true, showInSearch: true },
@@ -45,7 +64,7 @@ export const BUILTIN_FIELDS_BY_CATEGORY: Record<LibraryCategory, BuiltinLibraryF
   label: COMMON_ITEM_FIELDS,
   backshell: COMMON_ITEM_FIELDS,
   "strain-relief": COMMON_ITEM_FIELDS,
-  module: COMMON_ITEM_FIELDS,
+  module: MODULE_AND_CONTACT_FIELDS,
   splice: COMMON_ITEM_FIELDS
 };
 

@@ -7,4 +7,5 @@ export interface LockInfo {
 export interface LockManager {
   lock(designId: string, userId: string, ttlSeconds: number): Promise<LockInfo>;
   unlock(designId: string, userId: string): Promise<void>;
+  healthCheck(): Promise<{ ok: boolean; backend: string; detail?: string }>;
 }

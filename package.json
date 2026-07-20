@@ -18,7 +18,7 @@
     "test:web:e2e": "npm --prefix apps/web run test:e2e",
     "migrate": "tsx scripts/migrate.ts",
     "migrate:sqlite": "tsx scripts/migrate-sqlite.ts",
-    "test:validation": "node --import tsx --test src/domain/validator.test.ts src/domain/validator.fixtures.test.ts src/domain/bom.test.ts src/services/export-queue.test.ts",
+    "test:validation": "node --import tsx --test src/domain/validator.test.ts src/domain/validator.fixtures.test.ts src/domain/library-compatibility.test.ts src/domain/library-seed.test.ts src/domain/bom.test.ts src/services/export-queue.test.ts src/infra/observability/observability.test.ts",
     "test:api": "node --import tsx --test src/routes/api.integration.test.ts src/routes/auth.integration.test.ts src/infra/store/sqlite-store.integration.test.ts",
     "test": "npm run test:validation && npm run test:api && npm run test:web"
   },

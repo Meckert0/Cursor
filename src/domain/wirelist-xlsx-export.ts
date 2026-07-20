@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import AdmZip from "adm-zip";
 
-export const WIRELIST_TEMPLATE_COLUMN_COUNT = 15;
+export const WIRELIST_TEMPLATE_COLUMN_COUNT = 16;
 export const BOM_COLUMN_COUNT = 8;
 const WIRELIST_SHEET_XML_PATH = "xl/worksheets/sheet1.xml";
 const BOM_SHEET_XML_PATH = "xl/worksheets/sheet2.xml";
@@ -83,7 +83,7 @@ function getColumnStyleAttrs(sheetXml: string, columnIndex: number, prototypeRow
 
 function getRowAttrs(sheetXml: string, rowNumber: number): string {
   const match = sheetXml.match(new RegExp(`<row r="${rowNumber}"([^>]*)>`));
-  return match?.[1] ?? ' spans="1:15"';
+  return match?.[1] ?? ' spans="1:16"';
 }
 
 function buildDataRowXml(
@@ -131,14 +131,14 @@ function fillSheetXml(sheetXml: string, dataRows: Array<Array<string | number>>)
 }
 
 function updateSheetExtent(sheetXml: string, lastRow: number): string {
-  const lastCell = `O${lastRow}`;
+  const lastCell = `P${lastRow}`;
   return sheetXml.replace(/<dimension ref="[^"]*"\/>/, `<dimension ref="A1:${lastCell}"/>`);
 }
 
 function updateWorkbookRanges(workbookXml: string, lastRow: number): string {
   return workbookXml
     .replace(
-      /(<definedName name="_xlnm\.Print_Area" localSheetId="0">Wirelist!\$A\$1:\$O\$)\d+(<\/definedName>)/,
+      /(<definedName name="_xlnm\.Print_Area" localSheetId="0">Wirelist!\$A\$1:\$P\$)\d+(<\/definedName>)/,
       `$1${lastRow}$2`
     )
     .replace(

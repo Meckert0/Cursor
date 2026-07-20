@@ -27,6 +27,11 @@ const ingestItemSchema = z
     isActive: z.boolean().default(true),
     stockStatus: z.enum(["in_stock", "low_stock", "out_of_stock"]),
     compatibilityHints: z.array(z.string()).default([]),
+    pinCount: z.number().int().positive().optional(),
+    pinIds: z.array(z.string().min(1)).optional(),
+    acceptedAwgMin: z.number().positive().optional(),
+    acceptedAwgMax: z.number().positive().optional(),
+    acceptedFamilies: z.array(z.string().min(1)).optional(),
     isReviewed: z.boolean().default(false),
     reviewedByUserId: z.string().optional(),
     reviewedAt: z.string().datetime().optional(),
@@ -37,6 +42,16 @@ const ingestItemSchema = z
       context.addIssue({
         code: z.ZodIssueCode.custom,
         message: "reviewedByUserId and reviewedAt are required when isReviewed=true"
+      });
+    }
+    if (
+      value.acceptedAwgMin !== undefined &&
+      value.acceptedAwgMax !== undefined &&
+      value.acceptedAwgMin > value.acceptedAwgMax
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "acceptedAwgMin must be less than or equal to acceptedAwgMax"
       });
     }
     if (value.category === "wire") {
@@ -94,11 +109,20 @@ const updateActiveSchema = z.object({
   reviewedAt: z.string().datetime().optional(),
   stockStatus: z.enum(["in_stock", "low_stock", "out_of_stock"]).optional(),
   compatibilityHints: z.array(z.string()).optional(),
+  pinCount: z.number().int().positive().nullable().optional(),
+  pinIds: z.array(z.string().min(1)).optional(),
+  acceptedAwgMin: z.number().positive().nullable().optional(),
+  acceptedAwgMax: z.number().positive().nullable().optional(),
+  acceptedFamilies: z.array(z.string().min(1)).optional(),
   createdByUserId: z.string().min(1).optional(),
   createdAt: z.string().datetime().optional(),
   lastEditedByUserId: z.string().min(1).optional(),
   lastEditedAt: z.string().datetime().optional(),
   customFieldValues: z.record(z.string().min(1), z.string()).optional()
+});
+
+const restoreComponentSchema = z.object({
+  reactivate: z.boolean().optional()
 });
 
 const fieldDefinitionCategorySchema = libraryCategorySchema;
@@ -181,6 +205,14 @@ export function registerLibraryRoutes(app: FastifyInstance) {
       return true;
     });
     return { items: filtered };
+  });
+
+  app.get("/v1/library/components/archived", async (request, reply) => {
+    if (!requireRole(request, reply, ["owner"]).ok) {
+      return;
+    }
+    const items = await app.store.listArchivedLibraryComponents();
+    return { items };
   });
 
   app.get("/v1/library/components/:componentId", async (request, reply) => {
@@ -427,6 +459,23 @@ export function registerLibraryRoutes(app: FastifyInstance) {
     return archived;
   });
 
+  app.post("/v1/library/components/:componentId/restore", async (request, reply) => {
+    if (!requireRole(request, reply, ["owner"]).ok) {
+      return;
+    }
+    const params = z.object({ componentId: z.string().min(1) }).parse(request.params);
+    const body = restoreComponentSchema.parse(request.body ?? {});
+    const restored = await app.store.restoreLibraryComponent({
+      componentId: params.componentId,
+      restoredByUserId: resolveActingUserId(request),
+      reactivate: body.reactivate
+    });
+    if (!restored) {
+      return reply.notFound("Archived component not found.");
+    }
+    return restored;
+  });
+
   app.delete("/v1/library/components/:componentId", async (request, reply) => {
     if (!requireAdmin(request, reply).ok) {
       return;
@@ -485,6 +534,11 @@ export function registerLibraryRoutes(app: FastifyInstance) {
         reviewedAt: nextIsReviewed ? nextReviewedAt : undefined,
         stockStatus: body.stockStatus,
         compatibilityHints: body.compatibilityHints,
+        pinCount: body.pinCount === null ? undefined : body.pinCount,
+        pinIds: body.pinIds,
+        acceptedAwgMin: body.acceptedAwgMin === null ? undefined : body.acceptedAwgMin,
+        acceptedAwgMax: body.acceptedAwgMax === null ? undefined : body.acceptedAwgMax,
+        acceptedFamilies: body.acceptedFamilies,
         createdByUserId: body.createdByUserId,
         createdAt: body.createdAt,
         lastEditedByUserId: body.lastEditedByUserId,

@@ -53,6 +53,13 @@ export class SqliteStore extends MemoryStore {
     const bootstrap = bootstrapDatabase(dbPath);
     super(bootstrap.state ? { state: bootstrap.state } : undefined);
     this.db = bootstrap.db;
+    // Persist backfilled starter catalog for existing sqlite databases.
+    this.persistState();
+  }
+
+  override async ensureDefaultLibrarySeeded(): Promise<void> {
+    await super.ensureDefaultLibrarySeeded();
+    this.persistState();
   }
 
   private persistState() {
@@ -152,6 +159,7 @@ export class SqliteStore extends MemoryStore {
   override async updateRevisionSnapshot(input: {
     revisionId: string;
     snapshot: DesignSnapshot;
+    expectedSnapshotHash?: string;
   }): Promise<Revision | null> {
     const result = await super.updateRevisionSnapshot(input);
     this.persistState();
@@ -236,6 +244,9 @@ export class SqliteStore extends MemoryStore {
     projectId: string;
     defaultRulesetVersion?: string;
     allowedRulesetVersions: string[];
+    inactivePartSeverity?: "error" | "warning";
+    outOfStockSeverity?: "error" | "warning" | "info";
+    unreviewedPartSeverity?: "error" | "warning" | "info";
   }): Promise<ProjectRulesetPolicy> {
     const result = await super.upsertProjectRulesetPolicy(input);
     this.persistState();
@@ -275,6 +286,22 @@ export class SqliteStore extends MemoryStore {
     return result;
   }
 
+  override async listArchivedLibraryComponents(): Promise<LibraryComponentRecord[]> {
+    const result = await super.listArchivedLibraryComponents();
+    this.persistState();
+    return result;
+  }
+
+  override async restoreLibraryComponent(input: {
+    componentId: string;
+    restoredByUserId: string;
+    reactivate?: boolean;
+  }): Promise<LibraryComponentRecord | null> {
+    const result = await super.restoreLibraryComponent(input);
+    this.persistState();
+    return result;
+  }
+
   override async deleteLibraryComponent(input: { componentId: string }): Promise<boolean> {
     const result = await super.deleteLibraryComponent(input);
     this.persistState();
@@ -294,6 +321,11 @@ export class SqliteStore extends MemoryStore {
     reviewedAt?: string;
     stockStatus?: LibraryComponentRecord["stockStatus"];
     compatibilityHints?: string[];
+    pinCount?: number;
+    pinIds?: string[];
+    acceptedAwgMin?: number;
+    acceptedAwgMax?: number;
+    acceptedFamilies?: string[];
     createdByUserId?: string;
     createdAt?: string;
     lastEditedByUserId?: string;

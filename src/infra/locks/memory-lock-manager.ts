@@ -34,4 +34,8 @@ export class MemoryLockManager implements LockManager {
     }
     this.locks.delete(designId);
   }
+
+  async healthCheck(): Promise<{ ok: boolean; backend: string; detail?: string }> {
+    return { ok: true, backend: "memory" };
+  }
 }

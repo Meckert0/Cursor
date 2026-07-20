@@ -9,6 +9,175 @@ type Connector = RevisionDto["snapshot"]["connectors"][number];
 type Path = RevisionDto["snapshot"]["paths"][number];
 type Junction = NonNullable<RevisionDto["snapshot"]["junctions"]>[number];
 
+export type CanvasLocalDraft = {
+  connectors: Connector[];
+  junctions: Junction[];
+  paths: Path[];
+  positions: Record<string, NodePosition>;
+  dirty?: boolean;
+  updatedAt?: string;
+};
+
+export function canvasDraftStorageKey(revisionId: string): string {
+  return `cable-canvas-draft:${revisionId}`;
+}
+
+export function canvasLayoutStorageKey(revisionId: string): string {
+  return `cable-canvas-layout:${revisionId}`;
+}
+
+export function buildDefaultPositions(
+  connectors: Connector[],
+  junctions: Junction[]
+): Record<string, NodePosition> {
+  const result: Record<string, NodePosition> = {};
+  connectors.forEach((connector, index) => {
+    if (connector.location) {
+      result[connector.id] = {
+        x: connector.location.x,
+        y: connector.location.y
+      };
+      return;
+    }
+    result[connector.id] = {
+      x: 60 + (index % 4) * 170,
+      y: 60 + Math.floor(index / 4) * 120
+    };
+  });
+  junctions.forEach((junction, index) => {
+    if (junction.location) {
+      result[junction.id] = {
+        x: junction.location.x,
+        y: junction.location.y
+      };
+      return;
+    }
+    result[junction.id] = {
+      x: 130 + (index % 5) * 140,
+      y: 140 + Math.floor(index / 5) * 100
+    };
+  });
+  return result;
+}
+
+export function buildSnapshotFromCanvas(
+  baseline: RevisionDto["snapshot"],
+  input: {
+    connectors: Connector[];
+    junctions: Junction[];
+    paths: Path[];
+    positions: Record<string, NodePosition>;
+  }
+): RevisionDto["snapshot"] {
+  const pathIds = new Set(input.paths.map((path) => path.id));
+  const connectorIds = new Set(input.connectors.map((connector) => connector.id));
+
+  return {
+    ...baseline,
+    connectors: input.connectors.map((connector) => ({
+      ...connector,
+      location: input.positions[connector.id] ?? connector.location
+    })),
+    junctions: input.junctions.map((junction) => ({
+      ...junction,
+      location: input.positions[junction.id] ?? junction.location
+    })),
+    paths: input.paths,
+    pinMappings: baseline.pinMappings.filter(
+      (mapping) =>
+        pathIds.has(mapping.pathId) &&
+        connectorIds.has(mapping.fromConnectorId) &&
+        connectorIds.has(mapping.toConnectorId)
+    ),
+    bundles: baseline.bundles.map((bundle) => ({
+      ...bundle,
+      pathIds: bundle.pathIds.filter((pathId) => pathIds.has(pathId))
+    })),
+    annotations: baseline.annotations
+  };
+}
+
+export function writeCanvasLocalDraft(revisionId: string, draft: CanvasLocalDraft): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.setItem(canvasDraftStorageKey(revisionId), JSON.stringify(draft));
+}
+
+function readRawCanvasLocalDraft(revisionId: string): Partial<CanvasLocalDraft> | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  try {
+    const rawDraft = window.localStorage.getItem(canvasDraftStorageKey(revisionId));
+    return rawDraft ? (JSON.parse(rawDraft) as Partial<CanvasLocalDraft>) : null;
+  } catch {
+    return null;
+  }
+}
+
+function loadLegacyLayoutPositions(revisionId: string): Record<string, NodePosition> {
+  if (typeof window === "undefined") {
+    return {};
+  }
+  try {
+    const raw = window.localStorage.getItem(canvasLayoutStorageKey(revisionId));
+    if (!raw) {
+      return {};
+    }
+    return JSON.parse(raw) as Record<string, NodePosition>;
+  } catch {
+    return {};
+  }
+}
+
+export function loadInitialCanvasDraft(
+  revisionId: string,
+  snapshot: RevisionDto["snapshot"]
+): CanvasLocalDraft & { recoveredDirty: boolean } {
+  const serverConnectors = normalizeUnassignedConnectors(snapshot.connectors);
+  const serverJunctions = snapshot.junctions ?? [];
+  const serverPaths = normalizePathsWithWireDefaults(snapshot.paths);
+  const serverPositions = buildDefaultPositions(serverConnectors, serverJunctions);
+  const draft = readRawCanvasLocalDraft(revisionId);
+  const hasLegacyDirtyFlag = draft !== null && draft.dirty === undefined;
+  const recoveredDirty = Boolean(draft && (draft.dirty === true || hasLegacyDirtyFlag));
+
+  if (!recoveredDirty) {
+    return {
+      connectors: serverConnectors,
+      junctions: serverJunctions,
+      paths: serverPaths,
+      positions: serverPositions,
+      dirty: false,
+      recoveredDirty: false
+    };
+  }
+
+  const connectors = normalizeUnassignedConnectors(
+    Array.isArray(draft?.connectors) ? draft.connectors : serverConnectors
+  );
+  const junctions = Array.isArray(draft?.junctions) ? draft.junctions : serverJunctions;
+  const paths = Array.isArray(draft?.paths) ? normalizePathsWithWireDefaults(draft.paths) : serverPaths;
+  const draftPositions =
+    draft?.positions && typeof draft.positions === "object" ? draft.positions : {};
+  const legacyLayoutPositions = loadLegacyLayoutPositions(revisionId);
+
+  return {
+    connectors,
+    junctions,
+    paths,
+    positions: {
+      ...buildDefaultPositions(connectors, junctions),
+      ...legacyLayoutPositions,
+      ...draftPositions
+    },
+    dirty: true,
+    updatedAt: draft?.updatedAt,
+    recoveredDirty: true
+  };
+}
+
 export const SLEEVING_OPTIONS = [
   { value: "none", label: "no sleeving" },
   { value: "expandable_sleeving", label: "expandable sleeving" },
@@ -46,6 +215,9 @@ export function buildConnectorPins(count: number): Connector["pins"] {
 }
 
 export function readPinCountFromComponent(component: LibraryComponentDto): number | null {
+  if (typeof component.pinCount === "number" && Number.isInteger(component.pinCount) && component.pinCount > 0) {
+    return component.pinCount;
+  }
   return parsePinCount(component.customFieldValues?.[PIN_COUNT_FIELD_KEY] ?? "");
 }
 
@@ -78,33 +250,11 @@ export function readCanvasDraftSnapshot(
   revisionId: string,
   snapshot: RevisionDto["snapshot"]
 ): Pick<RevisionDto["snapshot"], "connectors" | "junctions" | "paths"> {
-  const defaultConnectors = normalizeUnassignedConnectors(snapshot.connectors);
-  const defaultJunctions = snapshot.junctions ?? [];
-  const defaultPaths = normalizePathsWithWireDefaults(snapshot.paths);
-
-  if (typeof window === "undefined") {
-    return {
-      connectors: defaultConnectors,
-      junctions: defaultJunctions,
-      paths: defaultPaths
-    };
-  }
-
-  const draftStorageKey = `cable-canvas-draft:${revisionId}`;
-  let draft: Partial<Pick<RevisionDto["snapshot"], "connectors" | "junctions" | "paths">> | null = null;
-  try {
-    const rawDraft = window.localStorage.getItem(draftStorageKey);
-    draft = rawDraft ? (JSON.parse(rawDraft) as Partial<Pick<RevisionDto["snapshot"], "connectors" | "junctions" | "paths">>) : null;
-  } catch {
-    draft = null;
-  }
-
+  const loaded = loadInitialCanvasDraft(revisionId, snapshot);
   return {
-    connectors: normalizeUnassignedConnectors(
-      Array.isArray(draft?.connectors) ? draft.connectors : defaultConnectors
-    ),
-    junctions: Array.isArray(draft?.junctions) ? draft.junctions : defaultJunctions,
-    paths: Array.isArray(draft?.paths) ? normalizePathsWithWireDefaults(draft.paths) : defaultPaths
+    connectors: loaded.connectors,
+    junctions: loaded.junctions,
+    paths: loaded.paths
   };
 }
 

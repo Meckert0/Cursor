@@ -1,8 +1,11 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import type { LibraryComponentDto } from "./api";
+import type { LibraryComponentDto, RevisionDto } from "./api";
 import {
   buildConnectorPairTotals,
   buildConnectorPins,
+  buildDefaultPositions,
+  buildSnapshotFromCanvas,
   buildUniqueWireSections,
   formatConnectorPinsLabel,
   normalizePathEndpointSelection,
@@ -12,6 +15,11 @@ import {
   readPinCountFromComponent,
   removeConnectorAndRelatedPaths
 } from "./cable-canvas-utils";
+import { buildNextCanvasId, buildNextConnectorReference, buildNextWireName } from "./cable-canvas-ids";
+
+function hashCanvasSnapshot(snapshot: RevisionDto["snapshot"]): string {
+  return createHash("sha256").update(JSON.stringify(snapshot)).digest("hex");
+}
 
 describe("cable-canvas-utils", () => {
   it("parses pin count values", () => {
@@ -34,7 +42,13 @@ describe("cable-canvas-utils", () => {
     ]);
   });
 
-  it("reads pincount from library components", () => {
+  it("reads pinCount from first-class field and legacy customFieldValues", () => {
+    expect(
+      readPinCountFromComponent({
+        pinCount: 15,
+        customFieldValues: { pincount: "8" }
+      } as LibraryComponentDto)
+    ).toBe(15);
     const component = {
       customFieldValues: { pincount: "8" }
     } as LibraryComponentDto;
@@ -193,7 +207,7 @@ describe("cable-canvas-utils", () => {
         { id: "c2", reference: "J2", pins: [{ id: "1", number: "1" }] },
         { id: "c3", reference: "J3", pins: [{ id: "1", number: "1" }] }
       ],
-      junctions: [{ id: "j1", junctionType: "splice" }],
+      junctions: [{ id: "j1", location: { x: 0, y: 0 }, junctionType: "splice" }],
       paths: [
         { id: "p1", fromConnectorId: "c1", toConnectorId: "j1", pathType: "wire", length: 2 },
         { id: "p2", fromConnectorId: "j1", toConnectorId: "c2", pathType: "wire", length: 1.5 },
@@ -206,5 +220,98 @@ describe("cable-canvas-utils", () => {
       { fromConnectorId: "c1", toConnectorId: "c3", totalLengthFt: 7.5, hopCount: 3 },
       { fromConnectorId: "c2", toConnectorId: "c3", totalLengthFt: 4, hopCount: 1 }
     ]);
+  });
+
+  it("builds next canvas ids, wire names, and connector references", () => {
+    expect(buildNextCanvasId(["c_canvas_1"], "c_canvas_")).toBe("c_canvas_2");
+    expect(buildNextWireName([{ id: "p1", fromConnectorId: "c1", toConnectorId: "c2", pathType: "wire", wireName: "wire3" }])).toBe(
+      "wire4"
+    );
+    expect(buildNextConnectorReference([{ id: "c1", reference: "J1", pins: [] }])).toBe("J2");
+  });
+
+  it("round-trips canvas edits into a hash-stable revision snapshot", () => {
+    const baseline: RevisionDto["snapshot"] = {
+      connectors: [{ id: "c1", reference: "J1", pins: [{ id: "1", number: "1" }] }],
+      junctions: [{ id: "j1", location: { x: 10, y: 20 }, junctionType: "splice", label: "A" }],
+      paths: [
+        {
+          id: "p1",
+          fromConnectorId: "c1",
+          toConnectorId: "j1",
+          pathType: "wire",
+          wireName: "wire1",
+          length: 12,
+          sleeving: "none"
+        }
+      ],
+      pinMappings: [
+        {
+          id: "m1",
+          pathId: "p1",
+          fromConnectorId: "c1",
+          fromPinId: "1",
+          toConnectorId: "c1",
+          toPinId: "1",
+          mappingType: "one_to_one"
+        },
+        {
+          id: "m-stale",
+          pathId: "missing",
+          fromConnectorId: "c1",
+          fromPinId: "1",
+          toConnectorId: "c2",
+          toPinId: "1",
+          mappingType: "one_to_one"
+        }
+      ],
+      bundles: [
+        { id: "b1", name: "bundle", pathIds: ["p1", "gone"] },
+        { id: "b2", name: "empty", pathIds: ["gone"] }
+      ],
+      annotations: [{ id: "a1", text: "note" }]
+    };
+
+    const connectors = [
+      ...baseline.connectors,
+      { id: "c2", reference: "J2", pins: [{ id: "1", number: "1" }], partNumber: "CONN-2" }
+    ];
+    const junctions = baseline.junctions ?? [];
+    const paths = [
+      ...baseline.paths,
+      {
+        id: "p2",
+        fromConnectorId: "c2",
+        toConnectorId: "j1",
+        pathType: "wire",
+        wireName: "wire2",
+        length: 8,
+        sleeving: "expandable_sleeving" as const
+      }
+    ];
+    const positions = {
+      c1: { x: 40, y: 50 },
+      c2: { x: 220, y: 80 },
+      j1: { x: 130, y: 140 }
+    };
+
+    const first = buildSnapshotFromCanvas(baseline, { connectors, junctions, paths, positions });
+    expect(first.connectors.map((connector) => connector.location)).toEqual([
+      { x: 40, y: 50 },
+      { x: 220, y: 80 }
+    ]);
+    expect(first.junctions?.[0]?.location).toEqual({ x: 130, y: 140 });
+    expect(first.pinMappings.map((mapping) => mapping.id)).toEqual(["m1"]);
+    expect(first.bundles[0]?.pathIds).toEqual(["p1"]);
+    expect(first.annotations).toEqual(baseline.annotations);
+
+    const rebuiltPositions = buildDefaultPositions(first.connectors, first.junctions ?? []);
+    const second = buildSnapshotFromCanvas(first, {
+      connectors: first.connectors,
+      junctions: first.junctions ?? [],
+      paths: first.paths,
+      positions: rebuiltPositions
+    });
+    expect(hashCanvasSnapshot(second)).toBe(hashCanvasSnapshot(first));
   });
 });

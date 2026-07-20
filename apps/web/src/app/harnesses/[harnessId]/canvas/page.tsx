@@ -8,15 +8,13 @@ import {
   ingestLibraryComponents,
   listLibraryComponents,
   listLibraryFieldDefinitions,
-  updateHarness
+  updateHarness,
+  updateRevisionSnapshot,
+  type RevisionDto
 } from "@/lib/api";
 import { requireSignedInUser } from "@/lib/auth";
 import { HarnessDescriptionField } from "./harness-description-field";
 import styles from "./page.module.css";
-
-function removeSeededWire(catalog: Awaited<ReturnType<typeof listLibraryComponents>>) {
-  return catalog.filter((item) => item.id !== "cmp-wire-001");
-}
 
 function connectorCatalogOnly(catalog: Awaited<ReturnType<typeof listLibraryComponents>>) {
   return catalog.filter((item) => item.category === "module");
@@ -37,18 +35,24 @@ export default async function HarnessCanvasPage({
   const adminIsViewingAnotherUsersCanvas = signedInUser.accountRole === "admin" && harness.createdBy !== signedInUser.id;
   const isReadOnly = adminIsViewingAnotherUsersCanvas && mode !== "edit";
   const revision = await getRevision(harness.currentRevisionId);
-  const wireCatalog = removeSeededWire(
-    await listLibraryComponents({
-      category: "wire",
-      isActive: true
-    })
-  );
+  const wireCatalog = await listLibraryComponents({
+    category: "wire",
+    isActive: true
+  });
   const connectorCatalog = connectorCatalogOnly(
     await listLibraryComponents({
       category: "module",
       isActive: true
     })
   );
+  const backshellCatalog = await listLibraryComponents({
+    category: "backshell",
+    isActive: true
+  });
+  const strainReliefCatalog = await listLibraryComponents({
+    category: "strain-relief",
+    isActive: true
+  });
   const connectorFieldDefinitions = await listLibraryFieldDefinitions("module").catch(() => []);
 
   async function quickAddWireAction(formData: FormData) {
@@ -57,7 +61,7 @@ export default async function HarnessCanvasPage({
       return {
         ok: false,
         error: "Switch to edit mode to add wires.",
-        wireCatalog: removeSeededWire(await listLibraryComponents({ category: "wire", isActive: true }))
+        wireCatalog: await listLibraryComponents({ category: "wire", isActive: true })
       };
     }
     const partNumber = String(formData.get("partNumber") ?? "").trim();
@@ -67,7 +71,7 @@ export default async function HarnessCanvasPage({
       return {
         ok: false,
         error: "Part number, AWG, and color are required.",
-        wireCatalog: removeSeededWire(await listLibraryComponents({ category: "wire", isActive: true }))
+        wireCatalog: await listLibraryComponents({ category: "wire", isActive: true })
       };
     }
     try {
@@ -89,12 +93,10 @@ export default async function HarnessCanvasPage({
         ]
       });
       const createdId = ingestResult.results.find((row) => row.status === "committed")?.componentId;
-      const refreshedWireCatalog = removeSeededWire(
-        await listLibraryComponents({
-          category: "wire",
-          isActive: true
-        })
-      );
+      const refreshedWireCatalog = await listLibraryComponents({
+        category: "wire",
+        isActive: true
+      });
       revalidatePath(`/harnesses/${harness.id}/canvas`);
       return {
         ok: true,
@@ -106,7 +108,7 @@ export default async function HarnessCanvasPage({
       return {
         ok: false,
         error: error instanceof Error ? error.message : "Wire quick-add failed.",
-        wireCatalog: removeSeededWire(await listLibraryComponents({ category: "wire", isActive: true }))
+        wireCatalog: await listLibraryComponents({ category: "wire", isActive: true })
       };
     }
   }
@@ -175,6 +177,43 @@ export default async function HarnessCanvasPage({
     }
   }
 
+  async function saveCanvasSnapshotAction(input: {
+    snapshot: RevisionDto["snapshot"];
+    expectedSnapshotHash: string;
+  }) {
+    "use server";
+    if (isReadOnly) {
+      return {
+        ok: false,
+        error: "Switch to edit mode to save canvas changes."
+      };
+    }
+    try {
+      const updated = await updateRevisionSnapshot({
+        revisionId: revision.id,
+        snapshot: input.snapshot,
+        expectedSnapshotHash: input.expectedSnapshotHash
+      });
+      revalidatePath(`/harnesses/${harness.id}/canvas`);
+      revalidatePath(`/harnesses/${harness.id}/wirelist`);
+      revalidatePath(`/harnesses/${harness.id}/details/new`);
+      revalidatePath(`/details/${revision.id}`);
+      return {
+        ok: true,
+        snapshot: updated.snapshot,
+        snapshotHash: updated.snapshotHash
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to save canvas.";
+      const conflict = /modified elsewhere|409/i.test(message);
+      return {
+        ok: false,
+        conflict,
+        error: message
+      };
+    }
+  }
+
   async function saveHarnessDescriptionAction(description: string) {
     "use server";
     if (isReadOnly) {
@@ -223,11 +262,15 @@ export default async function HarnessCanvasPage({
           <CableCanvas
             revisionId={revision.id}
             snapshot={revision.snapshot}
+            snapshotHash={revision.snapshotHash ?? ""}
             wireCatalog={wireCatalog}
             connectorCatalog={connectorCatalog}
+            backshellCatalog={backshellCatalog}
+            strainReliefCatalog={strainReliefCatalog}
             connectorFieldDefinitions={connectorFieldDefinitions}
             quickAddWireAction={quickAddWireAction}
             quickAddConnectorAction={quickAddConnectorAction}
+            saveCanvasAction={saveCanvasSnapshotAction}
             readOnly={isReadOnly}
           />
         </section>

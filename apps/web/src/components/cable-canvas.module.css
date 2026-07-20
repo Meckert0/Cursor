@@ -101,6 +101,22 @@
   background: #bfdbfe !important;
 }
 
+.saveStatus,
+.saveStatusDirty {
+  margin-left: auto;
+  font-size: 13px;
+  padding: 6px 8px;
+}
+
+.saveStatus {
+  color: #166534;
+}
+
+.saveStatusDirty {
+  color: #9a3412;
+  font-weight: 600;
+}
+
 .quickAddNotice {
   color: #166534;
   font-size: 12px;

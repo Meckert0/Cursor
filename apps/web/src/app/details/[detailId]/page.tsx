@@ -9,8 +9,12 @@ import {
   getRevision,
   getRevisionBom,
   getValidationRun,
+  listHarnessSubmissions,
   listRevisionExports,
+  lockHarness,
+  submitHarnessForQuote,
   toActionableApiErrorMessage,
+  unlockHarness,
   validateRevision
 } from "@/lib/api";
 import { requireSignedInUser } from "@/lib/auth";
@@ -58,6 +62,57 @@ async function exportDetailsAction(detailId: string, formData: FormData) {
   redirect(`/details/${detailId}?notice=${encodeURIComponent(notice)}`);
 }
 
+async function submitForQuoteAction(detailId: string, harnessId: string, formData: FormData) {
+  "use server";
+  const message = String(formData.get("message") ?? "").trim();
+  try {
+    await submitHarnessForQuote({
+      harnessId,
+      revisionId: detailId,
+      message: message || undefined
+    });
+    revalidatePath(`/details/${detailId}`);
+  } catch (error) {
+    const raw = error instanceof Error ? error.message : "Submit for quote failed.";
+    const actionable = toActionableApiErrorMessage(raw, {
+      "Latest validation pass is required before submission.": "Run validation first, then submit for quote.",
+      "Cannot submit design with validation errors.": "Fix validation errors, then submit for quote.",
+      "Validation is stale. Re-validate the current revision snapshot before submission.":
+        "Validation is stale. Re-validate the current revision snapshot before submission."
+    });
+    redirect(`/details/${detailId}?error=${encodeURIComponent(actionable)}`);
+  }
+  redirect(`/details/${detailId}?notice=${encodeURIComponent("Quote submission received.")}`);
+}
+
+async function lockHarnessAction(detailId: string, harnessId: string) {
+  "use server";
+  try {
+    await lockHarness({ harnessId, ttlSeconds: 300 });
+    revalidatePath(`/details/${detailId}`);
+  } catch (error) {
+    const message = toActionableApiErrorMessage(error instanceof Error ? error.message : "Lock failed.", {
+      "Design is locked by another user.": "Design is locked by another user."
+    });
+    redirect(`/details/${detailId}?error=${encodeURIComponent(message)}`);
+  }
+  redirect(`/details/${detailId}?notice=${encodeURIComponent("Harness locked for editing.")}`);
+}
+
+async function unlockHarnessAction(detailId: string, harnessId: string) {
+  "use server";
+  try {
+    await unlockHarness({ harnessId });
+    revalidatePath(`/details/${detailId}`);
+  } catch (error) {
+    const message = toActionableApiErrorMessage(error instanceof Error ? error.message : "Unlock failed.", {
+      "Only lock owner can unlock this design.": "Only the lock owner can unlock this harness."
+    });
+    redirect(`/details/${detailId}?error=${encodeURIComponent(message)}`);
+  }
+  redirect(`/details/${detailId}?notice=${encodeURIComponent("Harness unlocked.")}`);
+}
+
 export default async function DetailsPage({
   params,
   searchParams
@@ -78,6 +133,7 @@ export default async function DetailsPage({
   const revision = await getRevision(detailId);
   const design = await getDesign(revision.designId);
   const bom = await getRevisionBom(detailId);
+  const submissions = await listHarnessSubmissions(design.id);
 
   const rawExports = await listRevisionExports(detailId);
   const exports = await Promise.all(
@@ -213,6 +269,57 @@ export default async function DetailsPage({
           )}
         </section>
 
+        <section className={styles.card} data-testid="details-submit-section">
+          <h2>Submit for quote</h2>
+          <p>Requires a fresh validation pass with zero errors on the current snapshot.</p>
+          <form
+            action={submitForQuoteAction.bind(null, detailId, design.id)}
+            data-testid="submit-for-quote-form"
+            className={styles.inlineActions}
+          >
+            <label>
+              Message
+              <input
+                name="message"
+                type="text"
+                placeholder="Optional note for reviewers"
+                data-testid="submit-for-quote-message"
+              />
+            </label>
+            <button type="submit" data-testid="submit-for-quote-submit">
+              Submit for quote
+            </button>
+          </form>
+          {submissions.length === 0 ? <p data-testid="details-submissions-empty">No quote submissions yet.</p> : null}
+          {submissions.length > 0 ? (
+            <ul data-testid="details-submissions-list">
+              {submissions.map((submission) => (
+                <li key={submission.id}>
+                  {submission.status} - {submission.id}
+                  {submission.message ? ` - ${submission.message}` : ""}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </section>
+
+        <section className={styles.card} data-testid="details-lock-section">
+          <h2>Edit lock</h2>
+          <p>Acquire an exclusive edit lock before collaborative changes.</p>
+          <div className={styles.inlineActions}>
+            <form action={lockHarnessAction.bind(null, detailId, design.id)} data-testid="lock-harness-form">
+              <button type="submit" data-testid="lock-harness-submit">
+                Lock harness
+              </button>
+            </form>
+            <form action={unlockHarnessAction.bind(null, detailId, design.id)} data-testid="unlock-harness-form">
+              <button type="submit" data-testid="unlock-harness-submit">
+                Unlock harness
+              </button>
+            </form>
+          </div>
+        </section>
+
         <section className={styles.card}>
           <h2>Exports</h2>
           <div className={styles.inlineActions}>
@@ -234,7 +341,7 @@ export default async function DetailsPage({
           {exports.length > 0 ? (
             <ul className={styles.exportList} data-testid="details-export-list">
               {exports.map((artifact) => (
-                <li key={artifact.id}>
+                <li key={artifact.id} data-testid={`export-item-${artifact.status}`}>
                   <strong>{artifact.format}</strong> -{" "}
                   <span
                     className={
@@ -251,12 +358,14 @@ export default async function DetailsPage({
                     <>
                       {" "}
                       -{" "}
-                      <a href={artifact.downloadUrl} target="_blank" rel="noreferrer">
+                      <a href={artifact.downloadUrl} target="_blank" rel="noreferrer" data-testid="export-download-link">
                         open
                       </a>
                     </>
                   ) : null}
-                  {artifact.errorMessage ? <> - {artifact.errorMessage}</> : null}
+                  {artifact.errorMessage ? (
+                    <span data-testid="export-error-message"> - {artifact.errorMessage}</span>
+                  ) : null}
                   {artifact.failureKind ? <> ({artifact.failureKind})</> : null}
                   {typeof artifact.attemptCount === "number" && artifact.attemptCount > 0 ? (
                     <> - attempts {artifact.attemptCount}</>

@@ -2,20 +2,63 @@ import { describe, expect, it } from "vitest";
 import {
   buildConnectorPositionLookup,
   buildWirelistNodeIds,
+  formatWirelistLocation,
   parseConnectorPinsField,
   parseImportedWirelistRows,
+  parseWirelistLocation,
   snapshotToWirelistRows,
   validateWirelistRows,
   verifyWirelistLocation,
   wirelistRowsToTemplateRecords,
   wirelistRowsToSnapshot
 } from "./wirelist-utils";
+import type { WirelistRow } from "./wirelist-utils";
+
+function blankRow(overrides: Partial<WirelistRow>): WirelistRow {
+  return {
+    id: "p1",
+    runNumber: "1",
+    fromLocation: "",
+    fromContact: "",
+    fromSignalDescription: "",
+    wireAwg: "",
+    wirePartNumber: "",
+    length: "",
+    wireColor: "",
+    wireGroup: "",
+    toLocation: "",
+    toContact: "",
+    toSignalDescription: "",
+    labelPartNumber: "",
+    labelText: "",
+    notes: "",
+    wireName: "wire1",
+    sleeving: "none",
+    wireComponentId: "",
+    ...overrides
+  };
+}
 
 describe("wirelist-utils", () => {
   const snapshot = {
     connectors: [
-      { id: "c1", reference: "J1", pins: [{ id: "1", number: "1" }] },
-      { id: "c2", reference: "J2", pins: [{ id: "1", number: "1" }] }
+      {
+        id: "c1",
+        reference: "J1",
+        pins: [
+          { id: "1", number: "1" },
+          { id: "3", number: "3" },
+          { id: "A1", number: "A1" }
+        ]
+      },
+      {
+        id: "c2",
+        reference: "J2",
+        pins: [
+          { id: "1", number: "1" },
+          { id: "A1", number: "A1" }
+        ]
+      }
     ],
     junctions: [{ id: "j1", location: { x: 20, y: 20 }, junctionType: "splice" }],
     paths: [
@@ -53,7 +96,8 @@ describe("wirelist-utils", () => {
       fromLocation: "J1",
       toLocation: "J2",
       length: "10",
-      wirePartNumber: "PN-22-WHT"
+      wirePartNumber: "PN-22-WHT",
+      sleeving: "none"
     });
 
     const roundTrip = wirelistRowsToSnapshot(snapshot, rows);
@@ -63,34 +107,50 @@ describe("wirelist-utils", () => {
     expect(roundTrip.paths[0]?.labelText).toBe("WIRE-1");
   });
 
+  it("round-trips sleeving through wirelist rows", () => {
+    const rows = snapshotToWirelistRows({
+      ...snapshot,
+      paths: [
+        {
+          ...snapshot.paths[0],
+          sleeving: "expandable_sleeving"
+        }
+      ]
+    });
+    expect(rows[0]?.sleeving).toBe("expandable_sleeving");
+
+    const updated = rows.map((row) =>
+      row.id === "p1" ? { ...row, sleeving: "wire_braid_under_expandable_sleeving" as const } : row
+    );
+    const roundTrip = wirelistRowsToSnapshot(snapshot, updated);
+    expect(roundTrip.paths[0]?.sleeving).toBe("wire_braid_under_expandable_sleeving");
+
+    const template = wirelistRowsToTemplateRecords(updated);
+    expect(template[0]?.Sleeving).toBe("wire_braid_under_expandable_sleeving");
+    const imported = parseImportedWirelistRows({
+      records: template,
+      existingRows: rows,
+      wireCatalog: []
+    });
+    expect(imported[0]?.sleeving).toBe("wire_braid_under_expandable_sleeving");
+  });
+
   it("validates malformed row values", () => {
     const errors = validateWirelistRows(
       [
-        {
+        blankRow({
           id: "",
           runNumber: "",
           fromLocation: "missing",
-          fromContact: "",
-          fromSignalDescription: "",
-          wireAwg: "",
-          wirePartNumber: "",
-          length: "-4",
-          wireColor: "",
-          wireGroup: "",
           toLocation: "missing",
-          toContact: "",
-          toSignalDescription: "",
-          labelPartNumber: "",
-          labelText: "",
-          notes: "",
-          wireName: "",
-          sleeving: "none",
-          wireComponentId: ""
-        }
+          length: "-4"
+        })
       ],
-      buildWirelistNodeIds(snapshot)
+      buildWirelistNodeIds(snapshot),
+      [...snapshot.connectors]
     );
     expect(errors.length).toBeGreaterThan(0);
+    expect(errors.some((error) => error.includes("unknown connector"))).toBe(true);
   });
 
   it("parses imported records and resolves wire component ids by part number", () => {
@@ -104,6 +164,7 @@ describe("wirelist-utils", () => {
           "Wire AWG": "22",
           "Wire/Patchcord P/N": "PN-22-WHT",
           "Length (in)": "4.5",
+          Sleeving: "expandable_sleeving",
           "Wire Color": "white",
           "Wire Group": "B",
           "To Location (Conn-Pin)": "J1 - 1",
@@ -139,6 +200,7 @@ describe("wirelist-utils", () => {
     });
     expect(rows[0]?.wireComponentId).toBe("cmp-wire-22");
     expect(rows[0]?.wirePartNumber).toBe("PN-22-WHT");
+    expect(rows[0]?.sleeving).toBe("expandable_sleeving");
     expect(rows[0]?.fromLocation).toBe("J2 - 1");
     expect(rows[0]?.toSignalDescription).toBe("OUT");
   });
@@ -152,6 +214,206 @@ describe("wirelist-utils", () => {
       "Wire/Patchcord P/N": "PN-22-WHT",
       "Label Text": "WIRE-1"
     });
+  });
+});
+
+describe("parseWirelistLocation / formatWirelistLocation", () => {
+  it("parses connector-pin forms including hyphenated refs", () => {
+    expect(parseWirelistLocation("J1-3")).toEqual({ connectorRef: "J1", pinNumber: "3" });
+    expect(parseWirelistLocation("J2-A1")).toEqual({ connectorRef: "J2", pinNumber: "A1" });
+    expect(parseWirelistLocation("J1 - 3")).toEqual({ connectorRef: "J1", pinNumber: "3" });
+    expect(parseWirelistLocation("CONN-A - 5")).toEqual({ connectorRef: "CONN-A", pinNumber: "5" });
+    expect(parseWirelistLocation("J1")).toEqual({ connectorRef: "J1", pinNumber: "" });
+    expect(parseWirelistLocation("")).toEqual({ connectorRef: "", pinNumber: "" });
+  });
+
+  it("formats locations with a stable Conn - Pin separator", () => {
+    expect(formatWirelistLocation("J1", "3")).toBe("J1 - 3");
+    expect(formatWirelistLocation("J2", "A1")).toBe("J2 - A1");
+    expect(formatWirelistLocation("J1", "")).toBe("J1");
+  });
+});
+
+describe("pin mapping save/load round-trip", () => {
+  const snapshot = {
+    connectors: [
+      {
+        id: "c1",
+        reference: "J1",
+        pins: [
+          { id: "1", number: "1" },
+          { id: "3", number: "3" }
+        ]
+      },
+      {
+        id: "c2",
+        reference: "J2",
+        pins: [
+          { id: "1", number: "1" },
+          { id: "A1", number: "A1" }
+        ]
+      }
+    ],
+    junctions: [{ id: "j1", location: { x: 20, y: 20 }, junctionType: "splice" }],
+    paths: [
+      {
+        id: "p1",
+        runNumber: 1,
+        wireName: "wire1",
+        fromConnectorId: "c1",
+        toConnectorId: "c2",
+        pathType: "wire"
+      }
+    ],
+    pinMappings: [] as Array<{
+      id: string;
+      pathId: string;
+      fromConnectorId: string;
+      fromPinId: string;
+      toConnectorId: string;
+      toPinId: string;
+      mappingType: "one_to_one" | "one_to_many" | "loopback";
+    }>,
+    bundles: [],
+    annotations: []
+  };
+
+  it("emits a pin mapping when both Conn-Pin ends resolve", () => {
+    const rows = [
+      blankRow({
+        fromLocation: "J1-3",
+        toLocation: "J2-A1",
+        length: "12"
+      })
+    ];
+    const next = wirelistRowsToSnapshot(snapshot, rows);
+    expect(next.paths[0]).toMatchObject({
+      fromConnectorId: "c1",
+      toConnectorId: "c2"
+    });
+    expect(next.pinMappings).toEqual([
+      {
+        id: "pm_p1",
+        pathId: "p1",
+        fromConnectorId: "c1",
+        fromPinId: "3",
+        toConnectorId: "c2",
+        toPinId: "A1",
+        mappingType: "one_to_one"
+      }
+    ]);
+  });
+
+  it("round-trips Conn-Pin cells through save and load", () => {
+    const rows = [
+      blankRow({
+        fromLocation: "J1-3",
+        toLocation: "J2-A1"
+      })
+    ];
+    const saved = wirelistRowsToSnapshot(snapshot, rows);
+    const reloaded = snapshotToWirelistRows(saved);
+    expect(reloaded[0]?.fromLocation).toBe("J1 - 3");
+    expect(reloaded[0]?.toLocation).toBe("J2 - A1");
+  });
+
+  it("renders Conn-Pin from an existing pin mapping on load", () => {
+    const withMapping = {
+      ...snapshot,
+      pinMappings: [
+        {
+          id: "m1",
+          pathId: "p1",
+          fromConnectorId: "c1",
+          fromPinId: "3",
+          toConnectorId: "c2",
+          toPinId: "A1",
+          mappingType: "one_to_one" as const
+        }
+      ]
+    };
+    const rows = snapshotToWirelistRows(withMapping);
+    expect(rows[0]?.fromLocation).toBe("J1 - 3");
+    expect(rows[0]?.toLocation).toBe("J2 - A1");
+  });
+
+  it("reuses existing mapping ids and clears mappings when pins are removed", () => {
+    const withMapping = {
+      ...snapshot,
+      pinMappings: [
+        {
+          id: "m-existing",
+          pathId: "p1",
+          fromConnectorId: "c1",
+          fromPinId: "3",
+          toConnectorId: "c2",
+          toPinId: "A1",
+          mappingType: "one_to_one" as const
+        }
+      ]
+    };
+    const kept = wirelistRowsToSnapshot(withMapping, [
+      blankRow({ fromLocation: "J1 - 3", toLocation: "J2 - A1" })
+    ]);
+    expect(kept.pinMappings[0]?.id).toBe("m-existing");
+
+    const cleared = wirelistRowsToSnapshot(withMapping, [
+      blankRow({ fromLocation: "J1", toLocation: "J2" })
+    ]);
+    expect(cleared.pinMappings).toEqual([]);
+  });
+
+  it("marks same-connector mappings as loopback", () => {
+    const next = wirelistRowsToSnapshot(snapshot, [
+      blankRow({ fromLocation: "J1-1", toLocation: "J1-3" })
+    ]);
+    expect(next.pinMappings[0]?.mappingType).toBe("loopback");
+  });
+
+  it("does not emit a pin mapping for junction endpoints", () => {
+    const next = wirelistRowsToSnapshot(snapshot, [
+      blankRow({ fromLocation: "J1-1", toLocation: "j1" })
+    ]);
+    expect(next.paths[0]?.toConnectorId).toBe("j1");
+    expect(next.pinMappings).toEqual([]);
+  });
+});
+
+describe("validateWirelistRows location checks", () => {
+  const snapshot = {
+    connectors: [
+      { id: "c1", reference: "J1", pins: [{ id: "1", number: "1" }, { id: "3", number: "3" }] },
+      { id: "c2", reference: "J2", pins: [{ id: "1", number: "1" }] }
+    ],
+    junctions: [{ id: "j1", location: { x: 0, y: 0 } }],
+    paths: [],
+    pinMappings: [],
+    bundles: [],
+    annotations: []
+  };
+
+  it("flags unknown connectors and unknown pins", () => {
+    const errors = validateWirelistRows(
+      [blankRow({ fromLocation: "JX-1", toLocation: "J1-9" })],
+      buildWirelistNodeIds(snapshot),
+      snapshot.connectors
+    );
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        'Row 1: From Location references unknown connector "JX".',
+        'Row 1: To Location pin "9" not found on connector J1.'
+      ])
+    );
+  });
+
+  it("allows known connectors without a pin and known Conn-Pin pairs", () => {
+    expect(
+      validateWirelistRows(
+        [blankRow({ fromLocation: "J1", toLocation: "J2-1" })],
+        buildWirelistNodeIds(snapshot),
+        snapshot.connectors
+      )
+    ).toEqual([]);
   });
 });
 

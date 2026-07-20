@@ -73,7 +73,11 @@ export default async function HarnessWirelistPage({
           error: "Spreadsheet does not contain populated wire rows."
         };
       }
-      const errors = validateWirelistRows(importedRows, buildWirelistNodeIds(revision.snapshot));
+      const errors = validateWirelistRows(
+        importedRows,
+        buildWirelistNodeIds(revision.snapshot),
+        revision.snapshot.connectors
+      );
       if (errors.length > 0) {
         return {
           ok: false,
@@ -83,7 +87,8 @@ export default async function HarnessWirelistPage({
       const nextSnapshot = wirelistRowsToSnapshot(revision.snapshot, importedRows);
       const updated = await updateRevisionSnapshot({
         revisionId: revision.id,
-        snapshot: nextSnapshot
+        snapshot: nextSnapshot,
+        expectedSnapshotHash: revision.snapshotHash ?? ""
       });
       revalidatePath(`/harnesses/${harness.id}/wirelist`);
       revalidatePath(`/harnesses/${harness.id}/canvas`);
@@ -91,7 +96,8 @@ export default async function HarnessWirelistPage({
       revalidatePath(`/details/${revision.id}`);
       return {
         ok: true,
-        snapshot: updated.snapshot
+        snapshot: updated.snapshot,
+        snapshotHash: updated.snapshotHash
       };
     } catch (error) {
       return {
@@ -125,21 +131,32 @@ export default async function HarnessWirelistPage({
     }
   }
 
-  async function saveWirelistAction(snapshot: RevisionDto["snapshot"]) {
+  async function saveWirelistAction(input: {
+    snapshot: RevisionDto["snapshot"];
+    expectedSnapshotHash: string;
+  }) {
     "use server";
     try {
       const updated = await updateRevisionSnapshot({
         revisionId: revision.id,
-        snapshot
+        snapshot: input.snapshot,
+        expectedSnapshotHash: input.expectedSnapshotHash
       });
+      revalidatePath(`/harnesses/${harness.id}/wirelist`);
+      revalidatePath(`/harnesses/${harness.id}/canvas`);
+      revalidatePath(`/harnesses/${harness.id}/details/new`);
+      revalidatePath(`/details/${revision.id}`);
       return {
         ok: true,
-        snapshot: updated.snapshot
+        snapshot: updated.snapshot,
+        snapshotHash: updated.snapshotHash
       };
     } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to save wirelist.";
       return {
         ok: false,
-        error: error instanceof Error ? error.message : "Failed to save wirelist."
+        conflict: /modified elsewhere|409/i.test(message),
+        error: message
       };
     }
   }
@@ -162,6 +179,7 @@ export default async function HarnessWirelistPage({
           <WirelistGrid
             revisionId={revision.id}
             initialSnapshot={revision.snapshot}
+            initialSnapshotHash={revision.snapshotHash ?? ""}
             wireCatalog={wireCatalog}
             connectorCatalog={connectorCatalog}
             importWirelistAction={importWirelistAction}

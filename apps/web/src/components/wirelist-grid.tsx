@@ -21,9 +21,12 @@ import {
   validateWirelistRows,
   verifyWirelistLocation,
   wirelistRowsToSnapshot,
+  WIRELIST_SLEEVING_OPTIONS,
   type WirelistLocationState,
-  type WirelistRow
+  type WirelistRow,
+  type WirelistSleeving
 } from "@/lib/wirelist-utils";
+import { getSleevingLabel } from "@/lib/cable-canvas-utils";
 import styles from "./wirelist-grid.module.css";
 
 const CELL_KEYS: Array<keyof WirelistRow> = [
@@ -34,6 +37,7 @@ const CELL_KEYS: Array<keyof WirelistRow> = [
   "wireAwg",
   "wirePartNumber",
   "length",
+  "sleeving",
   "wireColor",
   "wireGroup",
   "toLocation",
@@ -60,6 +64,7 @@ const WIRELIST_COLUMNS: WirelistColumn[] = [
   { id: "wireAwg", label: "Wire AWG", defaultWidth: 90, resizable: true },
   { id: "wirePartNumber", label: "Wire/Patchcord P/N", defaultWidth: 150, resizable: true },
   { id: "length", label: "Length (in)", defaultWidth: 90, resizable: true },
+  { id: "sleeving", label: "Sleeving", defaultWidth: 180, resizable: true },
   { id: "wireColor", label: "Wire Color", defaultWidth: 100, resizable: true },
   { id: "wireGroup", label: "Wire Group", defaultWidth: 100, resizable: true },
   { id: "toLocation", label: "To Location (Conn-Pin)", defaultWidth: 180, resizable: true },
@@ -165,6 +170,8 @@ type SaveResult = {
   ok: boolean;
   error?: string;
   snapshot?: RevisionDto["snapshot"];
+  snapshotHash?: string;
+  conflict?: boolean;
 };
 
 type ExportResult = {
@@ -222,6 +229,7 @@ function normalizeRows(rows: WirelistRow[]): WirelistRow[] {
 export function WirelistGrid({
   revisionId,
   initialSnapshot,
+  initialSnapshotHash,
   wireCatalog,
   connectorCatalog,
   importWirelistAction,
@@ -230,18 +238,24 @@ export function WirelistGrid({
 }: {
   revisionId: string;
   initialSnapshot: RevisionDto["snapshot"];
+  initialSnapshotHash: string;
   wireCatalog: LibraryComponentDto[];
   connectorCatalog: LibraryComponentDto[];
   importWirelistAction: (formData: FormData) => Promise<ImportResult>;
   exportWirelistAction: (rows: WirelistRow[]) => Promise<ExportResult>;
-  saveWirelistAction: (snapshot: RevisionDto["snapshot"]) => Promise<SaveResult>;
+  saveWirelistAction: (input: {
+    snapshot: RevisionDto["snapshot"];
+    expectedSnapshotHash: string;
+  }) => Promise<SaveResult>;
 }) {
   const [baselineSnapshot, setBaselineSnapshot] = useState(initialSnapshot);
+  const [baselineHash, setBaselineHash] = useState(initialSnapshotHash);
   const [rows, setRows] = useState<WirelistRow[]>(() => normalizeRows(snapshotToWirelistRows(initialSnapshot)));
   const [selectedRowIds, setSelectedRowIds] = useState<string[]>([]);
   const [history, setHistory] = useState<WirelistRow[][]>([]);
   const [redoHistory, setRedoHistory] = useState<WirelistRow[][]>([]);
   const [dirty, setDirty] = useState(false);
+  const [conflict, setConflict] = useState(false);
   const [retryTick, setRetryTick] = useState(0);
   const [saveMessage, setSaveMessage] = useState("All changes saved.");
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => ({ ...DEFAULT_COLUMN_WIDTHS }));
@@ -273,7 +287,10 @@ export function WirelistGrid({
     [connectorSource, connectorPositions]
   );
   const nodeIds = useMemo(() => buildWirelistNodeIds(baselineSnapshot), [baselineSnapshot]);
-  const validationErrors = useMemo(() => validateWirelistRows(rows, nodeIds), [rows, nodeIds]);
+  const validationErrors = useMemo(
+    () => validateWirelistRows(rows, nodeIds, baselineSnapshot.connectors),
+    [rows, nodeIds, baselineSnapshot.connectors]
+  );
 
   useEffect(() => {
     setColumnWidths(loadColumnWidths());
@@ -334,7 +351,7 @@ export function WirelistGrid({
   }, [resizingColumnId]);
 
   useEffect(() => {
-    if (!dirty || validationErrors.length > 0) {
+    if (!dirty || validationErrors.length > 0 || conflict) {
       return;
     }
     const timeoutId = window.setTimeout(async () => {
@@ -344,22 +361,38 @@ export function WirelistGrid({
           window.clearTimeout(retryTimeoutRef.current);
           retryTimeoutRef.current = null;
         }
-        const result = await saveWirelistAction(wirelistRowsToSnapshot(baselineSnapshot, rows));
+        const result = await saveWirelistAction({
+          snapshot: wirelistRowsToSnapshot(baselineSnapshot, rows),
+          expectedSnapshotHash: baselineHash
+        });
+        if (result.conflict) {
+          setConflict(true);
+          setSaveMessage(result.error ?? "Snapshot was modified elsewhere. Reload to continue.");
+          return;
+        }
         if (!result.ok || !result.snapshot) {
           throw new Error(result.error ?? "Save failed.");
         }
         setBaselineSnapshot(result.snapshot);
+        if (result.snapshotHash) {
+          setBaselineHash(result.snapshotHash);
+        }
         setRows(normalizeRows(snapshotToWirelistRows(result.snapshot)));
         setDirty(false);
         setSaveMessage(`Saved at ${new Date().toLocaleTimeString()}.`);
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : "Save failed.";
+        if (/modified elsewhere|409/i.test(errorMessage)) {
+          setConflict(true);
+          setSaveMessage(errorMessage);
+          return;
+        }
         setSaveMessage(`Save failed (${errorMessage}). Retrying...`);
         retryTimeoutRef.current = window.setTimeout(() => setRetryTick((previous) => previous + 1), RETRY_DELAY_MS);
       }
     }, SAVE_DEBOUNCE_MS);
     return () => window.clearTimeout(timeoutId);
-  }, [baselineSnapshot, dirty, retryTick, revisionId, rows, saveWirelistAction, validationErrors.length]);
+  }, [baselineHash, baselineSnapshot, conflict, dirty, retryTick, revisionId, rows, saveWirelistAction, validationErrors.length]);
 
   function pushHistory(nextRows: WirelistRow[]) {
     const normalizedNextRows = normalizeRows(nextRows);
@@ -407,6 +440,12 @@ export function WirelistGrid({
         wirePartNumber: value,
         wireComponentId: resolvedWireComponentId
       };
+    }
+    if (key === "sleeving") {
+      const normalized = WIRELIST_SLEEVING_OPTIONS.includes(value as WirelistSleeving)
+        ? (value as WirelistSleeving)
+        : "none";
+      return { ...row, sleeving: normalized };
     }
     return { ...row, [key]: value } as WirelistRow;
   }
@@ -477,15 +516,22 @@ export function WirelistGrid({
 
   function moveFocusToNextRow(rowIndex: number, cellKey: keyof WirelistRow) {
     const nextRowIndex = rowIndex + 1;
-    const selector = `input[data-row-index="${nextRowIndex}"][data-cell-key="${cellKey}"]`;
-    const nextInput = document.querySelector<HTMLInputElement>(selector);
-    if (nextInput) {
-      nextInput.focus();
-      nextInput.select();
+    const selector = `[data-row-index="${nextRowIndex}"][data-cell-key="${cellKey}"]`;
+    const nextControl = document.querySelector<HTMLInputElement | HTMLSelectElement>(selector);
+    if (!nextControl) {
+      return;
+    }
+    nextControl.focus();
+    if ("select" in nextControl) {
+      nextControl.select();
     }
   }
 
-  function handleCellKeyDown(rowIndex: number, cellKey: keyof WirelistRow, event: KeyboardEvent<HTMLInputElement>) {
+  function handleCellKeyDown(
+    rowIndex: number,
+    cellKey: keyof WirelistRow,
+    event: KeyboardEvent<HTMLInputElement | HTMLSelectElement>
+  ) {
     if (event.key !== "Enter") {
       return;
     }
@@ -606,7 +652,12 @@ export function WirelistGrid({
           </button>
         ) : null}
         <span>{selectedRowIds.length > 0 ? `${selectedRowIds.length} row(s) selected` : "No rows selected"}</span>
-        <span>{saveMessage}</span>
+        <span data-testid="wirelist-save-status">{saveMessage}</span>
+        {conflict ? (
+          <button type="button" data-testid="wirelist-conflict-reload" onClick={() => window.location.reload()}>
+            Reload
+          </button>
+        ) : null}
         <div className={styles.toolbarRight}>
           <div className={styles.fileActions}>
             <input
@@ -824,6 +875,22 @@ export function WirelistGrid({
                       applyPaste(rowIndex, "length", event.clipboardData.getData("text"));
                     }}
                   />
+                </td>
+                <td>
+                  <select
+                    value={row.sleeving}
+                    data-row-index={rowIndex}
+                    data-cell-key="sleeving"
+                    aria-label="Sleeving"
+                    onChange={(event) => updateCell(rowIndex, "sleeving", event.target.value)}
+                    onKeyDown={(event) => handleCellKeyDown(rowIndex, "sleeving", event)}
+                  >
+                    {WIRELIST_SLEEVING_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {getSleevingLabel(option)}
+                      </option>
+                    ))}
+                  </select>
                 </td>
                 <td>
                   <input

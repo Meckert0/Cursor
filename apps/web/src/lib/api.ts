@@ -73,6 +73,14 @@ export interface LibraryComponentDto {
   reviewedAt?: string;
   stockStatus: "in_stock" | "low_stock" | "out_of_stock";
   compatibilityHints: string[];
+  pinCount?: number;
+  pinIds?: string[];
+  acceptedAwgMin?: number;
+  acceptedAwgMax?: number;
+  acceptedFamilies?: string[];
+  isArchived?: boolean;
+  archivedAt?: string;
+  archivedByUserId?: string;
   createdByUserId: string;
   createdAt: string;
   lastEditedByUserId: string;
@@ -134,6 +142,11 @@ export interface LibraryIngestItemDto {
   isActive: boolean;
   stockStatus: LibraryComponentDto["stockStatus"];
   compatibilityHints: string[];
+  pinCount?: number;
+  pinIds?: string[];
+  acceptedAwgMin?: number;
+  acceptedAwgMax?: number;
+  acceptedFamilies?: string[];
   isReviewed: boolean;
   reviewedByUserId?: string;
   reviewedAt?: string;
@@ -161,6 +174,9 @@ export interface ProjectRulesetPolicyDto {
   projectId: string;
   defaultRulesetVersion?: string;
   allowedRulesetVersions: string[];
+  inactivePartSeverity?: "error" | "warning";
+  unreviewedPartSeverity?: "error" | "warning" | "info";
+  outOfStockSeverity?: "error" | "warning" | "info";
 }
 
 export interface ProjectMemberDto {
@@ -201,12 +217,17 @@ export interface RevisionDto {
   createdAt: string;
   rulesetVersion: string;
   libraryVersion: string;
+  snapshotHash?: string;
   snapshot: {
     connectors: Array<{
       id: string;
       reference: string;
       partNumber?: string;
       libraryComponentId?: string;
+      backshellPartNumber?: string;
+      backshellLibraryComponentId?: string;
+      strainReliefPartNumber?: string;
+      strainReliefLibraryComponentId?: string;
       pins: Array<{ id: string; number: string }>;
       location?: { x: number; y: number };
     }>;
@@ -614,6 +635,21 @@ export function archiveLibraryComponent(componentId: string): Promise<LibraryCom
   });
 }
 
+export async function listArchivedLibraryComponents(): Promise<LibraryComponentDto[]> {
+  const response = await apiRequest<ListLibraryComponentsResponse>("/v1/library/components/archived");
+  return response.items;
+}
+
+export function restoreLibraryComponent(input: {
+  componentId: string;
+  reactivate?: boolean;
+}): Promise<LibraryComponentDto> {
+  return apiRequest<LibraryComponentDto>(`/v1/library/components/${input.componentId}/restore`, {
+    method: "POST",
+    body: { reactivate: input.reactivate }
+  });
+}
+
 export async function deleteLibraryComponent(componentId: string): Promise<void> {
   await apiRequest<undefined>(`/v1/library/components/${componentId}`, {
     method: "DELETE"
@@ -630,6 +666,11 @@ export function updateLibraryComponent(input: {
   isActive?: boolean;
   stockStatus?: LibraryComponentDto["stockStatus"];
   compatibilityHints?: string[];
+  pinCount?: number;
+  pinIds?: string[];
+  acceptedAwgMin?: number;
+  acceptedAwgMax?: number;
+  acceptedFamilies?: string[];
   isReviewed?: boolean;
   reviewedByUserId?: string;
   reviewedAt?: string;
@@ -650,6 +691,11 @@ export function updateLibraryComponent(input: {
       isActive: input.isActive,
       stockStatus: input.stockStatus,
       compatibilityHints: input.compatibilityHints,
+      pinCount: input.pinCount,
+      pinIds: input.pinIds,
+      acceptedAwgMin: input.acceptedAwgMin,
+      acceptedAwgMax: input.acceptedAwgMax,
+      acceptedFamilies: input.acceptedFamilies,
       isReviewed: input.isReviewed,
       reviewedByUserId: input.reviewedByUserId,
       reviewedAt: input.reviewedAt,
@@ -771,6 +817,37 @@ export async function listProjectMembers(projectId: string): Promise<ProjectMemb
   return response.items;
 }
 
+export function upsertProjectMember(input: {
+  projectId: string;
+  userId: string;
+  role: ProjectMemberDto["role"];
+}): Promise<ProjectMemberDto> {
+  return apiRequest<ProjectMemberDto>(`/v1/projects/${input.projectId}/members/${encodeURIComponent(input.userId)}`, {
+    method: "PUT",
+    body: { role: input.role }
+  });
+}
+
+export interface DesignLockDto {
+  designId: string;
+  lockedBy: string;
+  expiresAt: string;
+}
+
+export function lockHarness(input: { harnessId: string; ttlSeconds?: number }): Promise<DesignLockDto> {
+  return apiRequest<DesignLockDto>(`/v1/harnesses/${input.harnessId}/lock`, {
+    method: "POST",
+    body: { ttlSeconds: input.ttlSeconds ?? 300 }
+  });
+}
+
+export function unlockHarness(input: { harnessId: string }): Promise<void> {
+  return apiRequest<void>(`/v1/harnesses/${input.harnessId}/unlock`, {
+    method: "POST",
+    body: {}
+  });
+}
+
 export function createDesign(input: { projectId: string; name: string }): Promise<DesignDto> {
   return createHarness(input);
 }
@@ -816,15 +893,34 @@ export function getRevision(revisionId: string): Promise<RevisionDto> {
   return apiRequest<RevisionDto>(`/v1/revisions/${revisionId}`);
 }
 
+export class SnapshotConflictError extends Error {
+  readonly status = 409;
+  constructor(message = "Snapshot was modified elsewhere. Reload and retry.") {
+    super(message);
+    this.name = "SnapshotConflictError";
+  }
+}
+
+export function isSnapshotConflictError(error: unknown): error is SnapshotConflictError {
+  return error instanceof SnapshotConflictError || (error instanceof Error && /^API\s+409:/i.test(error.message));
+}
+
 export function updateRevisionSnapshot(input: {
   revisionId: string;
   snapshot: RevisionDto["snapshot"];
+  expectedSnapshotHash: string;
 }): Promise<RevisionDto> {
   return apiRequest<RevisionDto>(`/v1/revisions/${input.revisionId}/snapshot`, {
     method: "PATCH",
     body: {
-      snapshot: input.snapshot
+      snapshot: input.snapshot,
+      expectedSnapshotHash: input.expectedSnapshotHash
     }
+  }).catch((error: unknown) => {
+    if (error instanceof Error && /^API\s+409:/i.test(error.message)) {
+      throw new SnapshotConflictError(extractApiErrorMessage(error.message));
+    }
+    throw error;
   });
 }
 
@@ -913,6 +1009,8 @@ export interface BomLineDto {
   libraryComponentId?: string;
   designRefs: string[];
   notes?: string;
+  awg?: string;
+  color?: string;
 }
 
 export interface BomResponseDto {

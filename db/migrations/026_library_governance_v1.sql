@@ -12,38 +12,38 @@ ALTER TABLE library_components
 UPDATE library_components AS lc
 SET pin_count = COALESCE(
   lc.pin_count,
-  NULLIF(regexp_replace(cv.value, '[^0-9]', '', 'g'), '')::INTEGER
+  NULLIF(regexp_replace(cv.value_text, '[^0-9]', '', 'g'), '')::INTEGER
 )
 FROM library_component_custom_values AS cv
 JOIN library_field_definitions AS fd ON fd.id = cv.field_definition_id
 WHERE cv.component_id = lc.id
   AND lower(fd.key) IN ('pincount', 'pin_count')
   AND lc.pin_count IS NULL
-  AND NULLIF(regexp_replace(cv.value, '[^0-9]', '', 'g'), '') IS NOT NULL;
+  AND NULLIF(regexp_replace(cv.value_text, '[^0-9]', '', 'g'), '') IS NOT NULL;
 
 UPDATE library_components AS lc
 SET accepted_awg_min = COALESCE(
   lc.accepted_awg_min,
-  NULLIF(regexp_replace(cv.value, '[^0-9.]', '', 'g'), '')::DOUBLE PRECISION
+  NULLIF(regexp_replace(cv.value_text, '[^0-9.]', '', 'g'), '')::DOUBLE PRECISION
 )
 FROM library_component_custom_values AS cv
 JOIN library_field_definitions AS fd ON fd.id = cv.field_definition_id
 WHERE cv.component_id = lc.id
   AND lower(fd.key) IN ('acceptedawgmin', 'accepted_awg_min')
   AND lc.accepted_awg_min IS NULL
-  AND NULLIF(regexp_replace(cv.value, '[^0-9.]', '', 'g'), '') IS NOT NULL;
+  AND NULLIF(regexp_replace(cv.value_text, '[^0-9.]', '', 'g'), '') IS NOT NULL;
 
 UPDATE library_components AS lc
 SET accepted_awg_max = COALESCE(
   lc.accepted_awg_max,
-  NULLIF(regexp_replace(cv.value, '[^0-9.]', '', 'g'), '')::DOUBLE PRECISION
+  NULLIF(regexp_replace(cv.value_text, '[^0-9.]', '', 'g'), '')::DOUBLE PRECISION
 )
 FROM library_component_custom_values AS cv
 JOIN library_field_definitions AS fd ON fd.id = cv.field_definition_id
 WHERE cv.component_id = lc.id
   AND lower(fd.key) IN ('acceptedawgmax', 'accepted_awg_max')
   AND lc.accepted_awg_max IS NULL
-  AND NULLIF(regexp_replace(cv.value, '[^0-9.]', '', 'g'), '') IS NOT NULL;
+  AND NULLIF(regexp_replace(cv.value_text, '[^0-9.]', '', 'g'), '') IS NOT NULL;
 
 ALTER TABLE project_ruleset_policies
   ADD COLUMN IF NOT EXISTS unreviewed_part_severity TEXT

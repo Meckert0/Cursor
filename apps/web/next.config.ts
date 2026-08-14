@@ -6,10 +6,11 @@ const appDir = path.dirname(fileURLToPath(import.meta.url));
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: ["127.0.0.1"],
-  serverExternalPackages: ["adm-zip"],
+  serverExternalPackages: ["adm-zip", "xlsx"],
   turbopack: {
-    // Explicit monorepo root so Next stops warning about multiple lockfiles.
-    root: path.join(appDir, "../..")
+    // Keep tracing inside the Next app so Vercel (Root Directory apps/web) does not
+    // pull in the API package's node_modules.
+    root: appDir
   }
 };
 

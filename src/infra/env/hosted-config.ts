@@ -2,6 +2,34 @@ export function isHostedRuntime(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.VERCEL === "1";
 }
 
+/** Neon/Vercel Marketplace often injects POSTGRES_URL instead of DATABASE_URL. */
+const DATABASE_URL_KEYS = ["DATABASE_URL", "POSTGRES_URL", "POSTGRES_PRISMA_URL"] as const;
+
+export function resolveDatabaseUrl(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  for (const key of DATABASE_URL_KEYS) {
+    const value = env[key]?.trim();
+    if (value) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function describeMissingDatabaseUrl(env: NodeJS.ProcessEnv): string {
+  const present = DATABASE_URL_KEYS.filter((key) => Boolean(env[key]?.trim()));
+  if (present.length === 0) {
+    const related = Object.keys(env)
+      .filter((key) => /postgres|database|neon/i.test(key))
+      .sort();
+    const hint =
+      related.length > 0
+        ? ` Related keys present: ${related.join(", ")}.`
+        : " No DATABASE_URL, POSTGRES_URL, or POSTGRES_PRISMA_URL on this deployment (check the key name and that Production is enabled, then redeploy).";
+    return `DATABASE_URL is required on Vercel.${hint}`;
+  }
+  return `DATABASE_URL is required on Vercel.`;
+}
+
 export function resolveStoreBackend(env: NodeJS.ProcessEnv = process.env): string {
   const fallback = isHostedRuntime(env) ? "postgres" : "sqlite";
   return (env.STORE_BACKEND ?? fallback).toLowerCase();
@@ -23,8 +51,8 @@ export function assertHostedConfig(env: NodeJS.ProcessEnv = process.env): void {
       `Hosted deployments require STORE_BACKEND=postgres (received "${storeBackend}"). SQLite and memory stores are local-only.`
     );
   }
-  if (!env.DATABASE_URL) {
-    throw new Error("DATABASE_URL is required on Vercel.");
+  if (!resolveDatabaseUrl(env)) {
+    throw new Error(describeMissingDatabaseUrl(env));
   }
   if (!env.REDIS_URL) {
     throw new Error("REDIS_URL is required on Vercel so locks are shared across function instances.");

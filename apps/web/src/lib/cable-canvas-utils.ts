@@ -5,7 +5,7 @@ import {
   normalizePathType,
   partitionSnapshotPaths,
   pinMappedPathIds
-} from "../../../../src/domain/path-roles";
+} from "./path-roles";
 
 type NodePosition = {
   x: number;

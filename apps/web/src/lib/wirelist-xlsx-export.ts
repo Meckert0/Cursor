@@ -1,4 +1,4 @@
-import { buildWirelistXlsxFromTemplateRows } from "../../../../src/domain/wirelist-xlsx-export";
+import { buildWirelistXlsxFromTemplateRows } from "./wirelist-xlsx-from-template";
 import {
   WIRELIST_TEMPLATE_HEADERS,
   wirelistRowsToTemplateRecords,

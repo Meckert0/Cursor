@@ -4,6 +4,7 @@ import {
   assertHostedConfig,
   isHostedRuntime,
   resolveArtifactStorageBackend,
+  resolveDatabaseUrl,
   resolveStoreBackend
 } from "./hosted-config.js";
 
@@ -49,6 +50,28 @@ test("assertHostedConfig rejects local backends on Vercel", () => {
         S3_BUCKET: "bucket"
       }),
     /ARTIFACT_STORAGE_BACKEND=s3 or blob/
+  );
+});
+
+test("resolveDatabaseUrl accepts Neon Marketplace aliases", () => {
+  assert.equal(resolveDatabaseUrl({ DATABASE_URL: "postgres://primary" }), "postgres://primary");
+  assert.equal(resolveDatabaseUrl({ POSTGRES_URL: " postgres://neon " }), "postgres://neon");
+  assert.equal(
+    resolveDatabaseUrl({ POSTGRES_PRISMA_URL: "postgres://prisma" }),
+    "postgres://prisma"
+  );
+  assert.equal(resolveDatabaseUrl({ POSTGRES_URL: "postgres://neon", DATABASE_URL: "" }), "postgres://neon");
+  assert.equal(resolveDatabaseUrl({}), undefined);
+});
+
+test("assertHostedConfig accepts POSTGRES_URL when DATABASE_URL is unset", () => {
+  assert.doesNotThrow(() =>
+    assertHostedConfig({
+      VERCEL: "1",
+      POSTGRES_URL: "postgres://neon/cdt",
+      REDIS_URL: "redis://localhost",
+      S3_BUCKET: "cdt-artifacts"
+    })
   );
 });
 

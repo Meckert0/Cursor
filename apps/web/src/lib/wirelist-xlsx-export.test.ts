@@ -2,7 +2,7 @@
 import AdmZip from "adm-zip";
 import { describe, expect, it } from "vitest";
 import type { RevisionDto } from "./api";
-import { buildWirelistXlsxFromTemplateRows } from "../../../../src/domain/wirelist-xlsx-export";
+import { buildWirelistXlsxFromTemplateRows } from "./wirelist-xlsx-from-template";
 import { buildWirelistXlsxBuffer } from "./wirelist-xlsx-export";
 import { snapshotToWirelistRows, WIRELIST_TEMPLATE_HEADERS } from "./wirelist-utils";
 

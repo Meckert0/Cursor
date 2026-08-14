@@ -2,7 +2,7 @@ import type { LibraryComponentDto, RevisionDto } from "./api";
 import {
   mergeSnapshotPaths,
   partitionSnapshotPaths
-} from "../../../../src/domain/path-roles";
+} from "./path-roles";
 import { buildConnectorPairTotals } from "./cable-canvas-utils";
 
 export const WIRELIST_SLEEVING_OPTIONS = [
@@ -153,7 +153,7 @@ export type ResolvedWirelistEndpoint = {
   kind: "connector" | "junction" | "unresolved";
 };
 
-function buildEndpointLookups(snapshot: RevisionDto["snapshot"]) {
+function buildEndpointLookups(snapshot: Pick<RevisionDto["snapshot"], "connectors" | "junctions">) {
   const connectorByReference = new Map<string, SnapshotConnector>();
   const connectorById = new Map<string, SnapshotConnector>();
   for (const connector of snapshot.connectors) {
@@ -230,7 +230,7 @@ function resolvePinId(
 
 export function resolveWirelistEndpoint(
   location: string,
-  snapshot: RevisionDto["snapshot"],
+  snapshot: Pick<RevisionDto["snapshot"], "connectors" | "junctions">,
   connectorCatalog: ConnectorCatalogEntry[] = []
 ): ResolvedWirelistEndpoint {
   const { connectorRef, pinNumber } = parseWirelistLocation(location);

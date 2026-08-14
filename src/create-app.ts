@@ -9,6 +9,7 @@ import {
   assertHostedConfig,
   isHostedRuntime,
   resolveArtifactStorageBackend,
+  resolveDatabaseUrl,
   resolveStoreBackend
 } from "./infra/env/hosted-config.js";
 import { RedisExportJobLock } from "./infra/locks/export-job-lock.js";
@@ -78,7 +79,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Created
   let redis: Redis | undefined;
 
   if (storeBackend === "postgres") {
-    const databaseUrl = process.env.DATABASE_URL;
+    const databaseUrl = resolveDatabaseUrl();
     if (!databaseUrl) {
       throw new Error("DATABASE_URL is required when STORE_BACKEND=postgres");
     }

@@ -171,6 +171,41 @@ test("observability: health, metrics, and request/correlation ids", async () => 
   }
 });
 
+test("maintenance endpoint requires CRON_SECRET", async () => {
+  const previousSecret = process.env.CRON_SECRET;
+  process.env.CRON_SECRET = "test-cron-secret";
+  const app = buildTestApp();
+  await app.ready();
+  try {
+    const unauthorized = await app.inject({
+      method: "GET",
+      url: "/v1/internal/maintenance"
+    });
+    assert.equal(unauthorized.statusCode, 401);
+
+    const authorized = await app.inject({
+      method: "POST",
+      url: "/v1/internal/maintenance",
+      headers: { authorization: "Bearer test-cron-secret" }
+    });
+    assert.equal(authorized.statusCode, 200);
+    const payload = authorized.json() as {
+      recovery: { recovered: number };
+      due: { processed: number };
+      retention: { deleted: number };
+    };
+    assert.equal(payload.recovery.recovered, 0);
+    assert.equal(payload.due.processed, 0);
+  } finally {
+    if (previousSecret === undefined) {
+      delete process.env.CRON_SECRET;
+    } else {
+      process.env.CRON_SECRET = previousSecret;
+    }
+    await app.close();
+  }
+});
+
 async function registerAdminAndGetCookie(app: ReturnType<typeof buildApp>): Promise<string> {
   const registerResponse = await app.inject({
     method: "POST",
@@ -238,8 +273,8 @@ test("API flow: project -> design -> validation -> state transitions/audit -> su
             description: "15-pin module",
             isActive: true,
             stockStatus: "in_stock",
-            compatibilityHints: [],
-            isReviewed: false
+            isReviewed: false,
+            attributes: { pinIds: [] }
           },
           {
             id: "cmp-wire-001",
@@ -247,12 +282,10 @@ test("API flow: project -> design -> validation -> state transitions/audit -> su
             family: "MIL-W-22759",
             partNumber: "M22759/16-22",
             description: "22 AWG white wire",
-            awg: "22",
-            color: "white",
             isActive: true,
             stockStatus: "in_stock",
-            compatibilityHints: [],
-            isReviewed: false
+            isReviewed: false,
+            attributes: { awg: "22", color: "white" }
           },
           {
             id: "cmp-label-001",
@@ -262,8 +295,8 @@ test("API flow: project -> design -> validation -> state transitions/audit -> su
             description: "Wire label",
             isActive: true,
             stockStatus: "in_stock",
-            compatibilityHints: [],
-            isReviewed: false
+            isReviewed: false,
+            attributes: {}
           },
           {
             id: "cmp-contact-001",
@@ -273,15 +306,56 @@ test("API flow: project -> design -> validation -> state transitions/audit -> su
             description: "Size 22 Micro-D socket contact",
             isActive: true,
             stockStatus: "in_stock",
-            compatibilityHints: [],
-            isReviewed: false
+            isReviewed: false,
+            attributes: { acceptedFamilies: [] }
+          },
+          {
+            id: "cmp-backshell-15",
+            category: "backshell",
+            family: "EMI",
+            partNumber: "BS-EMI-15",
+            description: "EMI backshell for 15-pin Micro-D",
+            isActive: true,
+            stockStatus: "in_stock",
+            isReviewed: false,
+            attributes: {}
+          },
+          {
+            id: "cmp-sr-15",
+            category: "strain-relief",
+            family: "Clamp",
+            partNumber: "SR-CLAMP-15",
+            description: "Strain-relief clamp for 15-pin Micro-D",
+            isActive: true,
+            stockStatus: "in_stock",
+            isReviewed: false,
+            attributes: {}
+          },
+          {
+            id: "cmp-sleeve-exp",
+            category: "sleeve-tube-braid",
+            family: "expandable_sleeving",
+            partNumber: "SLV-EXP-025",
+            description: "Expandable PET sleeving, 0.25 in",
+            isActive: true,
+            stockStatus: "in_stock",
+            isReviewed: false,
+            attributes: { sizeRanges: [] }
           }
         ]
       }
     });
     assert.equal(ingestLibraryResponse.statusCode, 201);
 
-    for (const componentId of ["cmp-module-001", "cmp-wire-001", "cmp-label-001", "cmp-contact-001"]) {
+    for (const componentId of [
+      "cmp-module-001",
+      "cmp-wire-001",
+      "cmp-label-001",
+      "cmp-contact-001",
+      "cmp-backshell-15",
+      "cmp-sr-15",
+      "cmp-sleeve-exp"
+    ]) {
       const reviewResponse = await app.inject({
         method: "POST",
         url: `/v1/library/components/${componentId}/review`,
@@ -598,7 +672,6 @@ test("API flow: project -> design -> validation -> state transitions/audit -> su
       "Wire AWG",
       "Wire/Patchcord P/N",
       "Length (in)",
-      "Sleeving",
       "Wire Color",
       "Wire Group",
       "To Location (Conn-Pin)",
@@ -616,8 +689,8 @@ test("API flow: project -> design -> validation -> state transitions/audit -> su
     assert.equal(firstDataRow?.[0], 1);
     assert.equal(firstDataRow?.[1], "J1 - CNT-22");
     assert.equal(firstDataRow?.[5], "M22759/16-22");
-    assert.equal(firstDataRow?.[10], "J2 - CNT-22");
-    assert.equal(firstDataRow?.[15], "Harness note");
+    assert.equal(firstDataRow?.[9], "J2 - CNT-22");
+    assert.equal(firstDataRow?.[14], "Harness note");
 
     const bomSheet = workbook.Sheets.BOM;
     assert.ok(bomSheet);
@@ -1575,8 +1648,8 @@ test("library catalog endpoints support search and filters", async () => {
             description: "Contact filter item",
             isActive: true,
             stockStatus: "in_stock",
-            compatibilityHints: [],
-            isReviewed: false
+            isReviewed: false,
+            attributes: { acceptedFamilies: [] }
           }
         ]
       }
@@ -1607,12 +1680,10 @@ test("library catalog endpoints support search and filters", async () => {
             family: "MIL-W-22759",
             partNumber: "M22759/16-20-F",
             description: "20 AWG white filter wire",
-            awg: "20",
-            color: "white",
             isActive: true,
             stockStatus: "in_stock",
-            compatibilityHints: [],
-            isReviewed: false
+            isReviewed: false,
+            attributes: { awg: "20", color: "white" }
           }
         ]
       }
@@ -1625,12 +1696,12 @@ test("library catalog endpoints support search and filters", async () => {
     });
     assert.equal(wireFilteredResponse.statusCode, 200);
     const wireFiltered = wireFilteredResponse.json() as {
-      items: Array<{ category: string; awg?: string; color?: string }>;
+      items: Array<{ category: string; attributes: { awg?: string; color?: string } }>;
     };
     assert.ok(wireFiltered.items.length >= 1);
     assert.ok(wireFiltered.items.every((item) => item.category === "wire"));
-    assert.ok(wireFiltered.items.every((item) => item.awg === "20"));
-    assert.ok(wireFiltered.items.every((item) => item.color === "white"));
+    assert.ok(wireFiltered.items.every((item) => item.attributes.awg === "20"));
+    assert.ok(wireFiltered.items.every((item) => item.attributes.color === "white"));
 
     const detailResponse = await app.inject({
       method: "GET",
@@ -1663,11 +1734,10 @@ test("library ingest rejects wire rows missing awg/color", async () => {
             family: "MIL-W-22759",
             partNumber: "M22759/16-30",
             description: "missing awg",
-            color: "white",
             isActive: true,
             stockStatus: "in_stock",
-            compatibilityHints: [],
-            isReviewed: false
+            isReviewed: false,
+            attributes: { color: "white" }
           }
         ]
       }
@@ -1685,11 +1755,10 @@ test("library ingest rejects wire rows missing awg/color", async () => {
             family: "MIL-W-22759",
             partNumber: "M22759/16-31",
             description: "missing color",
-            awg: "22",
             isActive: true,
             stockStatus: "in_stock",
-            compatibilityHints: [],
-            isReviewed: false
+            isReviewed: false,
+            attributes: { awg: "22" }
           }
         ]
       }
@@ -1717,8 +1786,8 @@ test("library ingest supports dry-run and commit with owner role", async () => {
             description: "15-pin Micro-D plug connector",
             isActive: true,
             stockStatus: "in_stock",
-            compatibilityHints: ["Use plated contacts for marine environments"],
-            isReviewed: false
+            isReviewed: false,
+            attributes: { acceptedFamilies: [] }
           }
         ]
       }
@@ -1747,8 +1816,8 @@ test("library ingest supports dry-run and commit with owner role", async () => {
             description: "15-pin Micro-D plug connector",
             isActive: true,
             stockStatus: "in_stock",
-            compatibilityHints: ["Use plated contacts for marine environments"],
-            isReviewed: false
+            isReviewed: false,
+            attributes: { acceptedFamilies: [] }
           }
         ]
       }
@@ -1779,8 +1848,8 @@ test("library ingest supports dry-run and commit with owner role", async () => {
             description: "15-pin Micro-D plug connector",
             isActive: true,
             stockStatus: "in_stock",
-            compatibilityHints: ["Use plated contacts for marine environments"],
-            isReviewed: false
+            isReviewed: false,
+            attributes: { acceptedFamilies: [] }
           }
         ]
       }
@@ -1814,12 +1883,10 @@ test("library review endpoints update review state with owner role", async () =>
             family: "MIL-W-22759",
             partNumber: "M22759/16-22-REVIEW",
             description: "22 AWG lightweight hookup wire",
-            awg: "22",
-            color: "white",
             isActive: true,
             stockStatus: "in_stock",
-            compatibilityHints: [],
-            isReviewed: false
+            isReviewed: false,
+            attributes: { awg: "22", color: "white" }
           }
         ]
       }
@@ -1871,12 +1938,10 @@ test("library visibility enforces reviewed/public and unreviewed/private policy"
             family: "MIL-W-22759",
             partNumber: "M22759/16-24",
             description: "24 AWG private draft wire",
-            awg: "24",
-            color: "blue",
             isActive: true,
             stockStatus: "low_stock",
-            compatibilityHints: [],
-            isReviewed: false
+            isReviewed: false,
+            attributes: { awg: "24", color: "blue" }
           }
         ]
       }
@@ -1948,12 +2013,10 @@ test("library review queue endpoint is owner-only and filterable", async () => {
             family: "MIL-W-22759",
             partNumber: "M22759/16-26",
             description: "Queue candidate A",
-            awg: "26",
-            color: "green",
             isActive: true,
             stockStatus: "in_stock",
-            compatibilityHints: [],
-            isReviewed: false
+            isReviewed: false,
+            attributes: { awg: "26", color: "green" }
           }
         ]
       }
@@ -1974,8 +2037,8 @@ test("library review queue endpoint is owner-only and filterable", async () => {
             description: "Queue candidate B",
             isActive: true,
             stockStatus: "low_stock",
-            compatibilityHints: [],
-            isReviewed: false
+            isReviewed: false,
+            attributes: { acceptedFamilies: [] }
           }
         ]
       }
@@ -2053,7 +2116,7 @@ test("library review queue endpoint is owner-only and filterable", async () => {
   }
 });
 
-test("library ingest and patch persist first-class compatibility fields", async () => {
+test("library ingest and patch persist typed attribute fields", async () => {
   const app = buildTestApp();
   await app.ready();
   try {
@@ -2072,13 +2135,11 @@ test("library ingest and patch persist first-class compatibility fields", async 
             description: "Compatibility module",
             isActive: true,
             stockStatus: "in_stock",
-            compatibilityHints: [],
-            pinCount: 9,
-            pinIds: ["1", "2", "3", "4", "5", "6", "7", "8", "9"],
-            acceptedAwgMin: 20,
-            acceptedAwgMax: 24,
-            acceptedFamilies: ["MIL-W-22759"],
-            isReviewed: false
+            isReviewed: false,
+            attributes: {
+              pinCount: 9,
+              pinIds: ["1", "2", "3", "4", "5", "6", "7", "8", "9"]
+            }
           }
         ]
       }
@@ -2092,17 +2153,10 @@ test("library ingest and patch persist first-class compatibility fields", async 
     });
     assert.equal(getResponse.statusCode, 200);
     const component = getResponse.json() as {
-      pinCount?: number;
-      pinIds?: string[];
-      acceptedAwgMin?: number;
-      acceptedAwgMax?: number;
-      acceptedFamilies?: string[];
+      attributes: { pinCount?: number; pinIds?: string[] };
     };
-    assert.equal(component.pinCount, 9);
-    assert.deepEqual(component.pinIds, ["1", "2", "3", "4", "5", "6", "7", "8", "9"]);
-    assert.equal(component.acceptedAwgMin, 20);
-    assert.equal(component.acceptedAwgMax, 24);
-    assert.deepEqual(component.acceptedFamilies, ["MIL-W-22759"]);
+    assert.equal(component.attributes.pinCount, 9);
+    assert.deepEqual(component.attributes.pinIds, ["1", "2", "3", "4", "5", "6", "7", "8", "9"]);
 
     const dryRun = await app.inject({
       method: "POST",
@@ -2114,14 +2168,14 @@ test("library ingest and patch persist first-class compatibility fields", async 
             category: "contact",
             family: "Micro-D",
             partNumber: "CNT-COMPAT",
-            description: "Contact with promoted custom fields",
+            description: "Contact with acceptance attributes",
             isActive: true,
             stockStatus: "in_stock",
-            compatibilityHints: [],
             isReviewed: false,
-            customFieldValues: {
-              acceptedAwgMin: "22",
-              acceptedAwgMax: "26"
+            attributes: {
+              acceptedFamilies: [],
+              acceptedAwgMin: 22,
+              acceptedAwgMax: 26
             }
           }
         ]
@@ -2153,8 +2207,8 @@ test("library component patch supports full metadata edits for admin", async () 
             description: "Editable connector",
             isActive: true,
             stockStatus: "in_stock",
-            compatibilityHints: ["Initial hint"],
-            isReviewed: false
+            isReviewed: false,
+            attributes: { acceptedFamilies: [], awg: "22" }
           }
         ]
       }
@@ -2170,7 +2224,11 @@ test("library component patch supports full metadata edits for admin", async () 
         description: "Updated via admin patch",
         isActive: false,
         stockStatus: "low_stock",
-        compatibilityHints: ["Hint A", "Hint B"],
+        attributes: {
+          acceptedFamilies: ["MIL-W-22759"],
+          acceptedAwgMin: 20,
+          acceptedAwgMax: 24
+        },
         createdByUserId: "creator-admin",
         createdAt: "2026-05-01T08:00:00.000Z",
         isReviewed: true,
@@ -2186,7 +2244,11 @@ test("library component patch supports full metadata edits for admin", async () 
       description: string;
       isActive: boolean;
       stockStatus: string;
-      compatibilityHints: string[];
+      attributes: {
+        acceptedFamilies?: string[];
+        acceptedAwgMin?: number;
+        acceptedAwgMax?: number;
+      };
       createdByUserId: string;
       createdAt: string;
       isReviewed: boolean;
@@ -2199,7 +2261,9 @@ test("library component patch supports full metadata edits for admin", async () 
     assert.equal(patched.description, "Updated via admin patch");
     assert.equal(patched.isActive, false);
     assert.equal(patched.stockStatus, "low_stock");
-    assert.deepEqual(patched.compatibilityHints, ["Hint A", "Hint B"]);
+    assert.deepEqual(patched.attributes.acceptedFamilies, ["MIL-W-22759"]);
+    assert.equal(patched.attributes.acceptedAwgMin, 20);
+    assert.equal(patched.attributes.acceptedAwgMax, 24);
     assert.equal(patched.createdByUserId, "creator-admin");
     assert.equal(patched.createdAt, "2026-05-01T08:00:00.000Z");
     assert.equal(patched.isReviewed, true);
@@ -2230,12 +2294,10 @@ test("library component patch enforces reviewed consistency", async () => {
             family: "MIL-W-22759",
             partNumber: "M22759/16-18",
             description: "Patch validation wire",
-            awg: "18",
-            color: "white",
             isActive: true,
             stockStatus: "in_stock",
-            compatibilityHints: [],
-            isReviewed: false
+            isReviewed: false,
+            attributes: { awg: "18", color: "white" }
           }
         ]
       }
@@ -2323,102 +2385,6 @@ test("admin table preferences persist per user and scope", async () => {
     };
     assert.deepEqual(fetched.columnOrder, saved.columnOrder);
     assert.deepEqual(fetched.columnWidths, saved.columnWidths);
-  } finally {
-    await app.close();
-  }
-});
-
-test("library field definitions support add/rename/toggle/delete with hard delete behavior", async () => {
-  const app = buildTestApp();
-  await app.ready();
-  try {
-    const adminCookie = await registerAdminAndGetCookie(app);
-    const createFieldResponse = await app.inject({
-      method: "POST",
-      url: "/v1/library/field-definitions/wire",
-      headers: { cookie: adminCookie },
-      payload: {
-        key: "insulationType",
-        label: "Insulation type",
-        isVisibleInViewer: true
-      }
-    });
-    assert.equal(createFieldResponse.statusCode, 201);
-    const createdField = createFieldResponse.json() as { id: string; key: string; label: string; isSystem: boolean };
-    assert.equal(createdField.key, "insulationType");
-    assert.equal(createdField.label, "Insulation type");
-    assert.equal(createdField.isSystem, false);
-
-    const ingestResponse = await app.inject({
-      method: "POST",
-      url: "/v1/library/components/ingest",
-      headers: { cookie: adminCookie },
-      payload: {
-        items: [
-          {
-            id: "cmp-wire-custom-001",
-            category: "wire",
-            family: "MIL-W-22759",
-            partNumber: "M22759/16-30",
-            description: "Custom field wire",
-            awg: "30",
-            color: "black",
-            isActive: true,
-            stockStatus: "in_stock",
-            compatibilityHints: [],
-            isReviewed: false,
-            customFieldValues: {
-              insulationType: "PTFE"
-            }
-          }
-        ]
-      }
-    });
-    assert.equal(ingestResponse.statusCode, 201);
-
-    const patchResponse = await app.inject({
-      method: "PATCH",
-      url: "/v1/library/components/cmp-wire-custom-001",
-      headers: { cookie: adminCookie },
-      payload: {
-        customFieldValues: {
-          insulationType: "ETFE"
-        }
-      }
-    });
-    assert.equal(patchResponse.statusCode, 200);
-    const patched = patchResponse.json() as { customFieldValues: Record<string, string> };
-    assert.equal(patched.customFieldValues.insulationType, "ETFE");
-
-    const renameFieldResponse = await app.inject({
-      method: "PATCH",
-      url: `/v1/library/field-definitions/${createdField.id}`,
-      headers: { cookie: adminCookie },
-      payload: {
-        label: "Insulation",
-        isVisibleInViewer: false
-      }
-    });
-    assert.equal(renameFieldResponse.statusCode, 200);
-    const renamed = renameFieldResponse.json() as { label: string; isVisibleInViewer: boolean };
-    assert.equal(renamed.label, "Insulation");
-    assert.equal(renamed.isVisibleInViewer, false);
-
-    const deleteFieldResponse = await app.inject({
-      method: "DELETE",
-      url: `/v1/library/field-definitions/${createdField.id}`,
-      headers: { cookie: adminCookie }
-    });
-    assert.equal(deleteFieldResponse.statusCode, 204);
-
-    const getAfterDeleteResponse = await app.inject({
-      method: "GET",
-      url: "/v1/library/components/cmp-wire-custom-001",
-      headers: { cookie: adminCookie }
-    });
-    assert.equal(getAfterDeleteResponse.statusCode, 200);
-    const afterDelete = getAfterDeleteResponse.json() as { customFieldValues: Record<string, string> };
-    assert.equal(afterDelete.customFieldValues.insulationType, undefined);
   } finally {
     await app.close();
   }

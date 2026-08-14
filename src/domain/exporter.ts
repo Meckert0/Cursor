@@ -4,6 +4,7 @@ import type { BomLine, BomResult, LibraryLookup } from "./bom.js";
 import { buildBom, createLibraryLookup } from "./bom.js";
 import type { LibraryComponentRecord } from "./library.js";
 import { buildWirelistXlsxFromTemplateRows } from "./wirelist-xlsx-export.js";
+import { isWireRunPath, pinMappedPathIds } from "./path-roles.js";
 import type { Revision } from "./types.js";
 
 type JsonObject = Record<string, unknown>;
@@ -167,7 +168,10 @@ function toWirelistRows(artifact: JsonObject): Array<Array<string | number>> {
     notes?: string;
   }>;
   const connectorById = new Map(connectors.map((connector) => [connector.id, connector.reference]));
-  return paths.map((wirePath, index) => {
+  const pinMappings = (artifact.pinMappings ?? []) as Array<{ pathId: string }>;
+  const mappedPathIds = pinMappedPathIds(pinMappings);
+  const wirePaths = paths.filter((path) => isWireRunPath(path, mappedPathIds));
+  return wirePaths.map((wirePath, index) => {
     const runNumber = Number.isInteger(wirePath.runNumber) && (wirePath.runNumber ?? 0) > 0 ? wirePath.runNumber! : index + 1;
     const fromReference = connectorById.get(wirePath.fromConnectorId) ?? wirePath.fromConnectorId;
     const toReference = connectorById.get(wirePath.toConnectorId) ?? wirePath.toConnectorId;
@@ -179,7 +183,6 @@ function toWirelistRows(artifact: JsonObject): Array<Array<string | number>> {
       wirePath.wireAwg ?? "",
       wirePath.wirePartNumber ?? "",
       wirePath.length !== undefined ? String(wirePath.length) : "",
-      wirePath.sleeving ?? "none",
       wirePath.wireColor ?? "",
       wirePath.wireGroup ?? "",
       formatLocation(toReference, wirePath.toContact ?? ""),

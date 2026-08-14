@@ -1,8 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import AdmZip from "adm-zip";
 
-export const WIRELIST_TEMPLATE_COLUMN_COUNT = 16;
+export const WIRELIST_TEMPLATE_COLUMN_COUNT = 15;
 export const BOM_COLUMN_COUNT = 8;
 const WIRELIST_SHEET_XML_PATH = "xl/worksheets/sheet1.xml";
 const BOM_SHEET_XML_PATH = "xl/worksheets/sheet2.xml";
@@ -16,10 +17,13 @@ const BOM_HEADERS = ["Item", "Category", "Part Number", "Description", "Qty", "U
 const FIXED_ZIP_ENTRY_DATE = new Date("2000-01-01T00:00:00.000Z");
 
 export function resolveWirelistTemplatePath(): string {
+  const fromModule = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../data/wirelist-template.xlsx");
   const candidates = [
     process.env.WIRELIST_TEMPLATE_PATH,
+    fromModule,
     path.resolve(process.cwd(), "data/wirelist-template.xlsx"),
-    path.resolve(process.cwd(), "../../data/wirelist-template.xlsx")
+    path.resolve(process.cwd(), "../../data/wirelist-template.xlsx"),
+    path.resolve("/var/task/data/wirelist-template.xlsx")
   ].filter((candidate): candidate is string => Boolean(candidate));
 
   for (const candidate of candidates) {
@@ -83,7 +87,7 @@ function getColumnStyleAttrs(sheetXml: string, columnIndex: number, prototypeRow
 
 function getRowAttrs(sheetXml: string, rowNumber: number): string {
   const match = sheetXml.match(new RegExp(`<row r="${rowNumber}"([^>]*)>`));
-  return match?.[1] ?? ' spans="1:16"';
+  return match?.[1] ?? ' spans="1:15"';
 }
 
 function buildDataRowXml(
@@ -131,14 +135,14 @@ function fillSheetXml(sheetXml: string, dataRows: Array<Array<string | number>>)
 }
 
 function updateSheetExtent(sheetXml: string, lastRow: number): string {
-  const lastCell = `P${lastRow}`;
+  const lastCell = `O${lastRow}`;
   return sheetXml.replace(/<dimension ref="[^"]*"\/>/, `<dimension ref="A1:${lastCell}"/>`);
 }
 
 function updateWorkbookRanges(workbookXml: string, lastRow: number): string {
   return workbookXml
     .replace(
-      /(<definedName name="_xlnm\.Print_Area" localSheetId="0">Wirelist!\$A\$1:\$P\$)\d+(<\/definedName>)/,
+      /(<definedName name="_xlnm\.Print_Area" localSheetId="0">Wirelist!\$A\$1:\$O\$)\d+(<\/definedName>)/,
       `$1${lastRow}$2`
     )
     .replace(

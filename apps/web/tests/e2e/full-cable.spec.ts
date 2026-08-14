@@ -2,6 +2,7 @@ import { expect, type Page, test } from "@playwright/test";
 import {
   createHarnessOnProjectPage,
   createProjectAndOpenProjectPage,
+  ingestFullCableCatalog,
   registerAndSignIn,
   uniqueToken
 } from "./helpers";
@@ -35,7 +36,9 @@ async function defineConnectorModule(page: Page, partNumber: string) {
   const row = page.getByRole("row").filter({ hasText: partNumber });
   await expect(row).toBeVisible();
   await row.getByRole("button", { name: "Select" }).click();
-  await expect(page.getByText(`Part number: ${partNumber}`)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Define Connector" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Change connector" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Change connector" })).toContainText(`Part number: ${partNumber}`);
 }
 
 async function authorFullCableOnCanvas(page: Page) {
@@ -46,7 +49,10 @@ async function authorFullCableOnCanvas(page: Page) {
 
   await connectors.nth(0).click();
   await defineConnectorModule(page, FULL_CABLE.modulePartNumber);
-  await page.getByLabel("Backshell").selectOption(FULL_CABLE.backshellLibraryId);
+  const backshellSelect = page.getByLabel("Backshell");
+  await expect(backshellSelect.locator("option")).toHaveCount(2); // blank + allowed
+  await expect(backshellSelect.locator(`option[value="${FULL_CABLE.backshellLibraryId}"]`)).toHaveCount(1);
+  await backshellSelect.selectOption(FULL_CABLE.backshellLibraryId);
   await page.getByLabel("Strain relief").selectOption(FULL_CABLE.strainReliefLibraryId);
   await waitForCanvasSaved(page);
 
@@ -58,8 +64,8 @@ async function authorFullCableOnCanvas(page: Page) {
 
   await connectFirstTwoConnectors(page);
   await page.locator("svg line").click({ force: true });
-  await expect(page.getByLabel("Wire part number")).toBeVisible();
-  await page.getByLabel("Wire part number").selectOption(FULL_CABLE.wireLibraryId);
+  await expect(page.getByLabel("Wire part number")).toHaveCount(0);
+  await expect(page.getByLabel("Length (inches)")).toBeVisible();
   await page.getByLabel("Length (inches)").fill(String(FULL_CABLE.wireLengthIn));
   await page.getByLabel("Sleeving").selectOption({ label: FULL_CABLE.sleevingLabel });
   await waitForCanvasSaved(page);
@@ -77,6 +83,7 @@ async function completeWirelistDetail(page: Page, harnessId: string) {
   await page.locator('input[data-cell-key="toLocation"]').first().fill(FULL_CABLE.toLocation);
   await page.locator('input[data-cell-key="toContact"]').first().fill(FULL_CABLE.contactPartNumber);
   await page.locator('input[data-cell-key="toSignalDescription"]').first().fill(FULL_CABLE.toSignal);
+  await page.locator('input[data-cell-key="wirePartNumber"]').first().fill(FULL_CABLE.wirePartNumber);
   await page.locator('input[data-cell-key="labelPartNumber"]').first().fill(FULL_CABLE.labelPartNumber);
   await page.locator('input[data-cell-key="labelText"]').first().fill(FULL_CABLE.labelText);
   await page.locator('input[data-cell-key="labelText"]').first().blur();
@@ -118,12 +125,13 @@ async function waitForExportCompleted(page: Page, format: "json" | "pdf" | "xlsx
     .toBe(true);
 }
 
-test("full-cable journey: author, validate, BOM, export, submit", async ({ page }) => {
+test("full-cable journey: author, validate, BOM, export, submit", async ({ page, request }) => {
   test.setTimeout(240_000);
   const token = uniqueToken();
   const projectName = `Full Cable Project ${token}`;
   const harnessName = `Full Cable Harness ${token}`;
 
+  await ingestFullCableCatalog(request);
   await registerAndSignIn(page, {
     username: `fullcable-${token}`,
     email: `fullcable-${token}@example.com`

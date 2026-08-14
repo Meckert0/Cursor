@@ -12,19 +12,20 @@ import type {
   ValidationRun
 } from "../../domain/types.js";
 import {
-  DEFAULT_LIBRARY_COMPONENTS,
+  emptyAttributesForCategory,
+  type AwgCmaReference,
   type LibraryCategory,
-  type LibraryComponentRecord,
-  type LibraryComponentIngestItem,
+  type PartIngestItem,
   type LibraryIngestResult,
-  type LibraryFieldDefinitionRecord,
-  type LibraryReviewQueueRecord
+  type PartWithAttributes,
+  type LibraryReviewQueueRecord,
+  type ContactWireCompat,
+  type ModuleContactCompat,
+  type ModuleBackshellCompat,
+  type ModuleStrainReliefCompat,
+  type PartAlias,
+  type CategoryAttributesMap
 } from "../../domain/library.js";
-import {
-  BUILTIN_FIELDS_BY_CATEGORY,
-  builtinFieldDefinitionId
-} from "../../domain/library-builtin-fields.js";
-import { promoteCompatibilityFields } from "../../domain/library-compatibility.js";
 import { hashDesignSnapshot } from "../../domain/snapshot-hash.js";
 import type { TablePreferencesRecord } from "../../domain/table-preferences.js";
 import type { Store } from "./store.js";
@@ -48,67 +49,17 @@ const DEFAULT_UI_COPY_SETTINGS: UiCopySettings = {
     "Drag connectors to define a visual harness shape. Connector positions are carried forward in Details. Use node handles to drag-connect paths directly on canvas, including connector-to-junction topology."
 };
 
-function getDefaultFieldDefinitions(): LibraryFieldDefinitionRecord[] {
-  const now = new Date().toISOString();
-  return (Object.keys(BUILTIN_FIELDS_BY_CATEGORY) as LibraryCategory[]).flatMap((category) =>
-    BUILTIN_FIELDS_BY_CATEGORY[category].map((field) => ({
-      id: builtinFieldDefinitionId(category, field.key),
-      category,
-      key: field.key,
-      label: field.label,
-      valueType: "text",
-      isSystem: true,
-      isVisibleInViewer: field.isVisibleInViewer,
-      showOnAddForm: field.showOnAddForm ?? false,
-      showInSearch: field.showInSearch ?? false,
-      createdByUserId: "system-user",
-      createdAt: now,
-      updatedAt: now
-    }))
-  );
-}
-
-type StoredLibraryComponent = LibraryComponentRecord & {
+type StoredPart = PartWithAttributes & {
   enteredByUserId: string;
   enteredAt: string;
-  isReviewed: boolean;
-  reviewedByUserId?: string;
-  reviewedAt?: string;
   isArchived: boolean;
   archivedAt?: string;
   archivedByUserId?: string;
 };
 
-function toLibraryComponentRecord(component: StoredLibraryComponent): LibraryComponentRecord {
-  return {
-    id: component.id,
-    category: component.category,
-    family: component.family,
-    partNumber: component.partNumber,
-    description: component.description,
-    awg: component.awg,
-    color: component.color,
-    isActive: component.isActive,
-    isReviewed: component.isReviewed,
-    reviewedByUserId: component.reviewedByUserId,
-    reviewedAt: component.reviewedAt,
-    stockStatus: component.stockStatus,
-    compatibilityHints: component.compatibilityHints,
-    pinCount: component.pinCount,
-    pinIds: component.pinIds,
-    acceptedAwgMin: component.acceptedAwgMin,
-    acceptedAwgMax: component.acceptedAwgMax,
-    acceptedFamilies: component.acceptedFamilies,
-    isArchived: component.isArchived,
-    archivedAt: component.archivedAt,
-    archivedByUserId: component.archivedByUserId,
-    customFieldValues: component.customFieldValues ?? {},
-    createdByUserId: component.createdByUserId,
-    createdAt: component.createdAt,
-    lastEditedByUserId: component.lastEditedByUserId,
-    lastEditedAt: component.lastEditedAt,
-    updatedAt: component.updatedAt
-  };
+function toPartRecord(part: StoredPart): PartWithAttributes {
+  const { enteredByUserId: _enteredByUserId, enteredAt: _enteredAt, ...record } = part;
+  return record;
 }
 
 export interface MemoryStoreState {
@@ -127,8 +78,13 @@ export interface MemoryStoreState {
   projectRulesetPolicies: ProjectRulesetPolicy[];
   projectMembers: ProjectMember[];
   libraryIngestResultsByIdempotencyKey: Array<{ key: string; value: LibraryIngestResult }>;
-  libraryComponents: StoredLibraryComponent[];
-  libraryFieldDefinitions: LibraryFieldDefinitionRecord[];
+  parts?: StoredPart[];
+  partAliases?: PartAlias[];
+  contactWireCompat?: ContactWireCompat[];
+  moduleContactCompat?: ModuleContactCompat[];
+  moduleBackshellCompat?: ModuleBackshellCompat[];
+  moduleStrainReliefCompat?: ModuleStrainReliefCompat[];
+  awgCmaReference?: AwgCmaReference[];
   userTablePreferences: TablePreferencesRecord[];
 }
 
@@ -146,8 +102,13 @@ export class MemoryStore implements Store {
   private readonly projectRulesetPolicies = new Map<string, ProjectRulesetPolicy>();
   private readonly projectMembers = new Map<string, ProjectMember>();
   private readonly libraryIngestResultsByIdempotencyKey = new Map<string, LibraryIngestResult>();
-  private readonly libraryComponents = new Map<string, StoredLibraryComponent>();
-  private readonly libraryFieldDefinitions = new Map<string, LibraryFieldDefinitionRecord>();
+  private readonly parts = new Map<string, StoredPart>();
+  private readonly partAliases = new Map<string, PartAlias>();
+  private readonly contactWireCompat = new Map<string, ContactWireCompat>();
+  private readonly moduleContactCompat = new Map<string, ModuleContactCompat>();
+  private readonly moduleBackshellCompat = new Map<string, ModuleBackshellCompat>();
+  private readonly moduleStrainReliefCompat = new Map<string, ModuleStrainReliefCompat>();
+  private readonly awgCmaReference = new Map<string, AwgCmaReference>();
   private readonly userTablePreferences = new Map<string, TablePreferencesRecord>();
 
   constructor(input?: { state?: MemoryStoreState }) {
@@ -171,43 +132,6 @@ export class MemoryStore implements Store {
       createdAt: now,
       updatedAt: now
     });
-    for (const component of DEFAULT_LIBRARY_COMPONENTS) {
-      this.libraryComponents.set(component.id, {
-        ...component,
-        customFieldValues: component.customFieldValues ?? {},
-        enteredByUserId: "seed",
-        enteredAt: component.updatedAt,
-        isReviewed: component.isReviewed,
-        reviewedByUserId: component.reviewedByUserId ?? "seed",
-        reviewedAt: component.reviewedAt ?? component.updatedAt,
-        isArchived: false
-      });
-    }
-    for (const definition of getDefaultFieldDefinitions()) {
-      this.libraryFieldDefinitions.set(definition.id, definition);
-    }
-  }
-
-  private backfillDefaultLibraryComponents(): void {
-    for (const component of DEFAULT_LIBRARY_COMPONENTS) {
-      if (this.libraryComponents.has(component.id)) {
-        continue;
-      }
-      this.libraryComponents.set(component.id, {
-        ...component,
-        customFieldValues: component.customFieldValues ?? {},
-        enteredByUserId: "seed",
-        enteredAt: component.updatedAt,
-        isReviewed: component.isReviewed,
-        reviewedByUserId: component.reviewedByUserId ?? "seed",
-        reviewedAt: component.reviewedAt ?? component.updatedAt,
-        isArchived: false
-      });
-    }
-  }
-
-  async ensureDefaultLibrarySeeded(): Promise<void> {
-    this.backfillDefaultLibraryComponents();
   }
 
   static fromState(state: MemoryStoreState): MemoryStore {
@@ -231,8 +155,13 @@ export class MemoryStore implements Store {
         key,
         value
       })),
-      libraryComponents: Array.from(this.libraryComponents.values()),
-      libraryFieldDefinitions: Array.from(this.libraryFieldDefinitions.values()),
+      parts: Array.from(this.parts.values()),
+      partAliases: Array.from(this.partAliases.values()),
+      contactWireCompat: Array.from(this.contactWireCompat.values()),
+      moduleContactCompat: Array.from(this.moduleContactCompat.values()),
+      moduleBackshellCompat: Array.from(this.moduleBackshellCompat.values()),
+      moduleStrainReliefCompat: Array.from(this.moduleStrainReliefCompat.values()),
+      awgCmaReference: Array.from(this.awgCmaReference.values()),
       userTablePreferences: Array.from(this.userTablePreferences.values())
     };
   }
@@ -315,38 +244,45 @@ export class MemoryStore implements Store {
       this.libraryIngestResultsByIdempotencyKey.set(entry.key, entry.value);
     }
 
-    this.libraryComponents.clear();
-    for (const component of state.libraryComponents) {
-      this.libraryComponents.set(component.id, {
-        ...component,
-        customFieldValues: component.customFieldValues ?? {},
-        createdByUserId: component.createdByUserId ?? component.enteredByUserId ?? "system-user",
-        createdAt: component.createdAt ?? component.enteredAt ?? component.updatedAt,
-        lastEditedByUserId: component.lastEditedByUserId ?? component.enteredByUserId ?? "system-user",
-        lastEditedAt: component.lastEditedAt ?? component.updatedAt
+    // Legacy libraryComponents / libraryFieldDefinitions keys are intentionally discarded.
+    this.parts.clear();
+    for (const part of state.parts ?? []) {
+      this.parts.set(part.id, {
+        ...part,
+        isArchived: part.isArchived ?? false,
+        enteredByUserId: part.enteredByUserId ?? part.createdByUserId ?? "system-user",
+        enteredAt: part.enteredAt ?? part.createdAt ?? part.updatedAt
       });
     }
-    this.backfillDefaultLibraryComponents();
 
-    this.libraryFieldDefinitions.clear();
-    const loadedDefinitions = state.libraryFieldDefinitions ?? getDefaultFieldDefinitions();
-    for (const definition of loadedDefinitions) {
-      this.libraryFieldDefinitions.set(definition.id, {
-        ...definition,
-        showOnAddForm: definition.showOnAddForm ?? false,
-        showInSearch: definition.showInSearch ?? false
-      });
+    this.partAliases.clear();
+    for (const alias of state.partAliases ?? []) {
+      this.partAliases.set(`${alias.codeSystem}:${alias.code}`, alias);
     }
-    const existingByCategoryAndKey = new Set(
-      Array.from(this.libraryFieldDefinitions.values()).map((definition) => `${definition.category}:${definition.key}`)
-    );
-    for (const defaultDefinition of getDefaultFieldDefinitions()) {
-      const compositeKey = `${defaultDefinition.category}:${defaultDefinition.key}`;
-      if (existingByCategoryAndKey.has(compositeKey)) {
-        continue;
-      }
-      this.libraryFieldDefinitions.set(defaultDefinition.id, defaultDefinition);
-      existingByCategoryAndKey.add(compositeKey);
+
+    this.contactWireCompat.clear();
+    for (const row of state.contactWireCompat ?? []) {
+      this.contactWireCompat.set(`${row.contactPartId}:${row.wirePartId}`, row);
+    }
+
+    this.moduleContactCompat.clear();
+    for (const row of state.moduleContactCompat ?? []) {
+      this.moduleContactCompat.set(`${row.modulePartId}:${row.contactPartId}`, row);
+    }
+
+    this.moduleBackshellCompat.clear();
+    for (const row of state.moduleBackshellCompat ?? []) {
+      this.moduleBackshellCompat.set(`${row.modulePartId}:${row.backshellPartId}`, row);
+    }
+
+    this.moduleStrainReliefCompat.clear();
+    for (const row of state.moduleStrainReliefCompat ?? []) {
+      this.moduleStrainReliefCompat.set(`${row.modulePartId}:${row.strainReliefPartId}`, row);
+    }
+
+    this.awgCmaReference.clear();
+    for (const row of state.awgCmaReference ?? []) {
+      this.awgCmaReference.set(row.awg, row);
     }
 
     this.userTablePreferences.clear();
@@ -997,7 +933,7 @@ export class MemoryStore implements Store {
   }
 
   async ingestLibraryComponents(input: {
-    items: LibraryComponentIngestItem[];
+    items: PartIngestItem[];
     requestedByUserId: string;
     dryRun: boolean;
     idempotencyKey?: string;
@@ -1010,10 +946,10 @@ export class MemoryStore implements Store {
     }
 
     const accepted: Array<{
-      item: LibraryComponentIngestItem;
+      item: PartIngestItem;
       rowNumber: number;
       componentId: string;
-      existing?: StoredLibraryComponent;
+      existing?: StoredPart;
     }> = [];
     const results: LibraryIngestResult["results"] = [];
     const seenKeys = new Set<string>();
@@ -1021,6 +957,19 @@ export class MemoryStore implements Store {
     input.items.forEach((item, index) => {
       const rowNumber = index + 1;
       const componentId = item.id?.trim() || `cmp-${item.category}-${crypto.randomUUID().slice(0, 8)}`;
+      if (item.category === "wire") {
+        const awg = "awg" in item.attributes ? String(item.attributes.awg ?? "").trim() : "";
+        const color = "color" in item.attributes ? String(item.attributes.color ?? "").trim() : "";
+        if (!awg || !color) {
+          results.push({
+            rowNumber,
+            status: "rejected",
+            componentId,
+            message: "WIRE_FIELDS_REQUIRED"
+          });
+          return;
+        }
+      }
       const candidateKey = `${item.category}:${item.family.trim().toLowerCase()}:${item.partNumber.trim().toLowerCase()}`;
       if (seenKeys.has(candidateKey)) {
         results.push({
@@ -1031,8 +980,9 @@ export class MemoryStore implements Store {
         });
         return;
       }
-      const duplicate = Array.from(this.libraryComponents.values()).some(
+      const duplicate = Array.from(this.parts.values()).some(
         (existing) =>
+          !existing.isArchived &&
           existing.id !== componentId &&
           existing.category === item.category &&
           existing.family.toLowerCase() === item.family.trim().toLowerCase() &&
@@ -1052,7 +1002,7 @@ export class MemoryStore implements Store {
         item,
         rowNumber,
         componentId,
-        existing: this.libraryComponents.get(componentId)
+        existing: this.parts.get(componentId)
       });
       results.push({
         rowNumber,
@@ -1065,7 +1015,11 @@ export class MemoryStore implements Store {
       const now = new Date().toISOString();
       for (const entry of accepted) {
         const existing = entry.existing;
-        const item = promoteCompatibilityFields(entry.item);
+        const item = entry.item;
+        const attributes = {
+          ...emptyAttributesForCategory(item.category),
+          ...item.attributes
+        } as CategoryAttributesMap[LibraryCategory];
         const editedReviewedEntry =
           Boolean(existing?.isReviewed) &&
           Boolean(
@@ -1074,38 +1028,23 @@ export class MemoryStore implements Store {
                 existing.family !== item.family.trim() ||
                 existing.partNumber !== item.partNumber.trim() ||
                 existing.description !== item.description.trim() ||
-                existing.awg !== item.awg?.trim() ||
-                existing.color !== item.color?.trim() ||
                 existing.isActive !== item.isActive ||
                 existing.stockStatus !== item.stockStatus ||
-                JSON.stringify(existing.compatibilityHints) !== JSON.stringify(item.compatibilityHints) ||
-                existing.pinCount !== item.pinCount ||
-                JSON.stringify(existing.pinIds ?? []) !== JSON.stringify(item.pinIds ?? []) ||
-                existing.acceptedAwgMin !== item.acceptedAwgMin ||
-                existing.acceptedAwgMax !== item.acceptedAwgMax ||
-                JSON.stringify(existing.acceptedFamilies ?? []) !== JSON.stringify(item.acceptedFamilies ?? []))
+                JSON.stringify(existing.attributes) !== JSON.stringify(attributes))
           );
         const isReviewed = editedReviewedEntry ? false : item.isReviewed;
-        this.libraryComponents.set(entry.componentId, {
+        const stored = {
           id: entry.componentId,
           category: item.category,
           family: item.family.trim(),
           partNumber: item.partNumber.trim(),
           description: item.description.trim(),
-          awg: item.awg?.trim(),
-          color: item.color?.trim(),
           isActive: item.isActive,
           isReviewed,
           reviewedByUserId: isReviewed ? item.reviewedByUserId ?? input.requestedByUserId : undefined,
           reviewedAt: isReviewed ? item.reviewedAt ?? now : undefined,
           stockStatus: item.stockStatus,
-          compatibilityHints: item.compatibilityHints,
-          pinCount: item.pinCount,
-          pinIds: item.pinIds,
-          acceptedAwgMin: item.acceptedAwgMin,
-          acceptedAwgMax: item.acceptedAwgMax,
-          acceptedFamilies: item.acceptedFamilies,
-          customFieldValues: item.customFieldValues ?? existing?.customFieldValues ?? {},
+          attributes,
           createdByUserId: existing?.createdByUserId ?? input.requestedByUserId,
           createdAt: existing?.createdAt ?? now,
           lastEditedByUserId: input.requestedByUserId,
@@ -1116,7 +1055,23 @@ export class MemoryStore implements Store {
           isArchived: false,
           archivedAt: undefined,
           archivedByUserId: undefined
-        });
+        } as StoredPart;
+        this.parts.set(entry.componentId, stored);
+
+        if (item.aliases) {
+          for (const alias of item.aliases) {
+            const codeSystem = alias.codeSystem.trim();
+            const code = alias.code.trim();
+            if (!codeSystem || !code) {
+              continue;
+            }
+            this.partAliases.set(`${codeSystem}:${code}`, {
+              partId: entry.componentId,
+              codeSystem,
+              code
+            });
+          }
+        }
       }
     }
 
@@ -1143,15 +1098,15 @@ export class MemoryStore implements Store {
     requestingUserId: string;
     canViewAllUnreviewed: boolean;
     canViewInactive: boolean;
-  }): Promise<LibraryComponentRecord[]> {
-    return Array.from(this.libraryComponents.values())
+  }): Promise<PartWithAttributes[]> {
+    return Array.from(this.parts.values())
       .filter(
-        (component) =>
-          !component.isArchived &&
-          (component.isActive || input.canViewInactive) &&
-          (component.isReviewed || component.enteredByUserId === input.requestingUserId || input.canViewAllUnreviewed)
+        (part) =>
+          !part.isArchived &&
+          (part.isActive || input.canViewInactive) &&
+          (part.isReviewed || part.enteredByUserId === input.requestingUserId || input.canViewAllUnreviewed)
       )
-      .map(toLibraryComponentRecord)
+      .map(toPartRecord)
       .sort((left, right) => left.partNumber.localeCompare(right.partNumber));
   }
 
@@ -1160,20 +1115,19 @@ export class MemoryStore implements Store {
     requestingUserId: string;
     canViewAllUnreviewed: boolean;
     canViewInactive: boolean;
-  }): Promise<LibraryComponentRecord | null> {
-    const component = this.libraryComponents.get(input.componentId);
-    if (!component || component.isArchived) {
+  }): Promise<PartWithAttributes | null> {
+    const part = this.parts.get(input.componentId);
+    if (!part || part.isArchived) {
       return null;
     }
-    if (!component.isActive && !input.canViewInactive) {
+    if (!part.isActive && !input.canViewInactive) {
       return null;
     }
-    const visible =
-      component.isReviewed || component.enteredByUserId === input.requestingUserId || input.canViewAllUnreviewed;
+    const visible = part.isReviewed || part.enteredByUserId === input.requestingUserId || input.canViewAllUnreviewed;
     if (!visible) {
       return null;
     }
-    return toLibraryComponentRecord(component);
+    return toPartRecord(part);
   }
 
   async setLibraryComponentReview(input: {
@@ -1181,33 +1135,65 @@ export class MemoryStore implements Store {
     isReviewed: boolean;
     reviewedByUserId?: string;
     reviewedAt?: string;
-  }): Promise<LibraryComponentRecord | null> {
-    const component = this.libraryComponents.get(input.componentId);
-    if (!component || component.isArchived) {
+  }): Promise<PartWithAttributes | null> {
+    const part = this.parts.get(input.componentId);
+    if (!part || part.isArchived) {
       return null;
     }
     const now = new Date().toISOString();
-    const updated: StoredLibraryComponent = {
-      ...component,
+    const updated: StoredPart = {
+      ...part,
       isReviewed: input.isReviewed,
       reviewedByUserId: input.isReviewed ? input.reviewedByUserId : undefined,
       reviewedAt: input.isReviewed ? input.reviewedAt ?? now : undefined,
-      lastEditedByUserId: input.reviewedByUserId ?? component.lastEditedByUserId,
+      lastEditedByUserId: input.reviewedByUserId ?? part.lastEditedByUserId,
       lastEditedAt: now,
       updatedAt: now
     };
-    this.libraryComponents.set(input.componentId, updated);
-    return toLibraryComponentRecord(updated);
+    this.parts.set(input.componentId, updated);
+    return toPartRecord(updated);
   }
 
-  async archiveLibraryComponent(input: { componentId: string; archivedByUserId: string }): Promise<LibraryComponentRecord | null> {
-    const component = this.libraryComponents.get(input.componentId);
-    if (!component || component.isArchived) {
+  async bulkSetLibraryComponentReview(input: {
+    componentIds: string[];
+    reviewedByUserId?: string;
+    reviewedAt?: string;
+  }): Promise<{ reviewed: number; missing: string[] }> {
+    const now = new Date().toISOString();
+    const missing: string[] = [];
+    let reviewed = 0;
+    for (const componentId of input.componentIds) {
+      const part = this.parts.get(componentId);
+      if (!part || part.isArchived) {
+        missing.push(componentId);
+        continue;
+      }
+      const updated: StoredPart = {
+        ...part,
+        isReviewed: true,
+        reviewedByUserId: input.reviewedByUserId ?? "system-user",
+        reviewedAt: input.reviewedAt ?? now,
+        lastEditedByUserId: input.reviewedByUserId ?? part.lastEditedByUserId,
+        lastEditedAt: now,
+        updatedAt: now
+      };
+      this.parts.set(componentId, updated);
+      reviewed += 1;
+    }
+    return { reviewed, missing };
+  }
+
+  async archiveLibraryComponent(input: {
+    componentId: string;
+    archivedByUserId: string;
+  }): Promise<PartWithAttributes | null> {
+    const part = this.parts.get(input.componentId);
+    if (!part || part.isArchived) {
       return null;
     }
     const now = new Date().toISOString();
-    const updated: StoredLibraryComponent = {
-      ...component,
+    const updated: StoredPart = {
+      ...part,
       isArchived: true,
       isActive: false,
       archivedAt: now,
@@ -1216,14 +1202,14 @@ export class MemoryStore implements Store {
       lastEditedAt: now,
       updatedAt: now
     };
-    this.libraryComponents.set(input.componentId, updated);
-    return toLibraryComponentRecord(updated);
+    this.parts.set(input.componentId, updated);
+    return toPartRecord(updated);
   }
 
-  async listArchivedLibraryComponents(): Promise<LibraryComponentRecord[]> {
-    return Array.from(this.libraryComponents.values())
-      .filter((component) => component.isArchived === true)
-      .map(toLibraryComponentRecord)
+  async listArchivedLibraryComponents(): Promise<PartWithAttributes[]> {
+    return Array.from(this.parts.values())
+      .filter((part) => part.isArchived === true)
+      .map(toPartRecord)
       .sort((left, right) => left.partNumber.localeCompare(right.partNumber));
   }
 
@@ -1231,33 +1217,33 @@ export class MemoryStore implements Store {
     componentId: string;
     restoredByUserId: string;
     reactivate?: boolean;
-  }): Promise<LibraryComponentRecord | null> {
-    const component = this.libraryComponents.get(input.componentId);
-    if (!component || !component.isArchived) {
+  }): Promise<PartWithAttributes | null> {
+    const part = this.parts.get(input.componentId);
+    if (!part || !part.isArchived) {
       return null;
     }
     const now = new Date().toISOString();
     const reactivate = input.reactivate !== false;
-    const updated: StoredLibraryComponent = {
-      ...component,
+    const updated: StoredPart = {
+      ...part,
       isArchived: false,
       archivedAt: undefined,
       archivedByUserId: undefined,
-      isActive: reactivate ? true : component.isActive,
+      isActive: reactivate ? true : part.isActive,
       lastEditedByUserId: input.restoredByUserId,
       lastEditedAt: now,
       updatedAt: now
     };
-    this.libraryComponents.set(input.componentId, updated);
-    return toLibraryComponentRecord(updated);
+    this.parts.set(input.componentId, updated);
+    return toPartRecord(updated);
   }
 
   async deleteLibraryComponent(input: { componentId: string }): Promise<boolean> {
-    const component = this.libraryComponents.get(input.componentId);
-    if (!component) {
+    const part = this.parts.get(input.componentId);
+    if (!part) {
       return false;
     }
-    this.libraryComponents.delete(input.componentId);
+    this.parts.delete(input.componentId);
     return true;
   }
 
@@ -1266,166 +1252,55 @@ export class MemoryStore implements Store {
     partNumber?: string;
     family?: string;
     description?: string;
-    awg?: string;
-    color?: string;
     isActive?: boolean;
     isReviewed?: boolean;
     reviewedByUserId?: string;
     reviewedAt?: string;
-    stockStatus?: LibraryComponentRecord["stockStatus"];
-    compatibilityHints?: string[];
-    pinCount?: number;
-    pinIds?: string[];
-    acceptedAwgMin?: number;
-    acceptedAwgMax?: number;
-    acceptedFamilies?: string[];
+    stockStatus?: PartWithAttributes["stockStatus"];
     createdByUserId?: string;
     createdAt?: string;
     lastEditedByUserId?: string;
     lastEditedAt?: string;
     editedByUserId?: string;
-    customFieldValues?: Record<string, string>;
-  }): Promise<LibraryComponentRecord | null> {
-    const component = this.libraryComponents.get(input.componentId);
-    if (!component || component.isArchived) {
+    attributes?: Partial<CategoryAttributesMap[LibraryCategory]>;
+  }): Promise<PartWithAttributes | null> {
+    const part = this.parts.get(input.componentId);
+    if (!part || part.isArchived) {
       return null;
     }
-    const nextAwg = input.awg ?? component.awg;
-    const nextColor = input.color ?? component.color;
-    if (component.category === "wire" && (!nextAwg || !nextColor)) {
-      throw new Error("WIRE_FIELDS_REQUIRED");
+    const nextAttributes = {
+      ...part.attributes,
+      ...(input.attributes ?? {})
+    } as CategoryAttributesMap[LibraryCategory];
+    if (part.category === "wire") {
+      const awg = "awg" in nextAttributes ? String(nextAttributes.awg ?? "").trim() : "";
+      const color = "color" in nextAttributes ? String(nextAttributes.color ?? "").trim() : "";
+      if (!awg || !color) {
+        throw new Error("WIRE_FIELDS_REQUIRED");
+      }
     }
-    const nextCustomFieldValues = input.customFieldValues ?? component.customFieldValues ?? {};
-    const promoted = promoteCompatibilityFields({
-      pinCount: input.pinCount ?? component.pinCount,
-      pinIds: input.pinIds ?? component.pinIds,
-      acceptedAwgMin: input.acceptedAwgMin ?? component.acceptedAwgMin,
-      acceptedAwgMax: input.acceptedAwgMax ?? component.acceptedAwgMax,
-      acceptedFamilies: input.acceptedFamilies ?? component.acceptedFamilies,
-      customFieldValues: nextCustomFieldValues
-    });
-    const nextIsReviewed = input.isReviewed ?? component.isReviewed;
-    const nextReviewedByUserId = nextIsReviewed
-      ? (input.reviewedByUserId ?? component.reviewedByUserId)
-      : undefined;
-    const nextReviewedAt = nextIsReviewed ? (input.reviewedAt ?? component.reviewedAt) : undefined;
-    const updated: StoredLibraryComponent = {
-      ...component,
-      partNumber: input.partNumber ?? component.partNumber,
-      family: input.family ?? component.family,
-      description: input.description ?? component.description,
-      awg: nextAwg,
-      color: nextColor,
-      isActive: input.isActive ?? component.isActive,
+    const nextIsReviewed = input.isReviewed ?? part.isReviewed;
+    const nextReviewedByUserId = nextIsReviewed ? (input.reviewedByUserId ?? part.reviewedByUserId) : undefined;
+    const nextReviewedAt = nextIsReviewed ? (input.reviewedAt ?? part.reviewedAt) : undefined;
+    const updated = {
+      ...part,
+      partNumber: input.partNumber ?? part.partNumber,
+      family: input.family ?? part.family,
+      description: input.description ?? part.description,
+      isActive: input.isActive ?? part.isActive,
       isReviewed: nextIsReviewed,
       reviewedByUserId: nextReviewedByUserId,
       reviewedAt: nextReviewedAt,
-      stockStatus: input.stockStatus ?? component.stockStatus,
-      compatibilityHints: input.compatibilityHints ?? component.compatibilityHints,
-      pinCount: promoted.pinCount,
-      pinIds: promoted.pinIds,
-      acceptedAwgMin: promoted.acceptedAwgMin,
-      acceptedAwgMax: promoted.acceptedAwgMax,
-      acceptedFamilies: promoted.acceptedFamilies,
-      customFieldValues: nextCustomFieldValues,
-      createdByUserId: input.createdByUserId ?? component.createdByUserId,
-      createdAt: input.createdAt ?? component.createdAt,
-      lastEditedByUserId: input.lastEditedByUserId ?? input.editedByUserId ?? component.lastEditedByUserId,
+      stockStatus: input.stockStatus ?? part.stockStatus,
+      attributes: nextAttributes,
+      createdByUserId: input.createdByUserId ?? part.createdByUserId,
+      createdAt: input.createdAt ?? part.createdAt,
+      lastEditedByUserId: input.lastEditedByUserId ?? input.editedByUserId ?? part.lastEditedByUserId,
       lastEditedAt: input.lastEditedAt ?? new Date().toISOString(),
       updatedAt: new Date().toISOString()
-    };
-    this.libraryComponents.set(input.componentId, updated);
-    return toLibraryComponentRecord(updated);
-  }
-
-  async listLibraryFieldDefinitions(input: {
-    category: LibraryCategory;
-  }): Promise<LibraryFieldDefinitionRecord[]> {
-    return Array.from(this.libraryFieldDefinitions.values())
-      .filter((definition) => definition.category === input.category)
-      .sort((left, right) => left.label.localeCompare(right.label));
-  }
-
-  async createLibraryFieldDefinition(input: {
-    category: LibraryCategory;
-    key: string;
-    label: string;
-    valueType: "text";
-    isVisibleInViewer: boolean;
-    showOnAddForm: boolean;
-    showInSearch: boolean;
-    createdByUserId: string;
-  }): Promise<LibraryFieldDefinitionRecord> {
-    const duplicate = Array.from(this.libraryFieldDefinitions.values()).find(
-      (definition) => definition.category === input.category && definition.key.toLowerCase() === input.key.toLowerCase()
-    );
-    if (duplicate) {
-      throw new Error("FIELD_KEY_EXISTS");
-    }
-    const now = new Date().toISOString();
-    const created: LibraryFieldDefinitionRecord = {
-      id: crypto.randomUUID(),
-      category: input.category,
-      key: input.key,
-      label: input.label,
-      valueType: input.valueType,
-      isSystem: false,
-      isVisibleInViewer: input.isVisibleInViewer,
-      showOnAddForm: input.showOnAddForm,
-      showInSearch: input.showInSearch,
-      createdByUserId: input.createdByUserId,
-      createdAt: now,
-      updatedAt: now
-    };
-    this.libraryFieldDefinitions.set(created.id, created);
-    return created;
-  }
-
-  async updateLibraryFieldDefinition(input: {
-    fieldDefinitionId: string;
-    label?: string;
-    isVisibleInViewer?: boolean;
-    showOnAddForm?: boolean;
-    showInSearch?: boolean;
-  }): Promise<LibraryFieldDefinitionRecord | null> {
-    const existing = this.libraryFieldDefinitions.get(input.fieldDefinitionId);
-    if (!existing) {
-      return null;
-    }
-    const updated: LibraryFieldDefinitionRecord = {
-      ...existing,
-      label: input.label ?? existing.label,
-      isVisibleInViewer: input.isVisibleInViewer ?? existing.isVisibleInViewer,
-      showOnAddForm: input.showOnAddForm ?? existing.showOnAddForm,
-      showInSearch: input.showInSearch ?? existing.showInSearch,
-      updatedAt: new Date().toISOString()
-    };
-    this.libraryFieldDefinitions.set(existing.id, updated);
-    return updated;
-  }
-
-  async deleteLibraryFieldDefinition(input: { fieldDefinitionId: string }): Promise<boolean> {
-    const existing = this.libraryFieldDefinitions.get(input.fieldDefinitionId);
-    if (!existing) {
-      return false;
-    }
-    this.libraryFieldDefinitions.delete(input.fieldDefinitionId);
-    for (const [componentId, component] of this.libraryComponents.entries()) {
-      if (component.category !== existing.category) {
-        continue;
-      }
-      if (!(existing.key in (component.customFieldValues ?? {}))) {
-        continue;
-      }
-      const nextValues = { ...(component.customFieldValues ?? {}) };
-      delete nextValues[existing.key];
-      this.libraryComponents.set(componentId, {
-        ...component,
-        customFieldValues: nextValues,
-        updatedAt: new Date().toISOString()
-      });
-    }
-    return true;
+    } as StoredPart;
+    this.parts.set(input.componentId, updated);
+    return toPartRecord(updated);
   }
 
   async listLibraryReviewQueue(input?: {
@@ -1433,21 +1308,187 @@ export class MemoryStore implements Store {
     family?: string;
     enteredByUserId?: string;
   }): Promise<LibraryReviewQueueRecord[]> {
-    return Array.from(this.libraryComponents.values())
+    return Array.from(this.parts.values())
       .filter(
-        (component) =>
-          !component.isArchived &&
-          !component.isReviewed &&
-          (!input?.category || component.category === input.category) &&
-          (!input?.family || component.family.toLowerCase() === input.family.trim().toLowerCase()) &&
-          (!input?.enteredByUserId || component.enteredByUserId === input.enteredByUserId)
+        (part) =>
+          !part.isArchived &&
+          !part.isReviewed &&
+          (!input?.category || part.category === input.category) &&
+          (!input?.family || part.family.toLowerCase() === input.family.trim().toLowerCase()) &&
+          (!input?.enteredByUserId || part.enteredByUserId === input.enteredByUserId)
       )
       .sort((left, right) => left.enteredAt.localeCompare(right.enteredAt))
-      .map((component) => ({
-        ...toLibraryComponentRecord(component),
-        enteredByUserId: component.enteredByUserId,
-        enteredAt: component.enteredAt
+      .map((part) => ({
+        ...toPartRecord(part),
+        enteredByUserId: part.enteredByUserId,
+        enteredAt: part.enteredAt
       }));
+  }
+
+  async listContactWireCompat(): Promise<ContactWireCompat[]> {
+    return Array.from(this.contactWireCompat.values());
+  }
+
+  async upsertContactWireCompat(input: ContactWireCompat): Promise<ContactWireCompat> {
+    const row: ContactWireCompat = {
+      contactPartId: input.contactPartId,
+      wirePartId: input.wirePartId,
+      status: input.status,
+      ...(input.notes !== undefined ? { notes: input.notes } : {}),
+      ...(input.crimpClass !== undefined ? { crimpClass: input.crimpClass } : {})
+    };
+    this.contactWireCompat.set(`${row.contactPartId}:${row.wirePartId}`, row);
+    return row;
+  }
+
+  async bulkUpsertContactWireCompat(input: { rows: ContactWireCompat[] }): Promise<{ upserted: number }> {
+    for (const row of input.rows) {
+      this.contactWireCompat.set(`${row.contactPartId}:${row.wirePartId}`, {
+        contactPartId: row.contactPartId,
+        wirePartId: row.wirePartId,
+        status: row.status,
+        ...(row.notes !== undefined ? { notes: row.notes } : {}),
+        ...(row.crimpClass !== undefined ? { crimpClass: row.crimpClass } : {})
+      });
+    }
+    return { upserted: input.rows.length };
+  }
+
+  async deleteContactWireCompat(input: { contactPartId: string; wirePartId: string }): Promise<boolean> {
+    return this.contactWireCompat.delete(`${input.contactPartId}:${input.wirePartId}`);
+  }
+
+  async listModuleContactCompat(): Promise<ModuleContactCompat[]> {
+    return Array.from(this.moduleContactCompat.values());
+  }
+
+  async upsertModuleContactCompat(input: ModuleContactCompat): Promise<ModuleContactCompat> {
+    const row: ModuleContactCompat = {
+      modulePartId: input.modulePartId,
+      contactPartId: input.contactPartId,
+      status: input.status,
+      ...(input.notes !== undefined ? { notes: input.notes } : {}),
+      ...(input.source !== undefined ? { source: input.source } : {})
+    };
+    this.moduleContactCompat.set(`${row.modulePartId}:${row.contactPartId}`, row);
+    return row;
+  }
+
+  async bulkUpsertModuleContactCompat(input: { rows: ModuleContactCompat[] }): Promise<{ upserted: number }> {
+    for (const row of input.rows) {
+      this.moduleContactCompat.set(`${row.modulePartId}:${row.contactPartId}`, {
+        modulePartId: row.modulePartId,
+        contactPartId: row.contactPartId,
+        status: row.status,
+        ...(row.notes !== undefined ? { notes: row.notes } : {}),
+        ...(row.source !== undefined ? { source: row.source } : {})
+      });
+    }
+    return { upserted: input.rows.length };
+  }
+
+  async deleteModuleContactCompat(input: { modulePartId: string; contactPartId: string }): Promise<boolean> {
+    return this.moduleContactCompat.delete(`${input.modulePartId}:${input.contactPartId}`);
+  }
+
+  async listModuleBackshellCompat(): Promise<ModuleBackshellCompat[]> {
+    return Array.from(this.moduleBackshellCompat.values());
+  }
+
+  async upsertModuleBackshellCompat(input: ModuleBackshellCompat): Promise<ModuleBackshellCompat> {
+    const row: ModuleBackshellCompat = {
+      modulePartId: input.modulePartId,
+      backshellPartId: input.backshellPartId,
+      status: input.status,
+      ...(input.notes !== undefined ? { notes: input.notes } : {}),
+      ...(input.source !== undefined ? { source: input.source } : {})
+    };
+    this.moduleBackshellCompat.set(`${row.modulePartId}:${row.backshellPartId}`, row);
+    return row;
+  }
+
+  async bulkUpsertModuleBackshellCompat(input: { rows: ModuleBackshellCompat[] }): Promise<{ upserted: number }> {
+    for (const row of input.rows) {
+      this.moduleBackshellCompat.set(`${row.modulePartId}:${row.backshellPartId}`, {
+        modulePartId: row.modulePartId,
+        backshellPartId: row.backshellPartId,
+        status: row.status,
+        ...(row.notes !== undefined ? { notes: row.notes } : {}),
+        ...(row.source !== undefined ? { source: row.source } : {})
+      });
+    }
+    return { upserted: input.rows.length };
+  }
+
+  async deleteModuleBackshellCompat(input: { modulePartId: string; backshellPartId: string }): Promise<boolean> {
+    return this.moduleBackshellCompat.delete(`${input.modulePartId}:${input.backshellPartId}`);
+  }
+
+  async listModuleStrainReliefCompat(): Promise<ModuleStrainReliefCompat[]> {
+    return Array.from(this.moduleStrainReliefCompat.values());
+  }
+
+  async upsertModuleStrainReliefCompat(input: ModuleStrainReliefCompat): Promise<ModuleStrainReliefCompat> {
+    const row: ModuleStrainReliefCompat = {
+      modulePartId: input.modulePartId,
+      strainReliefPartId: input.strainReliefPartId,
+      status: input.status,
+      ...(input.notes !== undefined ? { notes: input.notes } : {}),
+      ...(input.source !== undefined ? { source: input.source } : {})
+    };
+    this.moduleStrainReliefCompat.set(`${row.modulePartId}:${row.strainReliefPartId}`, row);
+    return row;
+  }
+
+  async bulkUpsertModuleStrainReliefCompat(input: { rows: ModuleStrainReliefCompat[] }): Promise<{ upserted: number }> {
+    for (const row of input.rows) {
+      this.moduleStrainReliefCompat.set(`${row.modulePartId}:${row.strainReliefPartId}`, {
+        modulePartId: row.modulePartId,
+        strainReliefPartId: row.strainReliefPartId,
+        status: row.status,
+        ...(row.notes !== undefined ? { notes: row.notes } : {}),
+        ...(row.source !== undefined ? { source: row.source } : {})
+      });
+    }
+    return { upserted: input.rows.length };
+  }
+
+  async deleteModuleStrainReliefCompat(input: {
+    modulePartId: string;
+    strainReliefPartId: string;
+  }): Promise<boolean> {
+    return this.moduleStrainReliefCompat.delete(`${input.modulePartId}:${input.strainReliefPartId}`);
+  }
+
+  async listAwgCmaReference(): Promise<AwgCmaReference[]> {
+    return Array.from(this.awgCmaReference.values()).sort((left, right) => left.awg.localeCompare(right.awg));
+  }
+
+  async bulkUpsertAwgCmaReference(input: { rows: AwgCmaReference[] }): Promise<{ upserted: number }> {
+    for (const row of input.rows) {
+      this.awgCmaReference.set(row.awg, { awg: row.awg, cma: row.cma });
+    }
+    return { upserted: input.rows.length };
+  }
+
+  async listPartAliases(input?: { partId?: string }): Promise<PartAlias[]> {
+    return Array.from(this.partAliases.values()).filter(
+      (alias) => !input?.partId || alias.partId === input.partId
+    );
+  }
+
+  async upsertPartAlias(input: PartAlias): Promise<PartAlias> {
+    const alias: PartAlias = {
+      partId: input.partId,
+      codeSystem: input.codeSystem,
+      code: input.code
+    };
+    this.partAliases.set(`${alias.codeSystem}:${alias.code}`, alias);
+    return alias;
+  }
+
+  async deletePartAlias(input: { codeSystem: string; code: string }): Promise<boolean> {
+    return this.partAliases.delete(`${input.codeSystem}:${input.code}`);
   }
 
   async getUserTablePreferences(input: { userId: string; scope: string }): Promise<TablePreferencesRecord | null> {

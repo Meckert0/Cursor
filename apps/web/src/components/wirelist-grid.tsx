@@ -19,14 +19,12 @@ import {
   filterPopulatedWirelistRows,
   snapshotToWirelistRows,
   validateWirelistRows,
+  verifyWirelistContact,
   verifyWirelistLocation,
   wirelistRowsToSnapshot,
-  WIRELIST_SLEEVING_OPTIONS,
   type WirelistLocationState,
-  type WirelistRow,
-  type WirelistSleeving
+  type WirelistRow
 } from "@/lib/wirelist-utils";
-import { getSleevingLabel } from "@/lib/cable-canvas-utils";
 import styles from "./wirelist-grid.module.css";
 
 const CELL_KEYS: Array<keyof WirelistRow> = [
@@ -37,7 +35,6 @@ const CELL_KEYS: Array<keyof WirelistRow> = [
   "wireAwg",
   "wirePartNumber",
   "length",
-  "sleeving",
   "wireColor",
   "wireGroup",
   "toLocation",
@@ -64,7 +61,6 @@ const WIRELIST_COLUMNS: WirelistColumn[] = [
   { id: "wireAwg", label: "Wire AWG", defaultWidth: 90, resizable: true },
   { id: "wirePartNumber", label: "Wire/Patchcord P/N", defaultWidth: 150, resizable: true },
   { id: "length", label: "Length (in)", defaultWidth: 90, resizable: true },
-  { id: "sleeving", label: "Sleeving", defaultWidth: 180, resizable: true },
   { id: "wireColor", label: "Wire Color", defaultWidth: 100, resizable: true },
   { id: "wireGroup", label: "Wire Group", defaultWidth: 100, resizable: true },
   { id: "toLocation", label: "To Location (Conn-Pin)", defaultWidth: 180, resizable: true },
@@ -232,6 +228,8 @@ export function WirelistGrid({
   initialSnapshotHash,
   wireCatalog,
   connectorCatalog,
+  contactCatalog = [],
+  moduleContactCompat = [],
   importWirelistAction,
   exportWirelistAction,
   saveWirelistAction
@@ -241,6 +239,12 @@ export function WirelistGrid({
   initialSnapshotHash: string;
   wireCatalog: LibraryComponentDto[];
   connectorCatalog: LibraryComponentDto[];
+  contactCatalog?: LibraryComponentDto[];
+  moduleContactCompat?: Array<{
+    modulePartId: string;
+    contactPartId: string;
+    status: "allowed" | "forbidden" | "review";
+  }>;
   importWirelistAction: (formData: FormData) => Promise<ImportResult>;
   exportWirelistAction: (rows: WirelistRow[]) => Promise<ExportResult>;
   saveWirelistAction: (input: {
@@ -264,6 +268,8 @@ export function WirelistGrid({
   const [draftConnectors, setDraftConnectors] = useState<RevisionDto["snapshot"]["connectors"] | null>(null);
   const [resizingColumnId, setResizingColumnId] = useState<string | null>(null);
   const retryTimeoutRef = useRef<number | null>(null);
+  const saveGenerationRef = useRef(0);
+  const saveInFlightRef = useRef(false);
   const resizeStateRef = useRef<{ columnId: string; startX: number; startWidth: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [isImportPending, startImportTransition] = useTransition();
@@ -274,6 +280,13 @@ export function WirelistGrid({
     [wireOptions]
   );
   const connectorSource = draftConnectors ?? baselineSnapshot.connectors;
+  const effectiveSnapshot = useMemo(
+    () => ({
+      ...baselineSnapshot,
+      connectors: connectorSource
+    }),
+    [baselineSnapshot, connectorSource]
+  );
   const connectorPositions = useMemo(
     () => buildConnectorPositionLookup(connectorSource, connectorCatalog),
     [connectorSource, connectorCatalog]
@@ -286,10 +299,18 @@ export function WirelistGrid({
       }),
     [connectorSource, connectorPositions]
   );
-  const nodeIds = useMemo(() => buildWirelistNodeIds(baselineSnapshot), [baselineSnapshot]);
-  const validationErrors = useMemo(
-    () => validateWirelistRows(rows, nodeIds, baselineSnapshot.connectors),
-    [rows, nodeIds, baselineSnapshot.connectors]
+  const nodeIds = useMemo(() => buildWirelistNodeIds(effectiveSnapshot), [effectiveSnapshot]);
+  const saveValidationErrors = useMemo(
+    () =>
+      validateWirelistRows(
+        rows,
+        nodeIds,
+        effectiveSnapshot.connectors,
+        connectorCatalog,
+        effectiveSnapshot,
+        { includeLocationValidation: false }
+      ),
+    [rows, nodeIds, effectiveSnapshot, connectorCatalog]
   );
 
   useEffect(() => {
@@ -351,10 +372,15 @@ export function WirelistGrid({
   }, [resizingColumnId]);
 
   useEffect(() => {
-    if (!dirty || validationErrors.length > 0 || conflict) {
+    if (!dirty || saveValidationErrors.length > 0 || conflict || saveInFlightRef.current) {
       return;
     }
     const timeoutId = window.setTimeout(async () => {
+      if (saveInFlightRef.current) {
+        return;
+      }
+      const saveGeneration = saveGenerationRef.current;
+      saveInFlightRef.current = true;
       setSaveMessage("Saving...");
       try {
         if (retryTimeoutRef.current !== null) {
@@ -362,7 +388,7 @@ export function WirelistGrid({
           retryTimeoutRef.current = null;
         }
         const result = await saveWirelistAction({
-          snapshot: wirelistRowsToSnapshot(baselineSnapshot, rows),
+          snapshot: wirelistRowsToSnapshot(effectiveSnapshot, rows, connectorCatalog),
           expectedSnapshotHash: baselineHash
         });
         if (result.conflict) {
@@ -373,11 +399,14 @@ export function WirelistGrid({
         if (!result.ok || !result.snapshot) {
           throw new Error(result.error ?? "Save failed.");
         }
-        setBaselineSnapshot(result.snapshot);
         if (result.snapshotHash) {
           setBaselineHash(result.snapshotHash);
         }
-        setRows(normalizeRows(snapshotToWirelistRows(result.snapshot)));
+        if (saveGeneration !== saveGenerationRef.current) {
+          setRetryTick((previous) => previous + 1);
+          return;
+        }
+        setBaselineSnapshot(result.snapshot);
         setDirty(false);
         setSaveMessage(`Saved at ${new Date().toLocaleTimeString()}.`);
       } catch (error) {
@@ -389,10 +418,12 @@ export function WirelistGrid({
         }
         setSaveMessage(`Save failed (${errorMessage}). Retrying...`);
         retryTimeoutRef.current = window.setTimeout(() => setRetryTick((previous) => previous + 1), RETRY_DELAY_MS);
+      } finally {
+        saveInFlightRef.current = false;
       }
     }, SAVE_DEBOUNCE_MS);
     return () => window.clearTimeout(timeoutId);
-  }, [baselineHash, baselineSnapshot, conflict, dirty, retryTick, revisionId, rows, saveWirelistAction, validationErrors.length]);
+  }, [baselineHash, conflict, connectorCatalog, dirty, effectiveSnapshot, retryTick, revisionId, rows, saveWirelistAction, saveValidationErrors.length]);
 
   function pushHistory(nextRows: WirelistRow[]) {
     const normalizedNextRows = normalizeRows(nextRows);
@@ -403,6 +434,7 @@ export function WirelistGrid({
     setRedoHistory([]);
     setRows(normalizedNextRows);
     setSelectedRowIds([]);
+    saveGenerationRef.current += 1;
     setDirty(true);
   }
 
@@ -441,12 +473,6 @@ export function WirelistGrid({
         wireComponentId: resolvedWireComponentId
       };
     }
-    if (key === "sleeving") {
-      const normalized = WIRELIST_SLEEVING_OPTIONS.includes(value as WirelistSleeving)
-        ? (value as WirelistSleeving)
-        : "none";
-      return { ...row, sleeving: normalized };
-    }
     return { ...row, [key]: value } as WirelistRow;
   }
 
@@ -471,6 +497,7 @@ export function WirelistGrid({
     setRows(previous);
     setSelectedRowIds([]);
     setHistory((current) => current.slice(0, -1));
+    saveGenerationRef.current += 1;
     setDirty(true);
   }
 
@@ -483,6 +510,7 @@ export function WirelistGrid({
     setRows(next);
     setSelectedRowIds([]);
     setRedoHistory((current) => current.slice(0, -1));
+    saveGenerationRef.current += 1;
     setDirty(true);
   }
 
@@ -570,7 +598,7 @@ export function WirelistGrid({
     saveVerifierEnabled(enabled);
   }
 
-  function locationCellClass(state: WirelistLocationState): string {
+  function verifierCellClass(state: WirelistLocationState): string {
     if (!verifierEnabled) {
       return "";
     }
@@ -713,9 +741,9 @@ export function WirelistGrid({
           </label>
         </div>
       </div>
-      {validationErrors.length > 0 ? (
+      {saveValidationErrors.length > 0 ? (
         <ul className={styles.errorList}>
-          {validationErrors.map((error) => (
+          {saveValidationErrors.map((error) => (
             <li key={error}>{error}</li>
           ))}
         </ul>
@@ -768,6 +796,24 @@ export function WirelistGrid({
               const toCheck = shouldVerify
                 ? verifyWirelistLocation(row.toLocation, connectorPositions)
                 : { state: "empty" as WirelistLocationState, message: null };
+              const fromContactCheck = shouldVerify
+                ? verifyWirelistContact(
+                    row.fromContact,
+                    row.fromLocation,
+                    connectorSource,
+                    contactCatalog,
+                    moduleContactCompat
+                  )
+                : { state: "empty" as WirelistLocationState, message: null };
+              const toContactCheck = shouldVerify
+                ? verifyWirelistContact(
+                    row.toContact,
+                    row.toLocation,
+                    connectorSource,
+                    contactCatalog,
+                    moduleContactCompat
+                  )
+                : { state: "empty" as WirelistLocationState, message: null };
               return (
               <tr
                 key={row.id}
@@ -797,7 +843,7 @@ export function WirelistGrid({
                     }}
                   />
                 </td>
-                <td className={locationCellClass(fromCheck.state)} title={fromCheck.message ?? undefined}>
+                <td className={verifierCellClass(fromCheck.state)} title={fromCheck.message ?? undefined}>
                   <input
                     list="wirelist-location-options"
                     value={row.fromLocation}
@@ -811,7 +857,7 @@ export function WirelistGrid({
                     }}
                   />
                 </td>
-                <td>
+                <td className={verifierCellClass(fromContactCheck.state)} title={fromContactCheck.message ?? undefined}>
                   <input
                     value={row.fromContact}
                     data-row-index={rowIndex}
@@ -877,22 +923,6 @@ export function WirelistGrid({
                   />
                 </td>
                 <td>
-                  <select
-                    value={row.sleeving}
-                    data-row-index={rowIndex}
-                    data-cell-key="sleeving"
-                    aria-label="Sleeving"
-                    onChange={(event) => updateCell(rowIndex, "sleeving", event.target.value)}
-                    onKeyDown={(event) => handleCellKeyDown(rowIndex, "sleeving", event)}
-                  >
-                    {WIRELIST_SLEEVING_OPTIONS.map((option) => (
-                      <option key={option} value={option}>
-                        {getSleevingLabel(option)}
-                      </option>
-                    ))}
-                  </select>
-                </td>
-                <td>
                   <input
                     value={row.wireColor}
                     data-row-index={rowIndex}
@@ -918,7 +948,7 @@ export function WirelistGrid({
                     }}
                   />
                 </td>
-                <td className={locationCellClass(toCheck.state)} title={toCheck.message ?? undefined}>
+                <td className={verifierCellClass(toCheck.state)} title={toCheck.message ?? undefined}>
                   <input
                     list="wirelist-location-options"
                     value={row.toLocation}
@@ -932,7 +962,7 @@ export function WirelistGrid({
                     }}
                   />
                 </td>
-                <td>
+                <td className={verifierCellClass(toContactCheck.state)} title={toContactCheck.message ?? undefined}>
                   <input
                     value={row.toContact}
                     data-row-index={rowIndex}

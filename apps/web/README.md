@@ -23,6 +23,7 @@ http://localhost:3001
 Notes:
 
 - The frontend calls the backend via server-side requests using `API_BASE_URL`.
+- Browser requests use same-origin `/v1/...`, proxied by a Next.js route handler to `API_BASE_URL`, so `cdt_session` stays on the frontend origin in local, Test, and Production.
 - Normal flow uses `/login` and `/register`, then forwards the session cookie to backend APIs.
 - Optional temporary legacy header mode can be enabled with:
   - `API_LEGACY_AUTH_HEADERS=true`

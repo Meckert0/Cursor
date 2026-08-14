@@ -9,6 +9,15 @@ export function buildNextWireName(paths: RevisionDto["snapshot"]["paths"]): stri
   return `wire${next}`;
 }
 
+export function buildNextCableName(paths: RevisionDto["snapshot"]["paths"]): string {
+  const numericSuffixes = paths
+    .map((path) => /^cable(\d+)$/.exec(path.wireName ?? "")?.[1])
+    .map((value) => (value ? Number.parseInt(value, 10) : Number.NaN))
+    .filter((value) => Number.isFinite(value));
+  const next = numericSuffixes.length > 0 ? Math.max(...numericSuffixes) + 1 : paths.length + 1;
+  return `cable${next}`;
+}
+
 export function buildNextCanvasId(existingIds: string[], prefix: "c_canvas_" | "j_canvas_" | "p_canvas_"): string {
   const used = new Set(existingIds);
   let next = used.size + 1;

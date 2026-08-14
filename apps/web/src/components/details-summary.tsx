@@ -80,9 +80,9 @@ export function DetailsSummary({
         </ul>
       </section>
       <section className={styles.summaryPanel}>
-        <h3>Unique wire sections</h3>
+        <h3>Cable sections</h3>
         <ul>
-          {uniqueWireSections.length === 0 ? <li>No wire sections yet.</li> : null}
+          {uniqueWireSections.length === 0 ? <li>No cable sections yet.</li> : null}
           {uniqueWireSections.map((section) => (
             <li key={section.pathId}>
               {section.wireName}: {section.fromNodeId}

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getLibraryComponent } from "@/lib/api";
 import { requireSignedInUser } from "@/lib/auth";
+import { formatPartFieldDisplayValue, getPartFieldsForCategory } from "@/lib/part-fields";
 import styles from "./page.module.css";
 
 export default async function LibraryComponentDetailPage({
@@ -11,6 +12,7 @@ export default async function LibraryComponentDetailPage({
   await requireSignedInUser();
   const { componentId } = await params;
   const component = await getLibraryComponent(componentId);
+  const attributeFields = getPartFieldsForCategory(component.category).filter((field) => !field.isIdentity);
 
   return (
     <div className={styles.page}>
@@ -28,13 +30,16 @@ export default async function LibraryComponentDetailPage({
         </header>
 
         <section className={styles.card}>
-          <h2>Compatibility hints</h2>
-          {component.compatibilityHints.length === 0 ? (
-            <p>No compatibility hints available.</p>
+          <h2>Attributes</h2>
+          {attributeFields.length === 0 ? (
+            <p>No attributes for this category.</p>
           ) : (
             <ul>
-              {component.compatibilityHints.map((hint) => (
-                <li key={hint}>{hint}</li>
+              {attributeFields.map((field) => (
+                <li key={field.key}>
+                  <strong>{field.label}:</strong>{" "}
+                  {formatPartFieldDisplayValue(component.attributes?.[field.key])}
+                </li>
               ))}
             </ul>
           )}

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { RevisionDto } from "./api";
 import {
   buildConnectorPositionLookup,
   buildWirelistNodeIds,
@@ -8,6 +9,7 @@ import {
   parseWirelistLocation,
   snapshotToWirelistRows,
   validateWirelistRows,
+  verifyWirelistContact,
   verifyWirelistLocation,
   wirelistRowsToTemplateRecords,
   wirelistRowsToSnapshot
@@ -86,7 +88,7 @@ describe("wirelist-utils", () => {
     pinMappings: [],
     bundles: [],
     annotations: []
-  } as const;
+  } as RevisionDto["snapshot"];
 
   it("maps snapshot paths to wirelist rows and back", () => {
     const rows = snapshotToWirelistRows(snapshot);
@@ -107,7 +109,48 @@ describe("wirelist-utils", () => {
     expect(roundTrip.paths[0]?.labelText).toBe("WIRE-1");
   });
 
-  it("round-trips sleeving through wirelist rows", () => {
+  it("does not populate wirelist rows from canvas cable sections", () => {
+    const rows = snapshotToWirelistRows({
+      ...snapshot,
+      paths: [
+        {
+          id: "p-cable",
+          pathType: "cable",
+          fromConnectorId: "c1",
+          toConnectorId: "c2"
+        },
+        snapshot.paths[0]
+      ],
+      pinMappings: []
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.id).toBe("p1");
+  });
+
+  it("preserves canvas cable sections when saving wirelist rows", () => {
+    const baseline = {
+      ...snapshot,
+      paths: [
+        {
+          id: "p-cable",
+          pathType: "cable",
+          fromConnectorId: "c1",
+          toConnectorId: "c2",
+          length: 8
+        },
+        snapshot.paths[0]
+      ]
+    };
+    const rows = snapshotToWirelistRows(baseline);
+    const saved = wirelistRowsToSnapshot(baseline, rows);
+    expect(saved.paths).toHaveLength(2);
+    expect(saved.paths.find((path) => path.id === "p-cable")).toMatchObject({
+      pathType: "cable",
+      length: 8
+    });
+  });
+
+  it("preserves sleeving on snapshot round-trip without exporting it", () => {
     const rows = snapshotToWirelistRows({
       ...snapshot,
       paths: [
@@ -119,20 +162,48 @@ describe("wirelist-utils", () => {
     });
     expect(rows[0]?.sleeving).toBe("expandable_sleeving");
 
-    const updated = rows.map((row) =>
-      row.id === "p1" ? { ...row, sleeving: "wire_braid_under_expandable_sleeving" as const } : row
-    );
-    const roundTrip = wirelistRowsToSnapshot(snapshot, updated);
-    expect(roundTrip.paths[0]?.sleeving).toBe("wire_braid_under_expandable_sleeving");
+    const roundTrip = wirelistRowsToSnapshot(snapshot, rows);
+    expect(roundTrip.paths[0]?.sleeving).toBe("expandable_sleeving");
 
-    const template = wirelistRowsToTemplateRecords(updated);
-    expect(template[0]?.Sleeving).toBe("wire_braid_under_expandable_sleeving");
+    const template = wirelistRowsToTemplateRecords(rows);
+    expect(template[0]).not.toHaveProperty("Sleeving");
+    expect(Object.keys(template[0] ?? {})).not.toContain("Sleeving");
+
     const imported = parseImportedWirelistRows({
       records: template,
       existingRows: rows,
       wireCatalog: []
     });
-    expect(imported[0]?.sleeving).toBe("wire_braid_under_expandable_sleeving");
+    expect(imported[0]?.sleeving).toBe("expandable_sleeving");
+  });
+
+  it("applies optional Sleeving column from legacy imports", () => {
+    const existing = snapshotToWirelistRows(snapshot);
+    const imported = parseImportedWirelistRows({
+      records: [
+        {
+          "Run #": 1,
+          "From Location (Conn - Pin)": "J1",
+          "From Contact": "",
+          "From Signal Desc": "",
+          "Wire AWG": "",
+          "Wire/Patchcord P/N": "PN-22-WHT",
+          "Length (in)": "10",
+          Sleeving: "expandable_sleeving",
+          "Wire Color": "white",
+          "Wire Group": "A",
+          "To Location (Conn-Pin)": "J2",
+          "To Contact": "",
+          "To Signal Desc": "",
+          "Label P/N": "",
+          "Label Text": "WIRE-1",
+          Notes: ""
+        }
+      ],
+      existingRows: existing,
+      wireCatalog: []
+    });
+    expect(imported[0]?.sleeving).toBe("expandable_sleeving");
   });
 
   it("validates malformed row values", () => {
@@ -183,18 +254,15 @@ describe("wirelist-utils", () => {
           family: "MIL",
           partNumber: "PN-22-WHT",
           description: "desc",
-          awg: "22",
-          color: "white",
           isActive: true,
           isReviewed: true,
           stockStatus: "in_stock",
-          compatibilityHints: [],
           createdByUserId: "u",
           createdAt: "2020-01-01T00:00:00.000Z",
           lastEditedByUserId: "u",
           lastEditedAt: "2020-01-01T00:00:00.000Z",
           updatedAt: "2020-01-01T00:00:00.000Z",
-          customFieldValues: {}
+          attributes: { awg: "22", color: "white" }
         }
       ]
     });
@@ -313,8 +381,32 @@ describe("pin mapping save/load round-trip", () => {
     ];
     const saved = wirelistRowsToSnapshot(snapshot, rows);
     const reloaded = snapshotToWirelistRows(saved);
-    expect(reloaded[0]?.fromLocation).toBe("J1 - 3");
-    expect(reloaded[0]?.toLocation).toBe("J2 - A1");
+    expect(reloaded[0]?.fromLocation).toBe("J1-3");
+    expect(reloaded[0]?.toLocation).toBe("J2-A1");
+  });
+
+  it("preserves in-progress Conn-Pin text through save and load", () => {
+    const rows = [
+      blankRow({
+        fromLocation: "J1 - ",
+        toLocation: "J2 - 1"
+      })
+    ];
+    const saved = wirelistRowsToSnapshot(snapshot, rows);
+    expect(saved.paths[0]?.fromLocation).toBe("J1 - ");
+    expect(saved.paths[0]?.wirelistManaged).toBe(true);
+    const reloaded = snapshotToWirelistRows(saved);
+    expect(reloaded[0]?.fromLocation).toBe("J1 - ");
+    expect(reloaded[0]?.toLocation).toBe("J2 - 1");
+  });
+
+  it("keeps completely blank wirelist rows through save and load", () => {
+    const saved = wirelistRowsToSnapshot(snapshot, [blankRow({})]);
+    expect(saved.paths[0]?.wirelistManaged).toBe(true);
+    const reloaded = snapshotToWirelistRows(saved);
+    expect(reloaded).toHaveLength(1);
+    expect(reloaded[0]?.fromLocation).toBe("");
+    expect(reloaded[0]?.toLocation).toBe("");
   });
 
   it("renders Conn-Pin from an existing pin mapping on load", () => {
@@ -377,6 +469,67 @@ describe("pin mapping save/load round-trip", () => {
     expect(next.paths[0]?.toConnectorId).toBe("j1");
     expect(next.pinMappings).toEqual([]);
   });
+
+  it("round-trips Conn-Pin when pins come only from the connector catalog", () => {
+    const emptyPinsSnapshot = {
+      ...snapshot,
+      connectors: [
+        { id: "c1", reference: "J1", partNumber: "CONN-A", pins: [] },
+        { id: "c2", reference: "J2", partNumber: "CONN-B", pins: [] }
+      ]
+    };
+    const catalog = [
+      { partNumber: "CONN-A", attributes: { pinIds: ["1", "2"] } },
+      { partNumber: "CONN-B", attributes: { pinIds: ["1", "2"] } }
+    ];
+    const saved = wirelistRowsToSnapshot(
+      emptyPinsSnapshot,
+      [blankRow({ fromLocation: "J1-1", toLocation: "J2-2" })],
+      catalog
+    );
+    expect(saved.pinMappings).toEqual([
+      {
+        id: "pm_p1",
+        pathId: "p1",
+        fromConnectorId: "c1",
+        fromPinId: "1",
+        toConnectorId: "c2",
+        toPinId: "2",
+        mappingType: "one_to_one"
+      }
+    ]);
+    const reloaded = snapshotToWirelistRows(saved);
+    expect(reloaded[0]?.fromLocation).toBe("J1-1");
+    expect(reloaded[0]?.toLocation).toBe("J2-2");
+  });
+
+  it("resolves pin positions that match pin.id when pin.number differs", () => {
+    const mismatchedSnapshot = {
+      ...snapshot,
+      connectors: [
+        {
+          id: "c1",
+          reference: "J1",
+          pins: [{ id: "P1", number: "A" }]
+        },
+        {
+          id: "c2",
+          reference: "J2",
+          pins: [{ id: "P2", number: "B" }]
+        }
+      ]
+    };
+    const saved = wirelistRowsToSnapshot(mismatchedSnapshot, [
+      blankRow({ fromLocation: "J1-P1", toLocation: "J2-P2" })
+    ]);
+    expect(saved.pinMappings[0]).toMatchObject({
+      fromPinId: "P1",
+      toPinId: "P2"
+    });
+    const reloaded = snapshotToWirelistRows(saved);
+    expect(reloaded[0]?.fromLocation).toBe("J1-P1");
+    expect(reloaded[0]?.toLocation).toBe("J2-P2");
+  });
 });
 
 describe("validateWirelistRows location checks", () => {
@@ -412,6 +565,34 @@ describe("validateWirelistRows location checks", () => {
         [blankRow({ fromLocation: "J1", toLocation: "J2-1" })],
         buildWirelistNodeIds(snapshot),
         snapshot.connectors
+      )
+    ).toEqual([]);
+  });
+
+  it("skips location checks when includeLocationValidation is false", () => {
+    expect(
+      validateWirelistRows(
+        [blankRow({ fromLocation: "JX-1", toLocation: "J1-9" })],
+        buildWirelistNodeIds(snapshot),
+        snapshot.connectors,
+        [],
+        null,
+        { includeLocationValidation: false }
+      )
+    ).toEqual([]);
+  });
+
+  it("allows catalog pin positions that are missing from snapshot pins", () => {
+    const connectors = [
+      { id: "c1", reference: "J1", partNumber: "CONN-7", pins: [{ id: "1", number: "1" }] }
+    ];
+    const catalog = [{ partNumber: "CONN-7", attributes: { pinIds: ["1", "2", "3", "4", "5", "6", "7"] } }];
+    expect(
+      validateWirelistRows(
+        [blankRow({ fromLocation: "J1-5", toLocation: "J1-7" })],
+        ["c1", "J1"],
+        connectors,
+        catalog
       )
     ).toEqual([]);
   });
@@ -465,6 +646,86 @@ describe("verifyWirelistLocation", () => {
   });
 });
 
+describe("verifyWirelistContact", () => {
+  const connectors = [
+    { id: "c1", reference: "J1", libraryComponentId: "mod-1" },
+    { id: "c2", reference: "J2" }
+  ];
+  const contactCatalog = [
+    { id: "cnt-1", partNumber: "CNT-1" },
+    { id: "cnt-2", partNumber: "CNT-2" },
+    { id: "cnt-3", partNumber: "CNT-3" }
+  ];
+  const moduleContactCompat = [
+    { modulePartId: "mod-1", contactPartId: "cnt-1", status: "allowed" as const },
+    { modulePartId: "mod-1", contactPartId: "cnt-2", status: "forbidden" as const },
+    { modulePartId: "mod-1", contactPartId: "cnt-3", status: "review" as const }
+  ];
+
+  it("treats empty contact values as empty", () => {
+    expect(verifyWirelistContact("", "J1 - 1", connectors, contactCatalog, moduleContactCompat)).toEqual({
+      state: "empty",
+      message: null
+    });
+  });
+
+  it("marks an unknown contact part number as invalid", () => {
+    expect(verifyWirelistContact("NOPE", "J1 - 1", connectors, contactCatalog, moduleContactCompat)).toEqual({
+      state: "invalid",
+      message: "Contact part number not found"
+    });
+  });
+
+  it("marks a contact as partial when the connector module is not defined", () => {
+    expect(verifyWirelistContact("CNT-1", "J2 - 1", connectors, contactCatalog, moduleContactCompat)).toEqual({
+      state: "partial",
+      message: "Connector module is not defined"
+    });
+  });
+
+  it("marks a contact as partial when the location does not resolve to a connector", () => {
+    expect(verifyWirelistContact("CNT-1", "JX - 1", connectors, contactCatalog, moduleContactCompat)).toEqual({
+      state: "partial",
+      message: "Connector module is not defined"
+    });
+  });
+
+  it("marks an allowed module-contact pair as valid", () => {
+    expect(verifyWirelistContact("CNT-1", "J1 - 1", connectors, contactCatalog, moduleContactCompat)).toEqual({
+      state: "valid",
+      message: null
+    });
+  });
+
+  it("matches contact part numbers case-insensitively", () => {
+    expect(verifyWirelistContact("cnt-1", "j1-1", connectors, contactCatalog, moduleContactCompat).state).toBe(
+      "valid"
+    );
+  });
+
+  it("marks a forbidden module-contact pair as invalid", () => {
+    expect(verifyWirelistContact("CNT-2", "J1 - 1", connectors, contactCatalog, moduleContactCompat)).toEqual({
+      state: "invalid",
+      message: "Contact is not compatible with this module"
+    });
+  });
+
+  it("marks a review module-contact pair as partial", () => {
+    expect(verifyWirelistContact("CNT-3", "J1 - 1", connectors, contactCatalog, moduleContactCompat)).toEqual({
+      state: "partial",
+      message: "Contact compatibility requires review"
+    });
+  });
+
+  it("does not shade when the catalog has no chart row", () => {
+    expect(
+      verifyWirelistContact("CNT-1", "J1 - 1", connectors, contactCatalog, [
+        { modulePartId: "mod-other", contactPartId: "cnt-1", status: "allowed" }
+      ])
+    ).toEqual({ state: "empty", message: null });
+  });
+});
+
 describe("parseConnectorPinsField", () => {
   it("splits comma separated lists", () => {
     expect(parseConnectorPinsField("1,2,3,4,5,6,7")).toEqual(["1", "2", "3", "4", "5", "6", "7"]);
@@ -487,10 +748,10 @@ describe("buildConnectorPositionLookup with connector catalog", () => {
     { reference: "J2", pins: [{ number: "1" }, { number: "2" }] }
   ];
   const connectorCatalog = [
-    { partNumber: "CONN-7", customFieldValues: { pins: "1,2,3,4,5,6,7" } }
+    { partNumber: "CONN-7", attributes: { pinIds: ["1", "2", "3", "4", "5", "6", "7"] } }
   ];
 
-  it("checks positions against the catalog pins field when the part matches", () => {
+  it("checks positions against module attributes.pinIds when the part matches", () => {
     const lookup = buildConnectorPositionLookup(connectors, connectorCatalog);
     expect(verifyWirelistLocation("J1 - 5", lookup).state).toBe("valid");
     expect(verifyWirelistLocation("J1 - 7", lookup).state).toBe("valid");
@@ -500,12 +761,12 @@ describe("buildConnectorPositionLookup with connector catalog", () => {
     });
   });
 
-  it("matches the pins field key case-insensitively", () => {
+  it("falls back to snapshot pins when catalog has no pinIds", () => {
     const lookup = buildConnectorPositionLookup(connectors, [
-      { partNumber: "CONN-7", customFieldValues: { Pins: "1,2,3" } }
+      { partNumber: "CONN-7", attributes: {} }
     ]);
-    expect(verifyWirelistLocation("J1 - 3", lookup).state).toBe("valid");
-    expect(verifyWirelistLocation("J1 - 4", lookup).state).toBe("partial");
+    expect(verifyWirelistLocation("J1 - 1", lookup).state).toBe("valid");
+    expect(verifyWirelistLocation("J1 - 2", lookup).state).toBe("partial");
   });
 
   it("falls back to snapshot pins when no catalog entry matches", () => {

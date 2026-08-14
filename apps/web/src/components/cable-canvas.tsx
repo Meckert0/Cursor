@@ -2,21 +2,22 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { DetailsSummary } from "@/components/details-summary";
-import type { LibraryComponentDto, LibraryFieldDefinitionDto, RevisionDto } from "@/lib/api";
+import type { LibraryComponentDto, RevisionDto } from "@/lib/api";
 import {
   buildNextCanvasId,
   buildNextConnectorReference,
-  buildNextWireName
+  buildNextCableName
 } from "@/lib/cable-canvas-ids";
 import {
-  buildConnectorPins,
+  buildConnectorPinsFromComponent,
+  filterAllowedAccessoryOptionsForModule,
   formatConnectorPinsLabel,
   getSleevingLabel,
   loadInitialCanvasDraft,
   normalizeSelectedPathId,
-  readPinCountFromComponent,
   SLEEVING_OPTIONS
 } from "@/lib/cable-canvas-utils";
+import { getPartFieldsForCategory, readPartFieldRawValue, formatPartFieldDisplayValue } from "@/lib/part-fields";
 import {
   useCanvasHistory,
   type CanvasNodePosition as NodePosition,
@@ -40,54 +41,24 @@ type ConnectState = {
 
 type JunctionNode = NonNullable<RevisionDto["snapshot"]["junctions"]>[number];
 
-const JUNCTION_TYPE_OPTIONS = [
-  { value: "splice", label: "Splice" },
-  { value: "tee", label: "Tee" },
-  { value: "branch", label: "Branch" }
-] as const;
-
-const BUILTIN_COMPONENT_FIELD_KEYS = new Set([
-  "partNumber",
-  "family",
-  "description",
-  "awg",
-  "color",
-  "isActive",
-  "stockStatus",
-  "compatibilityHints",
-  "createdByUserId",
-  "createdAt",
-  "isReviewed",
-  "reviewedByUserId",
-  "reviewedAt",
-  "lastEditedByUserId",
-  "lastEditedAt"
-]);
-
 function readComponentFieldValue(component: LibraryComponentDto, key: string): string {
-  if (BUILTIN_COMPONENT_FIELD_KEYS.has(key)) {
-    const value = (component as unknown as Record<string, unknown>)[key];
-    if (Array.isArray(value)) {
-      return value.join(", ");
-    }
-    if (typeof value === "boolean") {
-      return value ? "Yes" : "No";
-    }
-    return value === undefined || value === null ? "" : String(value);
+  const field = getPartFieldsForCategory(component.category).find((entry) => entry.key === key);
+  if (!field) {
+    return "";
   }
-  return component.customFieldValues?.[key] ?? "";
+  const formatted = formatPartFieldDisplayValue(readPartFieldRawValue(component, field));
+  return formatted === "-" ? "" : formatted;
 }
 
 export function CableCanvas({
   revisionId,
   snapshot,
   snapshotHash,
-  wireCatalog,
   connectorCatalog,
   backshellCatalog = [],
   strainReliefCatalog = [],
-  connectorFieldDefinitions = [],
-  quickAddWireAction,
+  moduleBackshellCompat = [],
+  moduleStrainReliefCompat = [],
   quickAddConnectorAction,
   saveCanvasAction,
   readOnly = false
@@ -95,17 +66,14 @@ export function CableCanvas({
   revisionId: string;
   snapshot: RevisionDto["snapshot"];
   snapshotHash: string;
-  wireCatalog: LibraryComponentDto[];
   connectorCatalog: LibraryComponentDto[];
   backshellCatalog?: LibraryComponentDto[];
   strainReliefCatalog?: LibraryComponentDto[];
-  connectorFieldDefinitions?: LibraryFieldDefinitionDto[];
-  quickAddWireAction: (formData: FormData) => Promise<{
-    ok: boolean;
-    notice?: string;
-    error?: string;
-    newWireComponentId?: string;
-    wireCatalog: LibraryComponentDto[];
+  moduleBackshellCompat?: Array<{ modulePartId: string; backshellPartId: string; status: "allowed" | "forbidden" | "review" }>;
+  moduleStrainReliefCompat?: Array<{
+    modulePartId: string;
+    strainReliefPartId: string;
+    status: "allowed" | "forbidden" | "review";
   }>;
   quickAddConnectorAction: (formData: FormData) => Promise<{
     ok: boolean;
@@ -135,17 +103,12 @@ export function CableCanvas({
   const [selectedEntity, setSelectedEntity] = useState<CanvasSelection | null>(
     snapshot.paths[0]?.id ? { type: "path", id: snapshot.paths[0].id } : null
   );
-  const [wireCatalogState, setWireCatalogState] = useState<LibraryComponentDto[]>(wireCatalog);
   const [connectorCatalogState, setConnectorCatalogState] = useState<LibraryComponentDto[]>(connectorCatalog);
   const [backshellCatalogState] = useState<LibraryComponentDto[]>(backshellCatalog);
   const [strainReliefCatalogState] = useState<LibraryComponentDto[]>(strainReliefCatalog);
-  const [quickAddNotice, setQuickAddNotice] = useState("");
-  const [quickAddError, setQuickAddError] = useState("");
-  const [quickAddPending, setQuickAddPending] = useState(false);
   const [connectorQuickAddNotice, setConnectorQuickAddNotice] = useState("");
   const [connectorQuickAddError, setConnectorQuickAddError] = useState("");
   const [connectorQuickAddPending, setConnectorQuickAddPending] = useState(false);
-  const [showAddWireDialog, setShowAddWireDialog] = useState(false);
   const [showAddConnectorDialog, setShowAddConnectorDialog] = useState(false);
   const [showConnectorSearchDialog, setShowConnectorSearchDialog] = useState(false);
   const [connectorSearchQuery, setConnectorSearchQuery] = useState("");
@@ -326,10 +289,6 @@ export function CableCanvas({
     const junction = junctions.find((entry) => entry.id === selectedEntity.id);
     return junction ? `junction ${junction.label ?? junction.id}` : "junction";
   }, [connectors, junctions, pathsState, selectedEntity]);
-  const wireOptions = useMemo(
-    () => wireCatalogState.filter((component) => component.category === "wire"),
-    [wireCatalogState]
-  );
   const connectorOptions = useMemo(
     () => connectorCatalogState.filter((component) => component.category === "module"),
     [connectorCatalogState]
@@ -340,23 +299,43 @@ export function CableCanvas({
     }
     return connectors.find((connector) => connector.id === selectedEntity.id) ?? null;
   }, [connectors, selectedEntity]);
+  const moduleDefined = Boolean(selectedConnector?.libraryComponentId);
+  const allowedBackshellOptions = useMemo(() => {
+    const moduleId = selectedConnector?.libraryComponentId;
+    const statusByAccessoryId = new Map(
+      moduleBackshellCompat
+        .filter((row) => row.modulePartId === moduleId)
+        .map((row) => [row.backshellPartId, row.status] as const)
+    );
+    return filterAllowedAccessoryOptionsForModule(backshellCatalogState, moduleId, statusByAccessoryId);
+  }, [backshellCatalogState, moduleBackshellCompat, selectedConnector?.libraryComponentId]);
+  const allowedStrainReliefOptions = useMemo(() => {
+    const moduleId = selectedConnector?.libraryComponentId;
+    const statusByAccessoryId = new Map(
+      moduleStrainReliefCompat
+        .filter((row) => row.modulePartId === moduleId)
+        .map((row) => [row.strainReliefPartId, row.status] as const)
+    );
+    return filterAllowedAccessoryOptionsForModule(strainReliefCatalogState, moduleId, statusByAccessoryId);
+  }, [moduleStrainReliefCompat, selectedConnector?.libraryComponentId, strainReliefCatalogState]);
   const selectedJunction = useMemo(() => {
     if (!selectedEntity || selectedEntity.type !== "junction") {
       return null;
     }
     return junctions.find((junction) => junction.id === selectedEntity.id) ?? null;
   }, [junctions, selectedEntity]);
+  const modulePartFields = useMemo(() => getPartFieldsForCategory("module"), []);
   const connectorSearchFields = useMemo(
-    () => connectorFieldDefinitions.filter((definition) => definition.showInSearch),
-    [connectorFieldDefinitions]
+    () => modulePartFields.filter((field) => field.showInSearch),
+    [modulePartFields]
   );
   const connectorAddFormFields = useMemo(
-    () => connectorFieldDefinitions.filter((definition) => definition.showOnAddForm),
-    [connectorFieldDefinitions]
+    () => modulePartFields.filter((field) => field.showOnAddForm),
+    [modulePartFields]
   );
   const connectorSearchColumns = useMemo(() => {
     if (connectorSearchFields.length > 0) {
-      return connectorSearchFields.map((definition) => ({ key: definition.key, label: definition.label }));
+      return connectorSearchFields.map((field) => ({ key: field.key, label: field.label }));
     }
     return [
       { key: "partNumber", label: "Part number" },
@@ -370,7 +349,7 @@ export function CableCanvas({
       return connectorOptions;
     }
     const searchKeys = connectorSearchFields.length > 0
-      ? connectorSearchFields.map((definition) => definition.key)
+      ? connectorSearchFields.map((field) => field.key)
       : ["partNumber", "family", "description"];
     return connectorOptions.filter((component) =>
       searchKeys.some((key) => readComponentFieldValue(component, key).toLowerCase().includes(query))
@@ -390,10 +369,6 @@ export function CableCanvas({
     setJunctionLabelSyncKey(junctionLabelKey);
     setJunctionLabelDraft(selectedJunction?.label ?? "");
   }
-  const selectedWire = useMemo(
-    () => wireOptions.find((wire) => wire.id === selectedPath?.wireComponentId) ?? null,
-    [selectedPath?.wireComponentId, wireOptions]
-  );
 
   const connectPreview = useMemo(() => {
     if (!connectState) {
@@ -438,7 +413,7 @@ export function CableCanvas({
       junctions.map((junction) => junction.id),
       "j_canvas_"
     );
-    setJunctions((previous) => [...previous, { id: junctionId, location: { x: 0, y: 0 }, junctionType: "splice" }]);
+    setJunctions((previous) => [...previous, { id: junctionId, location: { x: 0, y: 0 }, junctionType: "junction" }]);
     setPositions((previous) => ({
       ...previous,
       [junctionId]: { x: 140 + (junctions.length % 5) * 130, y: 160 + Math.floor(junctions.length / 5) * 96 }
@@ -475,10 +450,10 @@ export function CableCanvas({
       ...previous,
       {
         id: nextPathId,
-        wireName: buildNextWireName(pathsState),
+        wireName: buildNextCableName(pathsState),
         fromConnectorId: fromId,
         toConnectorId: toId,
-        pathType: "wire",
+        pathType: "cable",
         length: undefined,
         sleeving: "none",
         wireComponentId: undefined
@@ -676,21 +651,6 @@ export function CableCanvas({
     );
   };
 
-  const updateSelectedJunctionType = (nextType: string) => {
-    if (readOnly || !selectedJunction) {
-      return;
-    }
-    if ((selectedJunction.junctionType ?? "splice") === nextType) {
-      return;
-    }
-    pushUndoCheckpoint();
-    setJunctions((previous) =>
-      previous.map((junction) =>
-        junction.id === selectedJunction.id ? { ...junction, junctionType: nextType } : junction
-      )
-    );
-  };
-
   const applyConnectorLibrarySelection = (component: LibraryComponentDto) => {
     if (readOnly) {
       return;
@@ -703,8 +663,25 @@ export function CableCanvas({
       return;
     }
     const normalizedPartNumber = component.partNumber.trim();
-    const pinCount = readPinCountFromComponent(component) ?? 0;
-    const nextPins = buildConnectorPins(pinCount);
+    const nextPins = buildConnectorPinsFromComponent(component);
+    const allowedBackshellIds = new Set(
+      moduleBackshellCompat
+        .filter((row) => row.modulePartId === component.id && row.status === "allowed")
+        .map((row) => row.backshellPartId)
+    );
+    const allowedStrainReliefIds = new Set(
+      moduleStrainReliefCompat
+        .filter((row) => row.modulePartId === component.id && row.status === "allowed")
+        .map((row) => row.strainReliefPartId)
+    );
+    const keepBackshell =
+      Boolean(activeConnector.backshellLibraryComponentId) &&
+      allowedBackshellIds.has(activeConnector.backshellLibraryComponentId!);
+    const keepStrainRelief =
+      Boolean(activeConnector.strainReliefLibraryComponentId) &&
+      allowedStrainReliefIds.has(activeConnector.strainReliefLibraryComponentId!);
+    const nextBackshellId = keepBackshell ? activeConnector.backshellLibraryComponentId : undefined;
+    const nextStrainReliefId = keepStrainRelief ? activeConnector.strainReliefLibraryComponentId : undefined;
     const partNumberUnchanged = normalizedPartNumber === (activeConnector.partNumber ?? "");
     const libraryIdUnchanged = component.id === (activeConnector.libraryComponentId ?? "");
     const pinsUnchanged =
@@ -713,7 +690,10 @@ export function CableCanvas({
         const existing = activeConnector.pins[index];
         return existing?.id === pin.id && existing?.number === pin.number;
       });
-    if (partNumberUnchanged && libraryIdUnchanged && pinsUnchanged) {
+    const accessoriesUnchanged =
+      nextBackshellId === activeConnector.backshellLibraryComponentId &&
+      nextStrainReliefId === activeConnector.strainReliefLibraryComponentId;
+    if (partNumberUnchanged && libraryIdUnchanged && pinsUnchanged && accessoriesUnchanged) {
       return;
     }
     pushUndoCheckpoint();
@@ -724,7 +704,11 @@ export function CableCanvas({
               ...connector,
               partNumber: normalizedPartNumber || undefined,
               libraryComponentId: component.id || undefined,
-              pins: nextPins
+              pins: nextPins,
+              backshellPartNumber: keepBackshell ? connector.backshellPartNumber : undefined,
+              backshellLibraryComponentId: nextBackshellId,
+              strainReliefPartNumber: keepStrainRelief ? connector.strainReliefPartNumber : undefined,
+              strainReliefLibraryComponentId: nextStrainReliefId
             }
           : connector
       )
@@ -768,25 +752,6 @@ export function CableCanvas({
     );
   };
 
-  const applyWireLibrarySelection = (componentId: string) => {
-    if (!componentId) {
-      updateSelectedPath({
-        wireComponentId: undefined,
-        wirePartNumber: undefined,
-        wireAwg: undefined,
-        wireColor: undefined
-      });
-      return;
-    }
-    const wire = wireCatalogState.find((component) => component.id === componentId);
-    updateSelectedPath({
-      wireComponentId: componentId,
-      wirePartNumber: wire?.partNumber.trim() || undefined,
-      wireAwg: wire?.awg?.trim() || undefined,
-      wireColor: wire?.color?.trim() || undefined
-    });
-  };
-
   const startInlineLengthEdit = (pathId: string) => {
     if (readOnly) {
       return;
@@ -826,39 +791,6 @@ export function CableCanvas({
       previous.map((path) => (path.id === inlineLengthEdit.pathId ? { ...path, length: parsed } : path))
     );
     setInlineLengthEdit(null);
-  };
-
-  const handleQuickAddWireSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    if (readOnly) {
-      return;
-    }
-    event.preventDefault();
-    setQuickAddNotice("");
-    setQuickAddError("");
-    setQuickAddPending(true);
-    const form = event.currentTarget;
-    const formData = new FormData(form);
-    const result = await quickAddWireAction(formData);
-    setQuickAddPending(false);
-    setWireCatalogState(result.wireCatalog);
-    if (!result.ok) {
-      setQuickAddError(result.error ?? "Wire quick-add failed.");
-      return;
-    }
-    setQuickAddNotice(result.notice ?? "Wire added.");
-    if (selectedEntity?.type === "path" && result.newWireComponentId) {
-      const selectedPathState = pathsState.find((path) => path.id === selectedEntity.id);
-      if (selectedPathState?.wireComponentId !== result.newWireComponentId) {
-        pushUndoCheckpoint();
-      }
-      setPathsState((previous) =>
-        previous.map((path) =>
-          path.id === selectedEntity.id ? { ...path, wireComponentId: result.newWireComponentId } : path
-        )
-      );
-    }
-    form.reset();
-    setShowAddWireDialog(false);
   };
 
   const handleQuickAddConnectorSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -981,28 +913,6 @@ export function CableCanvas({
           {selectedEntity?.type === "path" ? (
             <div className={styles.detailPanel}>
               <label>
-                Wire part number
-                <select
-                  value={selectedPath?.wireComponentId ?? ""}
-                  disabled={readOnly}
-                  onChange={(event) => applyWireLibrarySelection(event.target.value)}
-                >
-                  <option value="">No wire selected</option>
-                  {wireOptions.map((wire) => (
-                    <option key={wire.id} value={wire.id}>
-                      {wire.partNumber}
-                      {wire.awg ? ` | AWG ${wire.awg}` : ""}
-                      {wire.color ? ` | ${wire.color}` : ""}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button type="button" onClick={() => setShowAddWireDialog(true)} disabled={readOnly}>
-                Add new wire
-              </button>
-              {quickAddNotice ? <span className={styles.quickAddNotice}>{quickAddNotice}</span> : null}
-              {quickAddError ? <span className={styles.quickAddError}>{quickAddError}</span> : null}
-              <label>
                 Length (inches)
                 <input
                   value={typeof selectedPath?.length === "number" ? String(selectedPath.length) : ""}
@@ -1040,24 +950,43 @@ export function CableCanvas({
                 />
               </label>
               {connectorNameError ? <span className={styles.quickAddError}>{connectorNameError}</span> : null}
-              {selectedConnector.partNumber ? (
-                <span className={styles.connectorPartNumber}>Part number: {selectedConnector.partNumber}</span>
-              ) : null}
-              <button type="button" onClick={() => setShowConnectorSearchDialog(true)}>
-                Define Connector
-              </button>
+              {moduleDefined ? (
+                <button
+                  type="button"
+                  className={styles.changeConnectorButton}
+                  onClick={() => setShowConnectorSearchDialog(true)}
+                  disabled={readOnly}
+                  aria-label="Change connector"
+                >
+                  {selectedConnector.partNumber
+                    ? `Part number: ${selectedConnector.partNumber}`
+                    : "Change connector"}
+                </button>
+              ) : (
+                <button type="button" onClick={() => setShowConnectorSearchDialog(true)} disabled={readOnly}>
+                  Define Connector
+                </button>
+              )}
               <label>
                 Backshell
                 <select
                   value={selectedConnector.backshellLibraryComponentId ?? ""}
-                  disabled={readOnly}
+                  disabled={readOnly || !moduleDefined}
                   onChange={(event) => applyConnectorAccessorySelection("backshell", event.target.value)}
                 >
                   <option value="">No backshell</option>
-                  {backshellCatalogState.map((component) => (
-                    <option key={component.id} value={component.id}>
-                      {component.partNumber}
-                      {component.description ? ` — ${component.description}` : ""}
+                  {selectedConnector.backshellLibraryComponentId &&
+                  !allowedBackshellOptions.some(
+                    (option) => option.component.id === selectedConnector.backshellLibraryComponentId
+                  ) ? (
+                    <option value={selectedConnector.backshellLibraryComponentId} disabled>
+                      {selectedConnector.backshellPartNumber ?? selectedConnector.backshellLibraryComponentId}{" "}
+                      (incompatible — reselect)
+                    </option>
+                  ) : null}
+                  {allowedBackshellOptions.map((option) => (
+                    <option key={option.component.id} value={option.component.id}>
+                      {option.label}
                     </option>
                   ))}
                 </select>
@@ -1066,18 +995,34 @@ export function CableCanvas({
                 Strain relief
                 <select
                   value={selectedConnector.strainReliefLibraryComponentId ?? ""}
-                  disabled={readOnly}
+                  disabled={readOnly || !moduleDefined}
                   onChange={(event) => applyConnectorAccessorySelection("strainRelief", event.target.value)}
                 >
                   <option value="">No strain relief</option>
-                  {strainReliefCatalogState.map((component) => (
-                    <option key={component.id} value={component.id}>
-                      {component.partNumber}
-                      {component.description ? ` — ${component.description}` : ""}
+                  {selectedConnector.strainReliefLibraryComponentId &&
+                  !allowedStrainReliefOptions.some(
+                    (option) => option.component.id === selectedConnector.strainReliefLibraryComponentId
+                  ) ? (
+                    <option value={selectedConnector.strainReliefLibraryComponentId} disabled>
+                      {selectedConnector.strainReliefPartNumber ??
+                        selectedConnector.strainReliefLibraryComponentId}{" "}
+                      (incompatible — reselect)
+                    </option>
+                  ) : null}
+                  {allowedStrainReliefOptions.map((option) => (
+                    <option key={option.component.id} value={option.component.id}>
+                      {option.label}
                     </option>
                   ))}
                 </select>
               </label>
+              {!moduleDefined ? (
+                <span className={styles.connectorPartNumber}>Define connector first</span>
+              ) : allowedBackshellOptions.length === 0 || allowedStrainReliefOptions.length === 0 ? (
+                <span className={styles.connectorPartNumber}>
+                  No compatible options — add rows in Compatibility Manager
+                </span>
+              ) : null}
               {connectorQuickAddNotice ? <span className={styles.quickAddNotice}>{connectorQuickAddNotice}</span> : null}
               {connectorQuickAddError ? <span className={styles.quickAddError}>{connectorQuickAddError}</span> : null}
             </div>
@@ -1093,20 +1038,6 @@ export function CableCanvas({
                   onBlur={(event) => commitJunctionLabel(event.target.value)}
                   placeholder="e.g. Splice-A"
                 />
-              </label>
-              <label>
-                Junction type
-                <select
-                  value={selectedJunction.junctionType ?? "splice"}
-                  disabled={readOnly}
-                  onChange={(event) => updateSelectedJunctionType(event.target.value)}
-                >
-                  {JUNCTION_TYPE_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
               </label>
               <span className={styles.connectorPartNumber}>Id: {selectedJunction.id}</span>
             </div>
@@ -1125,11 +1056,16 @@ export function CableCanvas({
               </label>
             )}
             {connectorAddFormFields.map((field) => {
-              const inputName = BUILTIN_COMPONENT_FIELD_KEYS.has(field.key) ? field.key : `customField:${field.key}`;
+              const inputName = field.isIdentity ? field.key : `attr:${field.key}`;
               return (
-                <label key={field.id}>
+                <label key={field.key}>
                   {field.label}
-                  <input name={inputName} placeholder={field.label} required={field.key === "partNumber"} />
+                  <input
+                    name={inputName}
+                    placeholder={field.label}
+                    required={field.required === true || field.key === "partNumber"}
+                    type={field.inputType === "number" ? "number" : "text"}
+                  />
                 </label>
               );
             })}
@@ -1214,33 +1150,6 @@ export function CableCanvas({
           </div>
         </div>
       ) : null}
-      {showAddWireDialog ? (
-        <div className={styles.quickAddOverlay} role="dialog" aria-modal="true" aria-label="Add new wire">
-          <form className={styles.quickAddDialog} onSubmit={handleQuickAddWireSubmit}>
-            <h3>Add new wire</h3>
-            <label>
-              Part number
-              <input name="partNumber" placeholder="new wire part number" required />
-            </label>
-            <label>
-              AWG
-              <input name="awg" placeholder="AWG" required />
-            </label>
-            <label>
-              Color
-              <input name="color" placeholder="color" required />
-            </label>
-            <div className={styles.quickAddActions}>
-              <button type="button" onClick={() => setShowAddWireDialog(false)} disabled={quickAddPending}>
-                Cancel
-              </button>
-              <button type="submit" disabled={readOnly || quickAddPending}>
-                {quickAddPending ? "Adding..." : "Add wire"}
-              </button>
-            </div>
-          </form>
-        </div>
-      ) : null}
       <div className={styles.canvas} ref={canvasRef} data-testid="cable-canvas" onPointerDown={handleCanvasBackgroundPointerDown}>
         <svg className={styles.lines} aria-hidden>
           {paths.map((path) => {
@@ -1296,10 +1205,7 @@ export function CableCanvas({
                   >
                     {(pathEntry?.wireName ?? path.id) +
                       ` - ${pathEntry?.length ?? 0} in` +
-                      ` | ${getSleevingLabel(pathEntry?.sleeving ?? "none")}` +
-                      (selectedEntity?.type === "path" && selectedEntity.id === path.id && selectedWire
-                        ? ` (${selectedWire.partNumber})`
-                        : "")}
+                      ` | ${getSleevingLabel(pathEntry?.sleeving ?? "none")}`}
                   </text>
                 )}
               </g>

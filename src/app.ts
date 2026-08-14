@@ -15,6 +15,7 @@ import { registerAuthRoutes } from "./routes/auth.js";
 import { registerDesignRoutes } from "./routes/designs.js";
 import { registerE2eHookRoutes } from "./routes/e2e-hooks.js";
 import { registerLibraryRoutes } from "./routes/library.js";
+import { registerMaintenanceRoutes } from "./routes/maintenance.js";
 import { registerProjectRoutes } from "./routes/projects.js";
 import { registerRevisionRoutes } from "./routes/revisions.js";
 import { registerRulesetRoutes } from "./routes/rulesets.js";
@@ -33,6 +34,7 @@ export function buildApp(deps: {
     logger: {
       level: process.env.LOG_LEVEL ?? "info"
     },
+    trustProxy: process.env.VERCEL === "1",
     genReqId: resolveRequestId,
     requestIdHeader: "x-request-id"
   });
@@ -132,6 +134,7 @@ export function buildApp(deps: {
   registerDesignRoutes(app);
   registerRevisionRoutes(app);
   registerRulesetRoutes(app);
+  registerMaintenanceRoutes(app);
 
   if ((process.env.ENABLE_E2E_HOOKS ?? "false").toLowerCase() === "true") {
     registerE2eHookRoutes(app);

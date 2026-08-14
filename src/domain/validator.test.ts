@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import type { LibraryComponentRecord } from "./library.js";
+import { createLibraryLookup } from "./bom.js";
+import { createCompatLookup } from "./compat-lookup.js";
+import type { CompatStatus } from "./library.js";
+import { makePart } from "./part-test-helpers.js";
 import type { DesignSnapshot } from "./types.js";
 import { validateSnapshot } from "./validator.js";
 
@@ -24,26 +27,6 @@ function baseSnapshot(): DesignSnapshot {
     ],
     bundles: [],
     annotations: []
-  };
-}
-
-function libraryComponent(partial: Partial<LibraryComponentRecord> & Pick<LibraryComponentRecord, "id" | "category" | "partNumber">): LibraryComponentRecord {
-  return {
-    family: partial.family ?? "Generic",
-    description: partial.description ?? "part",
-    isActive: partial.isActive ?? true,
-    isReviewed: partial.isReviewed ?? true,
-    stockStatus: partial.stockStatus ?? "in_stock",
-    compatibilityHints: partial.compatibilityHints ?? [],
-    createdByUserId: "seed",
-    createdAt: "2026-01-01T00:00:00.000Z",
-    lastEditedByUserId: "seed",
-    lastEditedAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
-    customFieldValues: partial.customFieldValues ?? {},
-    awg: partial.awg,
-    color: partial.color,
-    ...partial
   };
 }
 
@@ -170,24 +153,26 @@ test("validateSnapshot warns for inactive and unreviewed library parts", () => {
     libraryLookup: {
       byId(id) {
         if (id === "cmp-module-001") {
-          return libraryComponent({
+          return makePart({
             id,
             category: "module",
             family: "Micro-D",
             partNumber: "MDM-15P",
+            description: "module",
             isActive: false,
             isReviewed: true,
-            stockStatus: "out_of_stock"
+            stockStatus: "out_of_stock",
+            attributes: { pinIds: [] }
           });
         }
         if (id === "cmp-wire-001") {
-          return libraryComponent({
+          return makePart({
             id,
             category: "wire",
             family: "MIL-W-22759",
             partNumber: "M22759/16-22",
-            awg: "22",
-            color: "white",
+            description: "wire",
+            attributes: { awg: "22", color: "white" },
             isActive: true,
             isReviewed: false,
             stockStatus: "in_stock"
@@ -212,12 +197,15 @@ test("validateSnapshot rules-2026.04 treats inactive and out-of-stock as errors"
     libraryLookup: {
       byId(id) {
         if (id === "cmp-module-001") {
-          return libraryComponent({
+          return makePart({
             id,
             category: "module",
+            family: "Micro-D",
             partNumber: "MDM-15P",
+            description: "module",
             isActive: false,
-            stockStatus: "out_of_stock"
+            stockStatus: "out_of_stock",
+            attributes: { pinIds: [] }
           });
         }
         return undefined;
@@ -239,11 +227,14 @@ test("validateSnapshot project policy can escalate inactive severity on rules-20
     libraryLookup: {
       byId(id) {
         if (id === "cmp-module-001") {
-          return libraryComponent({
+          return makePart({
             id,
             category: "module",
+            family: "Micro-D",
             partNumber: "MDM-15P",
-            isActive: false
+            description: "module",
+            isActive: false,
+            attributes: { pinIds: [] }
           });
         }
         return undefined;
@@ -372,12 +363,16 @@ test("validateSnapshot checks connector pin count and pin ids against library co
     libraryLookup: {
       byId(id) {
         if (id === "cmp-module-9") {
-          return libraryComponent({
+          return makePart({
             id,
             category: "module",
+            family: "Micro-D",
             partNumber: "MDM-9P",
-            pinCount: 9,
-            pinIds: ["1", "2", "3", "4", "5", "6", "7", "8", "9"]
+            description: "module",
+            attributes: {
+              pinCount: 9,
+              pinIds: ["1", "2", "3", "4", "5", "6", "7", "8", "9"]
+            }
           });
         }
         return undefined;
@@ -388,7 +383,7 @@ test("validateSnapshot checks connector pin count and pin ids against library co
   assert.ok(report.results.some((r) => r.code === "RULE_CONNECTOR_PIN_COUNT_MISMATCH"));
 });
 
-test("validateSnapshot checks wire AWG against contact and connector acceptance", () => {
+test("validateSnapshot checks wire AWG against contact acceptance (modules no longer restrict AWG/family)", () => {
   const snapshot = baseSnapshot();
   snapshot.connectors[0] = { ...snapshot.connectors[0], partNumber: "MDM-15P", libraryComponentId: "cmp-mod" };
   snapshot.paths[0] = {
@@ -405,34 +400,40 @@ test("validateSnapshot checks wire AWG against contact and connector acceptance"
     libraryLookup: {
       byId(id) {
         if (id === "cmp-mod") {
-          return libraryComponent({
+          return makePart({
             id,
             category: "module",
+            family: "Micro-D",
             partNumber: "MDM-15P",
-            acceptedAwgMin: 20,
-            acceptedAwgMax: 24,
-            acceptedFamilies: ["MIL-W-22759"]
+            description: "module",
+            attributes: { pinIds: [] }
           });
         }
         if (id === "cmp-wire") {
-          return libraryComponent({
+          return makePart({
             id,
             category: "wire",
             family: "Other",
             partNumber: "W-32",
-            awg: "32"
+            description: "wire",
+            attributes: { awg: "32", color: "white" }
           });
         }
         return undefined;
       },
       byPartNumber(partNumber) {
         if (partNumber === "CNT-22") {
-          return libraryComponent({
+          return makePart({
             id: "cmp-contact",
             category: "contact",
+            family: "Micro-D",
             partNumber: "CNT-22",
-            acceptedAwgMin: 20,
-            acceptedAwgMax: 24
+            description: "contact",
+            attributes: {
+              acceptedFamilies: [],
+              acceptedAwgMin: 20,
+              acceptedAwgMax: 24
+            }
           });
         }
         return undefined;
@@ -440,7 +441,7 @@ test("validateSnapshot checks wire AWG against contact and connector acceptance"
     }
   });
   assert.ok(report.results.some((r) => r.code === "RULE_WIRE_AWG_INCOMPATIBLE"));
-  assert.ok(report.results.some((r) => r.code === "RULE_CONNECTOR_FAMILY_RESTRICTED"));
+  assert.ok(!report.results.some((r) => r.code === "RULE_CONNECTOR_FAMILY_RESTRICTED"));
   assert.ok(report.results.some((r) => r.code === "RULE_WIRE_GAUGE_UNSUPPORTED"));
 });
 
@@ -473,4 +474,231 @@ test("validateSnapshot ruleset version changes output deterministically", () => 
   assert.equal(incomplete03?.severity, "warning");
   assert.equal(incomplete04?.severity, "error");
   assert.notEqual(v03.errors, v04.errors);
+});
+
+const COMPAT_PARTS = {
+  module: makePart({
+    id: "cmp-module-001",
+    category: "module",
+    family: "Micro-D",
+    partNumber: "MDM-15P",
+    description: "15-pin module",
+    attributes: { pinIds: [] }
+  }),
+  contact: makePart({
+    id: "cmp-contact-001",
+    category: "contact",
+    family: "Micro-D",
+    partNumber: "CNT-22",
+    description: "Crimp contact",
+    attributes: { acceptedFamilies: [] }
+  }),
+  wire: makePart({
+    id: "cmp-wire-001",
+    category: "wire",
+    family: "MIL-W-22759",
+    partNumber: "M22759/16-22",
+    description: "22 AWG wire",
+    attributes: { awg: "22", color: "white" }
+  }),
+  backshell: makePart({
+    id: "cmp-backshell-15",
+    category: "backshell",
+    family: "EMI",
+    partNumber: "BS-EMI-15",
+    description: "EMI backshell"
+  }),
+  strainRelief: makePart({
+    id: "cmp-sr-15",
+    category: "strain-relief",
+    family: "Clamp",
+    partNumber: "SR-CLAMP-15",
+    description: "Strain-relief clamp"
+  })
+};
+
+function compatSnapshot(): DesignSnapshot {
+  return {
+    connectors: [
+      {
+        id: "c1",
+        reference: "J1",
+        partNumber: "MDM-15P",
+        libraryComponentId: "cmp-module-001",
+        backshellPartNumber: "BS-EMI-15",
+        backshellLibraryComponentId: "cmp-backshell-15",
+        strainReliefPartNumber: "SR-CLAMP-15",
+        strainReliefLibraryComponentId: "cmp-sr-15",
+        pins: [{ id: "1", number: "1" }]
+      },
+      {
+        id: "c2",
+        reference: "J2",
+        pins: [{ id: "1", number: "1" }]
+      }
+    ],
+    paths: [
+      {
+        id: "p1",
+        fromConnectorId: "c1",
+        toConnectorId: "c2",
+        pathType: "wire",
+        wirePartNumber: "M22759/16-22",
+        wireComponentId: "cmp-wire-001",
+        fromContact: "CNT-22",
+        toContact: "CNT-22"
+      }
+    ],
+    pinMappings: [
+      {
+        id: "m1",
+        pathId: "p1",
+        fromConnectorId: "c1",
+        fromPinId: "1",
+        toConnectorId: "c2",
+        toPinId: "1",
+        mappingType: "one_to_one"
+      }
+    ],
+    bundles: [],
+    annotations: []
+  };
+}
+
+function compatLibraryLookup() {
+  return createLibraryLookup(Object.values(COMPAT_PARTS));
+}
+
+type CompatRuleCode =
+  | "RULE_COMPAT_CONTACT_WIRE"
+  | "RULE_COMPAT_MODULE_CONTACT"
+  | "RULE_COMPAT_MODULE_BACKSHELL"
+  | "RULE_COMPAT_MODULE_STRAIN_RELIEF";
+
+function validateCompat(compatLookup: ReturnType<typeof createCompatLookup>) {
+  return validateSnapshot(compatSnapshot(), {
+    libraryLookup: compatLibraryLookup(),
+    compatLookup,
+    rulesetVersion: "rules-2026.04",
+    mode: "full"
+  });
+}
+
+const COMPAT_CASES: Array<{
+  kind: string;
+  code: CompatRuleCode;
+  build: (status: CompatStatus) => ReturnType<typeof createCompatLookup>;
+}> = [
+  {
+    kind: "contact-wire",
+    code: "RULE_COMPAT_CONTACT_WIRE",
+    build: (status) =>
+      createCompatLookup({
+        contactWire: [
+          {
+            contactPartId: COMPAT_PARTS.contact.id,
+            wirePartId: COMPAT_PARTS.wire.id,
+            status
+          }
+        ]
+      })
+  },
+  {
+    kind: "module-contact",
+    code: "RULE_COMPAT_MODULE_CONTACT",
+    build: (status) =>
+      createCompatLookup({
+        moduleContact: [
+          {
+            modulePartId: COMPAT_PARTS.module.id,
+            contactPartId: COMPAT_PARTS.contact.id,
+            status
+          }
+        ]
+      })
+  },
+  {
+    kind: "module-backshell",
+    code: "RULE_COMPAT_MODULE_BACKSHELL",
+    build: (status) =>
+      createCompatLookup({
+        moduleBackshell: [
+          {
+            modulePartId: COMPAT_PARTS.module.id,
+            backshellPartId: COMPAT_PARTS.backshell.id,
+            status
+          }
+        ]
+      })
+  },
+  {
+    kind: "module-strain-relief",
+    code: "RULE_COMPAT_MODULE_STRAIN_RELIEF",
+    build: (status) =>
+      createCompatLookup({
+        moduleStrainRelief: [
+          {
+            modulePartId: COMPAT_PARTS.module.id,
+            strainReliefPartId: COMPAT_PARTS.strainRelief.id,
+            status
+          }
+        ]
+      })
+  }
+];
+
+for (const { kind, code, build } of COMPAT_CASES) {
+  test(`validateSnapshot ${kind} forbidden emits ${code} as error`, () => {
+    const report = validateCompat(build("forbidden"));
+    assert.ok(report.results.some((r) => r.code === code && r.severity === "error"));
+  });
+
+  test(`validateSnapshot ${kind} review emits ${code} as warning`, () => {
+    const report = validateCompat(build("review"));
+    assert.ok(report.results.some((r) => r.code === code && r.severity === "warning"));
+  });
+
+  test(`validateSnapshot ${kind} absent emits no ${code}`, () => {
+    const report = validateCompat(createCompatLookup({}));
+    assert.ok(!report.results.some((r) => r.code === code));
+  });
+}
+
+test("validateSnapshot compat rules are disabled under rules-2026.03", () => {
+  const report = validateSnapshot(compatSnapshot(), {
+    libraryLookup: compatLibraryLookup(),
+    compatLookup: createCompatLookup({
+      contactWire: [
+        {
+          contactPartId: COMPAT_PARTS.contact.id,
+          wirePartId: COMPAT_PARTS.wire.id,
+          status: "forbidden"
+        }
+      ],
+      moduleContact: [
+        {
+          modulePartId: COMPAT_PARTS.module.id,
+          contactPartId: COMPAT_PARTS.contact.id,
+          status: "forbidden"
+        }
+      ],
+      moduleBackshell: [
+        {
+          modulePartId: COMPAT_PARTS.module.id,
+          backshellPartId: COMPAT_PARTS.backshell.id,
+          status: "forbidden"
+        }
+      ],
+      moduleStrainRelief: [
+        {
+          modulePartId: COMPAT_PARTS.module.id,
+          strainReliefPartId: COMPAT_PARTS.strainRelief.id,
+          status: "forbidden"
+        }
+      ]
+    }),
+    rulesetVersion: "rules-2026.03",
+    mode: "full"
+  });
+  assert.ok(!report.results.some((r) => r.code.startsWith("RULE_COMPAT_")));
 });

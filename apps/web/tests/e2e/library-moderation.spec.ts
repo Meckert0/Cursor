@@ -25,12 +25,10 @@ test("admin moderation flow: queue filter and bulk approve", async ({ page, requ
           family: "MIL-W-22759",
           partNumber: partNumberApproved,
           description: "E2E moderation queue item A",
-          awg: "20",
-          color: "white",
           isActive: true,
           stockStatus: "in_stock",
-          compatibilityHints: [],
-          isReviewed: false
+          isReviewed: false,
+          attributes: { awg: "20", color: "white" }
         }
       ]
     }
@@ -53,8 +51,8 @@ test("admin moderation flow: queue filter and bulk approve", async ({ page, requ
           description: "E2E moderation queue item B",
           isActive: true,
           stockStatus: "low_stock",
-          compatibilityHints: [],
-          isReviewed: false
+          isReviewed: false,
+          attributes: { acceptedFamilies: [] }
         }
       ]
     }

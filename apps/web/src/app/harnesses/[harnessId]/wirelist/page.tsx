@@ -1,7 +1,14 @@
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { WirelistGrid } from "@/components/wirelist-grid";
-import { getHarness, getRevision, listLibraryComponents, updateRevisionSnapshot, type RevisionDto } from "@/lib/api";
+import {
+  getHarness,
+  getRevision,
+  listLibraryComponents,
+  listModuleContactCompat,
+  updateRevisionSnapshot,
+  type RevisionDto
+} from "@/lib/api";
 import { requireSignedInUser } from "@/lib/auth";
 import { buildWirelistXlsxBuffer } from "@/lib/wirelist-xlsx-export";
 import {
@@ -38,6 +45,11 @@ export default async function HarnessWirelistPage({
     category: "module",
     isActive: true
   });
+  const contactCatalog = await listLibraryComponents({
+    category: "contact",
+    isActive: true
+  });
+  const moduleContactCompat = await listModuleContactCompat();
 
   async function importWirelistAction(formData: FormData) {
     "use server";
@@ -76,7 +88,9 @@ export default async function HarnessWirelistPage({
       const errors = validateWirelistRows(
         importedRows,
         buildWirelistNodeIds(revision.snapshot),
-        revision.snapshot.connectors
+        revision.snapshot.connectors,
+        connectorCatalog,
+        revision.snapshot
       );
       if (errors.length > 0) {
         return {
@@ -84,7 +98,7 @@ export default async function HarnessWirelistPage({
           error: errors[0]
         };
       }
-      const nextSnapshot = wirelistRowsToSnapshot(revision.snapshot, importedRows);
+      const nextSnapshot = wirelistRowsToSnapshot(revision.snapshot, importedRows, connectorCatalog);
       const updated = await updateRevisionSnapshot({
         revisionId: revision.id,
         snapshot: nextSnapshot,
@@ -142,7 +156,6 @@ export default async function HarnessWirelistPage({
         snapshot: input.snapshot,
         expectedSnapshotHash: input.expectedSnapshotHash
       });
-      revalidatePath(`/harnesses/${harness.id}/wirelist`);
       revalidatePath(`/harnesses/${harness.id}/canvas`);
       revalidatePath(`/harnesses/${harness.id}/details/new`);
       revalidatePath(`/details/${revision.id}`);
@@ -182,6 +195,8 @@ export default async function HarnessWirelistPage({
             initialSnapshotHash={revision.snapshotHash ?? ""}
             wireCatalog={wireCatalog}
             connectorCatalog={connectorCatalog}
+            contactCatalog={contactCatalog}
+            moduleContactCompat={moduleContactCompat}
             importWirelistAction={importWirelistAction}
             exportWirelistAction={exportWirelistAction}
             saveWirelistAction={saveWirelistAction}

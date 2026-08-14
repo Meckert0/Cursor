@@ -457,8 +457,8 @@ test("inactive library items are hidden from regular users but visible to admins
             description: "Toggle visibility test component",
             isActive: true,
             stockStatus: "in_stock",
-            compatibilityHints: [],
-            isReviewed: false
+            isReviewed: false,
+            attributes: { acceptedFamilies: [] }
           }
         ]
       }

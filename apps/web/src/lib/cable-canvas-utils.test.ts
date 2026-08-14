@@ -4,6 +4,7 @@ import type { LibraryComponentDto, RevisionDto } from "./api";
 import {
   buildConnectorPairTotals,
   buildConnectorPins,
+  buildConnectorPinsFromComponent,
   buildDefaultPositions,
   buildSnapshotFromCanvas,
   buildUniqueWireSections,
@@ -13,6 +14,8 @@ import {
   normalizeUnassignedConnectors,
   parsePinCount,
   readPinCountFromComponent,
+  filterAllowedAccessoryOptionsForModule,
+  rankAccessoryOptionsForModule,
   removeConnectorAndRelatedPaths
 } from "./cable-canvas-utils";
 import { buildNextCanvasId, buildNextConnectorReference, buildNextWireName } from "./cable-canvas-ids";
@@ -42,18 +45,38 @@ describe("cable-canvas-utils", () => {
     ]);
   });
 
-  it("reads pinCount from first-class field and legacy customFieldValues", () => {
+  it("reads pinCount from module attributes (pinCount or pinIds length)", () => {
     expect(
       readPinCountFromComponent({
-        pinCount: 15,
-        customFieldValues: { pincount: "8" }
-      } as LibraryComponentDto)
+        attributes: { pinCount: 15, pinIds: ["1", "2"] }
+      } as unknown as LibraryComponentDto)
     ).toBe(15);
-    const component = {
-      customFieldValues: { pincount: "8" }
-    } as LibraryComponentDto;
-    expect(readPinCountFromComponent(component)).toBe(8);
-    expect(readPinCountFromComponent({ customFieldValues: {} } as LibraryComponentDto)).toBeNull();
+    expect(
+      readPinCountFromComponent({
+        attributes: { pinIds: ["A", "B", "C", "D", "E", "F", "G", "H"] }
+      } as unknown as LibraryComponentDto)
+    ).toBe(8);
+    expect(readPinCountFromComponent({ attributes: {} } as unknown as LibraryComponentDto)).toBeNull();
+  });
+
+  it("builds connector pins preferring attributes.pinIds", () => {
+    expect(
+      buildConnectorPinsFromComponent({
+        attributes: { pinIds: ["A", "B", "C"], pinCount: 9 }
+      } as unknown as LibraryComponentDto)
+    ).toEqual([
+      { id: "A", number: "A" },
+      { id: "B", number: "B" },
+      { id: "C", number: "C" }
+    ]);
+    expect(
+      buildConnectorPinsFromComponent({
+        attributes: { pinCount: 2 }
+      } as unknown as LibraryComponentDto)
+    ).toEqual([
+      { id: "1", number: "1" },
+      { id: "2", number: "2" }
+    ]);
   });
 
   it("formats connector pin labels", () => {
@@ -165,20 +188,36 @@ describe("cable-canvas-utils", () => {
         id: "p2",
         fromConnectorId: "c2",
         toConnectorId: "j1",
-        pathType: "wire",
-        wireName: "wire2",
+        pathType: "cable",
+        wireName: "cable2",
         sleeving: "expandable_sleeving"
       },
       {
         id: "p1",
         fromConnectorId: "c1",
         toConnectorId: "c2",
-        pathType: "wire",
+        pathType: "cable",
         length: 3.5
+      },
+      {
+        id: "p-wire",
+        fromConnectorId: "c1",
+        toConnectorId: "c2",
+        pathType: "wire",
+        wirePartNumber: "PN-22"
       }
     ]);
 
     expect(sections).toEqual([
+      {
+        pathId: "p2",
+        wireName: "cable2",
+        fromNodeId: "c2",
+        toNodeId: "j1",
+        lengthFt: 0,
+        sleeving: "expandable_sleeving",
+        wireComponentId: undefined
+      },
       {
         pathId: "p1",
         wireName: "p1",
@@ -187,17 +226,55 @@ describe("cable-canvas-utils", () => {
         lengthFt: 3.5,
         sleeving: "none",
         wireComponentId: undefined
-      },
-      {
-        pathId: "p2",
-        wireName: "wire2",
-        fromNodeId: "c2",
-        toNodeId: "j1",
-        lengthFt: 0,
-        sleeving: "expandable_sleeving",
-        wireComponentId: undefined
       }
     ]);
+  });
+
+  it("preserves wirelist wire runs when saving canvas cable sections", () => {
+    const baseline = {
+      connectors: [
+        { id: "c1", reference: "J1", pins: [{ id: "1", number: "1" }] },
+        { id: "c2", reference: "J2", pins: [{ id: "1", number: "1" }] }
+      ],
+      junctions: [],
+      paths: [
+        {
+          id: "p-wire",
+          pathType: "wire",
+          fromConnectorId: "c1",
+          toConnectorId: "c2",
+          wirePartNumber: "PN-22"
+        }
+      ],
+      pinMappings: [],
+      bundles: [],
+      annotations: []
+    } as RevisionDto["snapshot"];
+
+    const next = buildSnapshotFromCanvas(baseline, {
+      connectors: baseline.connectors,
+      junctions: baseline.junctions,
+      paths: [
+        {
+          id: "p-cable",
+          pathType: "cable",
+          fromConnectorId: "c1",
+          toConnectorId: "c2",
+          length: 5
+        }
+      ],
+      positions: {}
+    });
+
+    expect(next.paths).toHaveLength(2);
+    expect(next.paths.find((path) => path.id === "p-wire")).toMatchObject({
+      pathType: "wire",
+      wirePartNumber: "PN-22"
+    });
+    expect(next.paths.find((path) => path.id === "p-cable")).toMatchObject({
+      pathType: "cable",
+      length: 5
+    });
   });
 
   it("builds connector pair totals through junction paths", () => {
@@ -278,13 +355,12 @@ describe("cable-canvas-utils", () => {
     ];
     const junctions = baseline.junctions ?? [];
     const paths = [
-      ...baseline.paths,
       {
         id: "p2",
         fromConnectorId: "c2",
         toConnectorId: "j1",
-        pathType: "wire",
-        wireName: "wire2",
+        pathType: "cable",
+        wireName: "cable2",
         length: 8,
         sleeving: "expandable_sleeving" as const
       }
@@ -301,6 +377,7 @@ describe("cable-canvas-utils", () => {
       { x: 220, y: 80 }
     ]);
     expect(first.junctions?.[0]?.location).toEqual({ x: 130, y: 140 });
+    expect(first.paths.map((path) => path.id).sort()).toEqual(["p1", "p2"]);
     expect(first.pinMappings.map((mapping) => mapping.id)).toEqual(["m1"]);
     expect(first.bundles[0]?.pathIds).toEqual(["p1"]);
     expect(first.annotations).toEqual(baseline.annotations);
@@ -313,5 +390,61 @@ describe("cable-canvas-utils", () => {
       positions: rebuiltPositions
     });
     expect(hashCanvasSnapshot(second)).toBe(hashCanvasSnapshot(first));
+  });
+
+  it("ranks accessory options by compat status for a module", () => {
+    const accessories = [
+      { id: "bs-f", partNumber: "BS-F", description: "Forbidden", attributes: {} },
+      { id: "bs-a", partNumber: "BS-A", description: "Allowed", attributes: {} },
+      { id: "bs-u", partNumber: "BS-U", description: "Unset", attributes: {} },
+      { id: "bs-r", partNumber: "BS-R", description: "Review", attributes: {} }
+    ] as LibraryComponentDto[];
+    const ranked = rankAccessoryOptionsForModule(
+      accessories,
+      "mod-1",
+      new Map([
+        ["bs-a", "allowed"],
+        ["bs-r", "review"],
+        ["bs-f", "forbidden"]
+      ])
+    );
+    expect(ranked.map((row) => row.component.id)).toEqual(["bs-a", "bs-u", "bs-r", "bs-f"]);
+    expect(ranked[0]?.label).toContain("(allowed)");
+    expect(ranked[3]?.label).toContain("(forbidden)");
+  });
+
+  it("filters accessory options to allowed-only for a module", () => {
+    const accessories = [
+      { id: "bs-f", partNumber: "BS-F", description: "Forbidden", attributes: {} },
+      { id: "bs-a", partNumber: "BS-A", description: "Allowed", attributes: {} },
+      { id: "bs-u", partNumber: "BS-U", description: "Unset", attributes: {} },
+      { id: "bs-r", partNumber: "BS-R", description: "Review", attributes: {} },
+      { id: "bs-a2", partNumber: "BS-A2", description: "Also allowed", attributes: {} }
+    ] as LibraryComponentDto[];
+    const filtered = filterAllowedAccessoryOptionsForModule(
+      accessories,
+      "mod-1",
+      new Map([
+        ["bs-a", "allowed"],
+        ["bs-a2", "allowed"],
+        ["bs-r", "review"],
+        ["bs-f", "forbidden"]
+      ])
+    );
+    expect(filtered.map((row) => row.component.id)).toEqual(["bs-a", "bs-a2"]);
+    expect(filtered[0]?.label).toBe("BS-A — Allowed");
+    expect(filtered.every((row) => !row.label.includes("("))).toBe(true);
+  });
+
+  it("returns no accessory options when module is undefined", () => {
+    const accessories = [
+      { id: "bs-a", partNumber: "BS-A", description: "Allowed", attributes: {} }
+    ] as LibraryComponentDto[];
+    const filtered = filterAllowedAccessoryOptionsForModule(
+      accessories,
+      undefined,
+      new Map([["bs-a", "allowed"]])
+    );
+    expect(filtered).toEqual([]);
   });
 });

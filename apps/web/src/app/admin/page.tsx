@@ -3,24 +3,55 @@ import { revalidatePath } from "next/cache";
 import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
 import {
   LIBRARY_ITEM_CATEGORIES,
+  type CompatStatus,
   type LibraryItemCategory,
-  createLibraryFieldDefinition,
   deleteAdminUser,
+  deleteContactWireCompat,
   deleteLibraryComponent,
-  deleteLibraryFieldDefinition,
+  deleteModuleBackshellCompat,
+  deleteModuleContactCompat,
+  deleteModuleStrainReliefCompat,
+  deletePartAlias,
   ingestLibraryComponents,
   getPageDescriptions,
   listAdminProjectOverview,
   listAdminUsers,
+  listContactWireCompat,
   listLibraryComponents,
-  listLibraryFieldDefinitions,
+  listModuleBackshellCompat,
+  listModuleContactCompat,
+  listModuleStrainReliefCompat,
+  listPartAliases,
   updateAdminPageDescriptions,
-  updateLibraryFieldDefinition,
-  updateLibraryComponent
+  updateLibraryComponent,
+  upsertContactWireCompat,
+  upsertModuleBackshellCompat,
+  upsertModuleContactCompat,
+  upsertModuleStrainReliefCompat,
+  upsertPartAlias
 } from "@/lib/api";
 import { requireAdminUser } from "@/lib/auth";
+import { collectAttributesFromFormData } from "@/lib/part-fields";
+import { CompatibilityManager } from "./compatibility-manager";
 import { ItemDatabaseViewer } from "./item-database-viewer";
 import styles from "./page.module.css";
+
+const COMPAT_STATUSES: CompatStatus[] = ["allowed", "forbidden", "review"];
+
+function parseCompatStatus(raw: string): CompatStatus {
+  if (COMPAT_STATUSES.includes(raw as CompatStatus)) {
+    return raw as CompatStatus;
+  }
+  throw new Error("Invalid compatibility status.");
+}
+
+function requireFormField(formData: FormData, key: string): string {
+  const value = String(formData.get(key) ?? "").trim();
+  if (!value) {
+    throw new Error(`Missing ${key}.`);
+  }
+  return value;
+}
 
 type AdminPageSearchParams = Promise<{
   q?: string;
@@ -30,32 +61,31 @@ type AdminPageSearchParams = Promise<{
   color?: string;
 }>;
 
+function parseOptionalDateTime(raw: string): string | undefined {
+  if (!raw) {
+    return undefined;
+  }
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) {
+    return undefined;
+  }
+  return date.toISOString();
+}
+
+function normalizeRequiredIngestText(raw: string): string {
+  return raw.length > 0 ? raw : " ";
+}
+
 async function editItemAction(formData: FormData) {
   "use server";
-  function parseOptionalDateTime(raw: string): string | undefined {
-    if (!raw) {
-      return undefined;
-    }
-    const date = new Date(raw);
-    if (Number.isNaN(date.getTime())) {
-      return undefined;
-    }
-    return date.toISOString();
-  }
-  function normalizeRequiredIngestText(raw: string): string {
-    return raw.length > 0 ? raw : " ";
-  }
 
   const componentId = String(formData.get("componentId") ?? "").trim();
-  const category = String(formData.get("category") ?? "").trim();
+  const categoryRaw = String(formData.get("category") ?? "").trim();
   const partNumber = String(formData.get("partNumber") ?? "").trim();
   const family = String(formData.get("family") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
-  const awgRaw = String(formData.get("awg") ?? "").trim();
-  const colorRaw = String(formData.get("color") ?? "").trim();
   const isActiveRaw = String(formData.get("isActive") ?? "").trim();
   const stockStatusRaw = String(formData.get("stockStatus") ?? "").trim();
-  const compatibilityHintsRaw = String(formData.get("compatibilityHints") ?? "").trim();
   const createdByUserId = String(formData.get("createdByUserId") ?? "").trim();
   const createdAtRaw = String(formData.get("createdAt") ?? "").trim();
   const isReviewedRaw = String(formData.get("isReviewed") ?? "").trim();
@@ -63,17 +93,13 @@ async function editItemAction(formData: FormData) {
   const reviewedAtRaw = String(formData.get("reviewedAt") ?? "").trim();
   const lastEditedByUserId = String(formData.get("lastEditedByUserId") ?? "").trim();
   const lastEditedAtRaw = String(formData.get("lastEditedAt") ?? "").trim();
-  const customFieldValues = Object.fromEntries(
-    Array.from(formData.entries())
-      .filter(([key]) => key.startsWith("customField:"))
-      .map(([key, value]) => [key.replace("customField:", ""), String(value)])
-  );
-  if (!componentId) {
+  if (!componentId || !LIBRARY_ITEM_CATEGORIES.includes(categoryRaw as LibraryItemCategory)) {
     throw new Error("Invalid edit payload.");
   }
+  const category = categoryRaw as LibraryItemCategory;
   const isActive = isActiveRaw === "false" ? false : true;
-  const stockStatus = ["in_stock", "low_stock", "out_of_stock"].includes(stockStatusRaw)
-    ? (stockStatusRaw as "in_stock" | "low_stock" | "out_of_stock")
+  const stockStatus = ["in_stock", "low_stock", "out_of_stock", "unknown"].includes(stockStatusRaw)
+    ? (stockStatusRaw as "in_stock" | "low_stock" | "out_of_stock" | "unknown")
     : "in_stock";
   const wantsReviewed = isReviewedRaw === "true";
   const isReviewed = wantsReviewed;
@@ -83,20 +109,15 @@ async function editItemAction(formData: FormData) {
   const createdAt = parseOptionalDateTime(createdAtRaw) ?? new Date().toISOString();
   const lastEditedBy = lastEditedByUserId || process.env.API_USER_ID || "system-user";
   const lastEditedAt = parseOptionalDateTime(lastEditedAtRaw) ?? new Date().toISOString();
+  const attributes = collectAttributesFromFormData(formData, category);
 
   await updateLibraryComponent({
     componentId,
     partNumber: normalizeRequiredIngestText(partNumber),
     family: normalizeRequiredIngestText(family),
     description: normalizeRequiredIngestText(description),
-    awg: category === "wire" ? normalizeRequiredIngestText(awgRaw) : undefined,
-    color: category === "wire" ? normalizeRequiredIngestText(colorRaw) : undefined,
     isActive,
     stockStatus,
-    compatibilityHints: compatibilityHintsRaw
-      .split(",")
-      .map((hint) => hint.trim())
-      .filter((hint) => hint.length > 0),
     createdByUserId: createdBy,
     createdAt,
     isReviewed,
@@ -104,7 +125,7 @@ async function editItemAction(formData: FormData) {
     reviewedAt,
     lastEditedByUserId: lastEditedBy,
     lastEditedAt,
-    customFieldValues
+    attributes
   });
   revalidatePath("/admin");
 }
@@ -119,138 +140,52 @@ async function deleteItemAction(formData: FormData) {
   revalidatePath("/admin");
 }
 
-async function createFieldDefinitionAction(formData: FormData) {
-  "use server";
-  const category = String(formData.get("category") ?? "").trim();
-  const key = String(formData.get("key") ?? "").trim();
-  const label = String(formData.get("label") ?? "").trim();
-  const isVisibleInViewerRaw = String(formData.get("isVisibleInViewer") ?? "true").trim();
-  const showOnAddFormRaw = String(formData.get("showOnAddForm") ?? "false").trim();
-  const showInSearchRaw = String(formData.get("showInSearch") ?? "false").trim();
-  if (!LIBRARY_ITEM_CATEGORIES.includes(category as LibraryItemCategory)) {
-    throw new Error("Invalid field category.");
-  }
-  if (!key || !label) {
-    throw new Error("Field key and label are required.");
-  }
-  const created = await createLibraryFieldDefinition({
-    category: category as LibraryItemCategory,
-    key,
-    label,
-    isVisibleInViewer: isVisibleInViewerRaw !== "false",
-    showOnAddForm: showOnAddFormRaw === "true",
-    showInSearch: showInSearchRaw === "true"
-  });
-  revalidatePath("/admin");
-  return created;
-}
-
 async function createItemAction(formData: FormData) {
   "use server";
 
   await requireAdminUser();
 
-  function parseOptionalDateTime(raw: string): string | undefined {
-    if (!raw) {
-      return undefined;
-    }
-    const date = new Date(raw);
-    if (Number.isNaN(date.getTime())) {
-      return undefined;
-    }
-    return date.toISOString();
-  }
-
-  function normalizeRequiredIngestText(raw: string): string {
-    return raw.length > 0 ? raw : " ";
-  }
-
-  const category = String(formData.get("category") ?? "").trim();
+  const categoryRaw = String(formData.get("category") ?? "").trim();
   const partNumber = String(formData.get("partNumber") ?? "").trim();
   const family = String(formData.get("family") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
-  const awgRaw = String(formData.get("awg") ?? "").trim();
-  const colorRaw = String(formData.get("color") ?? "").trim();
   const isActiveRaw = String(formData.get("isActive") ?? "true").trim();
   const stockStatusRaw = String(formData.get("stockStatus") ?? "").trim();
-  const compatibilityHintsRaw = String(formData.get("compatibilityHints") ?? "").trim();
   const isReviewedRaw = String(formData.get("isReviewed") ?? "false").trim();
   const reviewedByUserIdRaw = String(formData.get("reviewedByUserId") ?? "").trim();
   const reviewedAtRaw = String(formData.get("reviewedAt") ?? "").trim();
-  const customFieldValues = Object.fromEntries(
-    Array.from(formData.entries())
-      .filter(([key]) => key.startsWith("customField:"))
-      .map(([key, value]) => [key.replace("customField:", ""), String(value).trim()])
-      .filter(([, value]) => value.length > 0)
-  );
 
-  if (!LIBRARY_ITEM_CATEGORIES.includes(category as LibraryItemCategory)) {
+  if (!LIBRARY_ITEM_CATEGORIES.includes(categoryRaw as LibraryItemCategory)) {
     throw new Error("Invalid create payload.");
   }
+  const category = categoryRaw as LibraryItemCategory;
   const isActive = isActiveRaw === "false" ? false : true;
-  const stockStatus = ["in_stock", "low_stock", "out_of_stock"].includes(stockStatusRaw)
-    ? (stockStatusRaw as "in_stock" | "low_stock" | "out_of_stock")
+  const stockStatus = ["in_stock", "low_stock", "out_of_stock", "unknown"].includes(stockStatusRaw)
+    ? (stockStatusRaw as "in_stock" | "low_stock" | "out_of_stock" | "unknown")
     : "in_stock";
   const wantsReviewed = isReviewedRaw === "true";
   const isReviewed = wantsReviewed;
   const reviewedByUserId = wantsReviewed ? reviewedByUserIdRaw || process.env.API_USER_ID || "system-user" : undefined;
   const reviewedAt = wantsReviewed ? parseOptionalDateTime(reviewedAtRaw) ?? new Date().toISOString() : undefined;
+  const attributes = collectAttributesFromFormData(formData, category);
 
   await ingestLibraryComponents({
     items: [
       {
-        category: category as LibraryItemCategory,
+        category,
         partNumber: normalizeRequiredIngestText(partNumber),
         family: normalizeRequiredIngestText(family),
         description: normalizeRequiredIngestText(description),
-        awg: category === "wire" ? normalizeRequiredIngestText(awgRaw) : undefined,
-        color: category === "wire" ? normalizeRequiredIngestText(colorRaw) : undefined,
         isActive,
         stockStatus,
-        compatibilityHints: compatibilityHintsRaw
-          .split(",")
-          .map((hint) => hint.trim())
-          .filter((hint) => hint.length > 0),
         isReviewed,
         reviewedByUserId,
         reviewedAt,
-        customFieldValues
+        attributes
       }
     ]
   });
 
-  revalidatePath("/admin");
-}
-
-async function updateFieldDefinitionAction(formData: FormData) {
-  "use server";
-  const fieldDefinitionId = String(formData.get("fieldDefinitionId") ?? "").trim();
-  const labelRaw = String(formData.get("label") ?? "").trim();
-  const isVisibleInViewerRaw = formData.get("isVisibleInViewer");
-  const showOnAddFormRaw = formData.get("showOnAddForm");
-  const showInSearchRaw = formData.get("showInSearch");
-  if (!fieldDefinitionId) {
-    throw new Error("Field definition id is required.");
-  }
-  const updated = await updateLibraryFieldDefinition({
-    fieldDefinitionId,
-    label: labelRaw || undefined,
-    isVisibleInViewer:
-      typeof isVisibleInViewerRaw === "string" ? isVisibleInViewerRaw === "true" : undefined,
-    showOnAddForm: typeof showOnAddFormRaw === "string" ? showOnAddFormRaw === "true" : undefined,
-    showInSearch: typeof showInSearchRaw === "string" ? showInSearchRaw === "true" : undefined
-  });
-  revalidatePath("/admin");
-  return updated;
-}
-
-async function deleteFieldDefinitionAction(formData: FormData) {
-  "use server";
-  const fieldDefinitionId = String(formData.get("fieldDefinitionId") ?? "").trim();
-  if (!fieldDefinitionId) {
-    throw new Error("Field definition id is required.");
-  }
-  await deleteLibraryFieldDefinition(fieldDefinitionId);
   revalidatePath("/admin");
 }
 
@@ -280,40 +215,132 @@ async function deleteUserAction(formData: FormData) {
   revalidatePath("/");
 }
 
+async function upsertContactWireAction(formData: FormData) {
+  "use server";
+  await requireAdminUser();
+  await upsertContactWireCompat({
+    contactPartId: requireFormField(formData, "contactPartId"),
+    wirePartId: requireFormField(formData, "wirePartId"),
+    status: parseCompatStatus(requireFormField(formData, "status"))
+  });
+  revalidatePath("/admin");
+}
+
+async function deleteContactWireAction(formData: FormData) {
+  "use server";
+  await requireAdminUser();
+  await deleteContactWireCompat({
+    contactPartId: requireFormField(formData, "contactPartId"),
+    wirePartId: requireFormField(formData, "wirePartId")
+  });
+  revalidatePath("/admin");
+}
+
+async function upsertModuleContactAction(formData: FormData) {
+  "use server";
+  await requireAdminUser();
+  await upsertModuleContactCompat({
+    modulePartId: requireFormField(formData, "modulePartId"),
+    contactPartId: requireFormField(formData, "contactPartId"),
+    status: parseCompatStatus(requireFormField(formData, "status"))
+  });
+  revalidatePath("/admin");
+}
+
+async function deleteModuleContactAction(formData: FormData) {
+  "use server";
+  await requireAdminUser();
+  await deleteModuleContactCompat({
+    modulePartId: requireFormField(formData, "modulePartId"),
+    contactPartId: requireFormField(formData, "contactPartId")
+  });
+  revalidatePath("/admin");
+}
+
+async function upsertModuleBackshellAction(formData: FormData) {
+  "use server";
+  await requireAdminUser();
+  await upsertModuleBackshellCompat({
+    modulePartId: requireFormField(formData, "modulePartId"),
+    backshellPartId: requireFormField(formData, "backshellPartId"),
+    status: parseCompatStatus(requireFormField(formData, "status"))
+  });
+  revalidatePath("/admin");
+}
+
+async function deleteModuleBackshellAction(formData: FormData) {
+  "use server";
+  await requireAdminUser();
+  await deleteModuleBackshellCompat({
+    modulePartId: requireFormField(formData, "modulePartId"),
+    backshellPartId: requireFormField(formData, "backshellPartId")
+  });
+  revalidatePath("/admin");
+}
+
+async function upsertModuleStrainReliefAction(formData: FormData) {
+  "use server";
+  await requireAdminUser();
+  await upsertModuleStrainReliefCompat({
+    modulePartId: requireFormField(formData, "modulePartId"),
+    strainReliefPartId: requireFormField(formData, "strainReliefPartId"),
+    status: parseCompatStatus(requireFormField(formData, "status"))
+  });
+  revalidatePath("/admin");
+}
+
+async function deleteModuleStrainReliefAction(formData: FormData) {
+  "use server";
+  await requireAdminUser();
+  await deleteModuleStrainReliefCompat({
+    modulePartId: requireFormField(formData, "modulePartId"),
+    strainReliefPartId: requireFormField(formData, "strainReliefPartId")
+  });
+  revalidatePath("/admin");
+}
+
+async function upsertAliasAction(formData: FormData) {
+  "use server";
+  await requireAdminUser();
+  await upsertPartAlias({
+    partId: requireFormField(formData, "partId"),
+    codeSystem: requireFormField(formData, "codeSystem"),
+    code: requireFormField(formData, "code")
+  });
+  revalidatePath("/admin");
+}
+
+async function deleteAliasAction(formData: FormData) {
+  "use server";
+  await requireAdminUser();
+  await deletePartAlias({
+    codeSystem: requireFormField(formData, "codeSystem"),
+    code: requireFormField(formData, "code")
+  });
+  revalidatePath("/admin");
+}
+
 export default async function AdminOverviewPage({ searchParams }: { searchParams: AdminPageSearchParams }) {
   const signedInUser = await requireAdminUser();
   const { q, category, family, awg, color } = await searchParams;
-  const [users, projects, items, pageDescriptions] = await Promise.all([
-    listAdminUsers(),
-    listAdminProjectOverview(),
-    listLibraryComponents({
-      q,
-      category,
-      family,
-      awg,
-      color
-    }),
-    getPageDescriptions()
-  ]);
-  const [
-    contactFieldDefinitions,
-    wireFieldDefinitions,
-    sleeveTubeBraidFieldDefinitions,
-    labelFieldDefinitions,
-    backshellFieldDefinitions,
-    strainReliefFieldDefinitions,
-    moduleFieldDefinitions,
-    spliceFieldDefinitions
-  ] = await Promise.all([
-    listLibraryFieldDefinitions("contact"),
-    listLibraryFieldDefinitions("wire"),
-    listLibraryFieldDefinitions("sleeve-tube-braid"),
-    listLibraryFieldDefinitions("label"),
-    listLibraryFieldDefinitions("backshell"),
-    listLibraryFieldDefinitions("strain-relief"),
-    listLibraryFieldDefinitions("module"),
-    listLibraryFieldDefinitions("splice")
-  ]);
+  const [users, projects, items, pageDescriptions, contactWire, moduleContact, moduleBackshell, moduleStrainRelief, aliases] =
+    await Promise.all([
+      listAdminUsers(),
+      listAdminProjectOverview(),
+      listLibraryComponents({
+        q,
+        category,
+        family,
+        awg,
+        color
+      }),
+      getPageDescriptions(),
+      listContactWireCompat(),
+      listModuleContactCompat(),
+      listModuleBackshellCompat(),
+      listModuleStrainReliefCompat(),
+      listPartAliases()
+    ]);
 
   const projectsByUserId = new Map<
     string,
@@ -489,20 +516,41 @@ export default async function AdminOverviewPage({ searchParams }: { searchParams
               createAction={createItemAction}
               editAction={editItemAction}
               deleteAction={deleteItemAction}
-              createFieldDefinitionAction={createFieldDefinitionAction}
-              updateFieldDefinitionAction={updateFieldDefinitionAction}
-              deleteFieldDefinitionAction={deleteFieldDefinitionAction}
               currentUserId={signedInUser.id}
-              fieldDefinitionsByCategory={{
-                contact: contactFieldDefinitions,
-                wire: wireFieldDefinitions,
-                "sleeve-tube-braid": sleeveTubeBraidFieldDefinitions,
-                label: labelFieldDefinitions,
-                backshell: backshellFieldDefinitions,
-                "strain-relief": strainReliefFieldDefinitions,
-                module: moduleFieldDefinitions,
-                splice: spliceFieldDefinitions
-              }}
+            />
+          </details>
+        </section>
+
+        <section className={`${styles.card} ${styles.sectionPanel}`}>
+          <details>
+            <summary className={styles.sectionSummary}>
+              <span className={styles.sectionTitle}>Section 3: Compatibility &amp; Aliases</span>
+              <span className={styles.sectionHint}>
+                {contactWire.length +
+                  moduleContact.length +
+                  moduleBackshell.length +
+                  moduleStrainRelief.length +
+                  aliases.length}{" "}
+                rows - expand panel
+              </span>
+            </summary>
+            <CompatibilityManager
+              items={items}
+              contactWire={contactWire}
+              moduleContact={moduleContact}
+              moduleBackshell={moduleBackshell}
+              moduleStrainRelief={moduleStrainRelief}
+              aliases={aliases}
+              upsertContactWireAction={upsertContactWireAction}
+              deleteContactWireAction={deleteContactWireAction}
+              upsertModuleContactAction={upsertModuleContactAction}
+              deleteModuleContactAction={deleteModuleContactAction}
+              upsertModuleBackshellAction={upsertModuleBackshellAction}
+              deleteModuleBackshellAction={deleteModuleBackshellAction}
+              upsertModuleStrainReliefAction={upsertModuleStrainReliefAction}
+              deleteModuleStrainReliefAction={deleteModuleStrainReliefAction}
+              upsertAliasAction={upsertAliasAction}
+              deleteAliasAction={deleteAliasAction}
             />
           </details>
         </section>

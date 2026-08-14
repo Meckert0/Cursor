@@ -3,18 +3,32 @@ import { z } from "zod";
 import { requireProjectMembership } from "../auth/membership.js";
 import { requireRole } from "../auth/rbac.js";
 import { buildBom, createLibraryLookup } from "../domain/bom.js";
+import { createCompatLookup } from "../domain/compat-lookup.js";
 import { hashDesignSnapshot } from "../domain/snapshot-hash.js";
 import { validateSnapshot } from "../domain/validator.js";
 import type { DesignSnapshot, Revision } from "../domain/types.js";
 import type { Store } from "../infra/store/store.js";
 
 async function loadLibraryLookup(store: Store) {
-  const components = await store.listLibraryComponents({
-    requestingUserId: "system-bom",
-    canViewAllUnreviewed: true,
-    canViewInactive: true
-  });
-  return createLibraryLookup(components);
+  const [components, aliases] = await Promise.all([
+    store.listLibraryComponents({
+      requestingUserId: "system-bom",
+      canViewAllUnreviewed: true,
+      canViewInactive: true
+    }),
+    store.listPartAliases()
+  ]);
+  return createLibraryLookup(components, aliases);
+}
+
+async function loadCompatLookup(store: Store) {
+  const [contactWire, moduleContact, moduleBackshell, moduleStrainRelief] = await Promise.all([
+    store.listContactWireCompat(),
+    store.listModuleContactCompat(),
+    store.listModuleBackshellCompat(),
+    store.listModuleStrainReliefCompat()
+  ]);
+  return createCompatLookup({ contactWire, moduleContact, moduleBackshell, moduleStrainRelief });
 }
 
 function withSnapshotHash(revision: Revision) {
@@ -360,11 +374,13 @@ export function registerRevisionRoutes(app: FastifyInstance) {
     }
 
     const libraryLookup = await loadLibraryLookup(app.store);
+    const compatLookup = await loadCompatLookup(app.store);
     const startedAt = Date.now();
     let report;
     try {
       report = validateSnapshot(revision.snapshot, {
         libraryLookup,
+        compatLookup,
         rulesetVersion: resolvedRulesetVersion,
         mode: body.mode,
         policy: {

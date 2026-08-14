@@ -59,25 +59,21 @@ export const LIBRARY_ITEM_CATEGORIES = [
 
 export type LibraryItemCategory = (typeof LIBRARY_ITEM_CATEGORIES)[number];
 
-export interface LibraryComponentDto {
+export type CompatStatus = "allowed" | "forbidden" | "review";
+
+export type PartAttributesDto = Record<string, unknown>;
+
+export interface PartDto {
   id: string;
   category: LibraryItemCategory;
   family: string;
   partNumber: string;
   description: string;
-  awg?: string;
-  color?: string;
   isActive: boolean;
   isReviewed: boolean;
   reviewedByUserId?: string;
   reviewedAt?: string;
-  stockStatus: "in_stock" | "low_stock" | "out_of_stock";
-  compatibilityHints: string[];
-  pinCount?: number;
-  pinIds?: string[];
-  acceptedAwgMin?: number;
-  acceptedAwgMax?: number;
-  acceptedFamilies?: string[];
+  stockStatus: "in_stock" | "low_stock" | "out_of_stock" | "unknown";
   isArchived?: boolean;
   archivedAt?: string;
   archivedByUserId?: string;
@@ -86,30 +82,45 @@ export interface LibraryComponentDto {
   lastEditedByUserId: string;
   lastEditedAt: string;
   updatedAt: string;
-  customFieldValues: Record<string, string>;
+  attributes: PartAttributesDto;
 }
+
+/** @deprecated Prefer PartDto. Alias kept for call-site churn. */
+export type LibraryComponentDto = PartDto;
 
 interface ListLibraryComponentsResponse {
-  items: LibraryComponentDto[];
+  items: PartDto[];
 }
 
-export interface LibraryFieldDefinitionDto {
-  id: string;
-  category: LibraryComponentDto["category"];
-  key: string;
-  label: string;
-  valueType: "text";
-  isSystem: boolean;
-  isVisibleInViewer: boolean;
-  showOnAddForm: boolean;
-  showInSearch: boolean;
-  createdByUserId: string;
-  createdAt: string;
-  updatedAt: string;
+export interface ContactWireCompatDto {
+  contactPartId: string;
+  wirePartId: string;
+  status: CompatStatus;
+  notes?: string;
 }
 
-interface ListLibraryFieldDefinitionsResponse {
-  items: LibraryFieldDefinitionDto[];
+export interface ModuleContactCompatDto {
+  modulePartId: string;
+  contactPartId: string;
+  status: CompatStatus;
+}
+
+export interface ModuleBackshellCompatDto {
+  modulePartId: string;
+  backshellPartId: string;
+  status: CompatStatus;
+}
+
+export interface ModuleStrainReliefCompatDto {
+  modulePartId: string;
+  strainReliefPartId: string;
+  status: CompatStatus;
+}
+
+export interface PartAliasDto {
+  partId: string;
+  codeSystem: string;
+  code: string;
 }
 
 export interface LibraryTablePreferencesDto {
@@ -137,20 +148,12 @@ export interface LibraryIngestItemDto {
   family: string;
   partNumber: string;
   description: string;
-  awg?: string;
-  color?: string;
   isActive: boolean;
   stockStatus: LibraryComponentDto["stockStatus"];
-  compatibilityHints: string[];
-  pinCount?: number;
-  pinIds?: string[];
-  acceptedAwgMin?: number;
-  acceptedAwgMax?: number;
-  acceptedFamilies?: string[];
   isReviewed: boolean;
   reviewedByUserId?: string;
   reviewedAt?: string;
-  customFieldValues?: Record<string, string>;
+  attributes: PartAttributesDto;
 }
 
 export interface LibraryIngestResultDto {
@@ -244,6 +247,7 @@ export interface RevisionDto {
       fromConnectorId: string;
       toConnectorId: string;
       pathType: string;
+      wirelistManaged?: boolean;
       length?: number;
       sleeving?: "none" | "expandable_sleeving" | "wire_braid_under_expandable_sleeving";
       wireComponentId?: string;
@@ -258,6 +262,8 @@ export interface RevisionDto {
       labelPartNumber?: string;
       labelText?: string;
       notes?: string;
+      fromLocation?: string;
+      toLocation?: string;
     }>;
     pinMappings: Array<{
       id: string;
@@ -384,7 +390,10 @@ interface ApiRequestOptions {
 }
 
 function getApiBaseUrl(): string {
-  return process.env.API_BASE_URL ?? "http://localhost:3000";
+  if (typeof window === "undefined") {
+    return process.env.API_BASE_URL ?? "http://localhost:3000";
+  }
+  return "";
 }
 
 function getDefaultHeaders(): Record<string, string> {
@@ -406,7 +415,7 @@ async function getForwardedCookieHeader(): Promise<string | undefined> {
     const cookieStore = await headersModule.cookies();
     const cookieHeader = cookieStore
       .getAll()
-      .map((entry) => `${entry.name}=${encodeURIComponent(entry.value)}`)
+      .map((entry) => `${entry.name}=${entry.value}`)
       .join("; ");
     return cookieHeader || undefined;
   } catch {
@@ -661,16 +670,8 @@ export function updateLibraryComponent(input: {
   partNumber?: string;
   family?: string;
   description?: string;
-  awg?: string;
-  color?: string;
   isActive?: boolean;
   stockStatus?: LibraryComponentDto["stockStatus"];
-  compatibilityHints?: string[];
-  pinCount?: number;
-  pinIds?: string[];
-  acceptedAwgMin?: number;
-  acceptedAwgMax?: number;
-  acceptedFamilies?: string[];
   isReviewed?: boolean;
   reviewedByUserId?: string;
   reviewedAt?: string;
@@ -678,7 +679,7 @@ export function updateLibraryComponent(input: {
   createdAt?: string;
   lastEditedByUserId?: string;
   lastEditedAt?: string;
-  customFieldValues?: Record<string, string>;
+  attributes?: PartAttributesDto;
 }): Promise<LibraryComponentDto> {
   return apiRequest<LibraryComponentDto>(`/v1/library/components/${input.componentId}`, {
     method: "PATCH",
@@ -686,16 +687,8 @@ export function updateLibraryComponent(input: {
       partNumber: input.partNumber,
       family: input.family,
       description: input.description,
-      awg: input.awg,
-      color: input.color,
       isActive: input.isActive,
       stockStatus: input.stockStatus,
-      compatibilityHints: input.compatibilityHints,
-      pinCount: input.pinCount,
-      pinIds: input.pinIds,
-      acceptedAwgMin: input.acceptedAwgMin,
-      acceptedAwgMax: input.acceptedAwgMax,
-      acceptedFamilies: input.acceptedFamilies,
       isReviewed: input.isReviewed,
       reviewedByUserId: input.reviewedByUserId,
       reviewedAt: input.reviewedAt,
@@ -703,60 +696,138 @@ export function updateLibraryComponent(input: {
       createdAt: input.createdAt,
       lastEditedByUserId: input.lastEditedByUserId,
       lastEditedAt: input.lastEditedAt,
-      customFieldValues: input.customFieldValues
+      attributes: input.attributes
     }
   });
 }
 
-export async function listLibraryFieldDefinitions(
-  category: LibraryComponentDto["category"]
-): Promise<LibraryFieldDefinitionDto[]> {
-  const response = await apiRequest<ListLibraryFieldDefinitionsResponse>(
-    `/v1/library/field-definitions/${encodeURIComponent(category)}`
+export async function listContactWireCompat(): Promise<ContactWireCompatDto[]> {
+  const response = await apiRequest<{ items: ContactWireCompatDto[] }>("/v1/library/compat/contact-wire");
+  return response.items;
+}
+
+export function upsertContactWireCompat(input: ContactWireCompatDto): Promise<ContactWireCompatDto> {
+  return apiRequest<ContactWireCompatDto>("/v1/library/compat/contact-wire", {
+    method: "PUT",
+    body: input
+  });
+}
+
+export async function deleteContactWireCompat(input: {
+  contactPartId: string;
+  wirePartId: string;
+}): Promise<void> {
+  const search = new URLSearchParams({
+    contactPartId: input.contactPartId,
+    wirePartId: input.wirePartId
+  });
+  await apiRequest<undefined>(`/v1/library/compat/contact-wire?${search.toString()}`, {
+    method: "DELETE"
+  });
+}
+
+export async function listModuleContactCompat(): Promise<ModuleContactCompatDto[]> {
+  const response = await apiRequest<{ items: ModuleContactCompatDto[] }>("/v1/library/compat/module-contact");
+  return response.items;
+}
+
+export function upsertModuleContactCompat(input: ModuleContactCompatDto): Promise<ModuleContactCompatDto> {
+  return apiRequest<ModuleContactCompatDto>("/v1/library/compat/module-contact", {
+    method: "PUT",
+    body: input
+  });
+}
+
+export async function deleteModuleContactCompat(input: {
+  modulePartId: string;
+  contactPartId: string;
+}): Promise<void> {
+  const search = new URLSearchParams({
+    modulePartId: input.modulePartId,
+    contactPartId: input.contactPartId
+  });
+  await apiRequest<undefined>(`/v1/library/compat/module-contact?${search.toString()}`, {
+    method: "DELETE"
+  });
+}
+
+export async function listModuleBackshellCompat(): Promise<ModuleBackshellCompatDto[]> {
+  const response = await apiRequest<{ items: ModuleBackshellCompatDto[] }>("/v1/library/compat/module-backshell");
+  return response.items;
+}
+
+export function upsertModuleBackshellCompat(input: ModuleBackshellCompatDto): Promise<ModuleBackshellCompatDto> {
+  return apiRequest<ModuleBackshellCompatDto>("/v1/library/compat/module-backshell", {
+    method: "PUT",
+    body: input
+  });
+}
+
+export async function deleteModuleBackshellCompat(input: {
+  modulePartId: string;
+  backshellPartId: string;
+}): Promise<void> {
+  const search = new URLSearchParams({
+    modulePartId: input.modulePartId,
+    backshellPartId: input.backshellPartId
+  });
+  await apiRequest<undefined>(`/v1/library/compat/module-backshell?${search.toString()}`, {
+    method: "DELETE"
+  });
+}
+
+export async function listModuleStrainReliefCompat(): Promise<ModuleStrainReliefCompatDto[]> {
+  const response = await apiRequest<{ items: ModuleStrainReliefCompatDto[] }>(
+    "/v1/library/compat/module-strain-relief"
   );
   return response.items;
 }
 
-export function createLibraryFieldDefinition(input: {
-  category: LibraryComponentDto["category"];
-  key: string;
-  label: string;
-  isVisibleInViewer: boolean;
-  showOnAddForm?: boolean;
-  showInSearch?: boolean;
-}): Promise<LibraryFieldDefinitionDto> {
-  return apiRequest<LibraryFieldDefinitionDto>(`/v1/library/field-definitions/${encodeURIComponent(input.category)}`, {
-    method: "POST",
-    body: {
-      key: input.key,
-      label: input.label,
-      isVisibleInViewer: input.isVisibleInViewer,
-      showOnAddForm: input.showOnAddForm,
-      showInSearch: input.showInSearch
-    }
+export function upsertModuleStrainReliefCompat(
+  input: ModuleStrainReliefCompatDto
+): Promise<ModuleStrainReliefCompatDto> {
+  return apiRequest<ModuleStrainReliefCompatDto>("/v1/library/compat/module-strain-relief", {
+    method: "PUT",
+    body: input
   });
 }
 
-export function updateLibraryFieldDefinition(input: {
-  fieldDefinitionId: string;
-  label?: string;
-  isVisibleInViewer?: boolean;
-  showOnAddForm?: boolean;
-  showInSearch?: boolean;
-}): Promise<LibraryFieldDefinitionDto> {
-  return apiRequest<LibraryFieldDefinitionDto>(`/v1/library/field-definitions/${encodeURIComponent(input.fieldDefinitionId)}`, {
-    method: "PATCH",
-    body: {
-      label: input.label,
-      isVisibleInViewer: input.isVisibleInViewer,
-      showOnAddForm: input.showOnAddForm,
-      showInSearch: input.showInSearch
-    }
+export async function deleteModuleStrainReliefCompat(input: {
+  modulePartId: string;
+  strainReliefPartId: string;
+}): Promise<void> {
+  const search = new URLSearchParams({
+    modulePartId: input.modulePartId,
+    strainReliefPartId: input.strainReliefPartId
+  });
+  await apiRequest<undefined>(`/v1/library/compat/module-strain-relief?${search.toString()}`, {
+    method: "DELETE"
   });
 }
 
-export async function deleteLibraryFieldDefinition(fieldDefinitionId: string): Promise<void> {
-  await apiRequest<undefined>(`/v1/library/field-definitions/${encodeURIComponent(fieldDefinitionId)}`, {
+export async function listPartAliases(input?: { partId?: string }): Promise<PartAliasDto[]> {
+  const search = new URLSearchParams();
+  if (input?.partId) {
+    search.set("partId", input.partId);
+  }
+  const suffix = search.size > 0 ? `?${search.toString()}` : "";
+  const response = await apiRequest<{ items: PartAliasDto[] }>(`/v1/library/aliases${suffix}`);
+  return response.items;
+}
+
+export function upsertPartAlias(input: PartAliasDto): Promise<PartAliasDto> {
+  return apiRequest<PartAliasDto>("/v1/library/aliases", {
+    method: "PUT",
+    body: input
+  });
+}
+
+export async function deletePartAlias(input: { codeSystem: string; code: string }): Promise<void> {
+  const search = new URLSearchParams({
+    codeSystem: input.codeSystem,
+    code: input.code
+  });
+  await apiRequest<undefined>(`/v1/library/aliases?${search.toString()}`, {
     method: "DELETE"
   });
 }

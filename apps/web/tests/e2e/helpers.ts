@@ -148,3 +148,78 @@ export async function registerUserViaApi(
 export function uniqueToken() {
   return Date.now();
 }
+
+async function getAdminSessionCookie(request: APIRequestContext): Promise<string> {
+  const password = "pass1234!";
+  const email = "meckert@vpc.com";
+  const register = await request.post(`${API_BASE_URL}/v1/auth/register`, {
+    data: {
+      username: `compat-admin-${Date.now()}`,
+      email,
+      password
+    },
+    failOnStatusCode: false
+  });
+  if (register.ok()) {
+    const body = (await register.json()) as { sessionToken: string };
+    return `cdt_session=${body.sessionToken}`;
+  }
+  const login = await request.post(`${API_BASE_URL}/v1/auth/login`, {
+    data: { email, password },
+    failOnStatusCode: false
+  });
+  expect(login.ok()).toBeTruthy();
+  const body = (await login.json()) as { sessionToken: string };
+  return `cdt_session=${body.sessionToken}`;
+}
+
+export async function ingestFullCableCatalog(request: APIRequestContext) {
+  const {
+    FULL_CABLE_CATALOG_ITEMS,
+    FULL_CABLE_MODULE_BACKSHELL_COMPAT,
+    FULL_CABLE_MODULE_STRAIN_RELIEF_COMPAT
+  } = await import("./fixtures/full-cable");
+  const ingest = await request.post(`${API_BASE_URL}/v1/library/components/ingest`, {
+    headers: {
+      "content-type": "application/json",
+      "x-role": "editor",
+      "x-user-id": "e2e-catalog-seed"
+    },
+    data: { items: FULL_CABLE_CATALOG_ITEMS }
+  });
+  expect(ingest.ok()).toBeTruthy();
+  for (const item of FULL_CABLE_CATALOG_ITEMS) {
+    const review = await request.post(`${API_BASE_URL}/v1/library/components/${item.id}/review`, {
+      headers: {
+        "content-type": "application/json",
+        "x-role": "owner",
+        "x-user-id": "e2e-catalog-reviewer"
+      },
+      data: {}
+    });
+    expect(review.ok()).toBeTruthy();
+  }
+
+  const adminCookie = await getAdminSessionCookie(request);
+  for (const row of FULL_CABLE_MODULE_BACKSHELL_COMPAT) {
+    const response = await request.put(`${API_BASE_URL}/v1/library/compat/module-backshell`, {
+      headers: {
+        cookie: adminCookie,
+        "content-type": "application/json"
+      },
+      data: row
+    });
+    expect(response.ok()).toBeTruthy();
+  }
+  for (const row of FULL_CABLE_MODULE_STRAIN_RELIEF_COMPAT) {
+    const response = await request.put(`${API_BASE_URL}/v1/library/compat/module-strain-relief`, {
+      headers: {
+        cookie: adminCookie,
+        "content-type": "application/json"
+      },
+      data: row
+    });
+    expect(response.ok()).toBeTruthy();
+  }
+}
+

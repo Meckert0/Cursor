@@ -1,4 +1,11 @@
 import type { LibraryComponentDto, RevisionDto } from "./api";
+import {
+  isCableSectionPath,
+  mergeSnapshotPaths,
+  normalizePathType,
+  partitionSnapshotPaths,
+  pinMappedPathIds
+} from "../../../../src/domain/path-roles";
 
 type NodePosition = {
   x: number;
@@ -69,7 +76,17 @@ export function buildSnapshotFromCanvas(
     positions: Record<string, NodePosition>;
   }
 ): RevisionDto["snapshot"] {
-  const pathIds = new Set(input.paths.map((path) => path.id));
+  const { wireRunPaths: baselineWireRuns } = partitionSnapshotPaths(baseline.paths, baseline.pinMappings);
+  const wireRunIds = new Set(baselineWireRuns.map((path) => path.id));
+  const cablePaths = input.paths
+    .filter((path) => !wireRunIds.has(path.id))
+    .map((path) => ({
+      ...path,
+      pathType: "cable" as const
+    }));
+  const wireRunPaths = baselineWireRuns;
+  const mergedPaths = mergeSnapshotPaths(cablePaths, wireRunPaths);
+  const pathIds = new Set(mergedPaths.map((path) => path.id));
   const connectorIds = new Set(input.connectors.map((connector) => connector.id));
 
   return {
@@ -82,7 +99,7 @@ export function buildSnapshotFromCanvas(
       ...junction,
       location: input.positions[junction.id] ?? junction.location
     })),
-    paths: input.paths,
+    paths: mergedPaths,
     pinMappings: baseline.pinMappings.filter(
       (mapping) =>
         pathIds.has(mapping.pathId) &&
@@ -137,7 +154,8 @@ export function loadInitialCanvasDraft(
 ): CanvasLocalDraft & { recoveredDirty: boolean } {
   const serverConnectors = normalizeUnassignedConnectors(snapshot.connectors);
   const serverJunctions = snapshot.junctions ?? [];
-  const serverPaths = normalizePathsWithWireDefaults(snapshot.paths);
+  const serverPaths = normalizePathsWithWireDefaults(snapshot.paths, snapshot.pinMappings);
+  const { cablePaths } = partitionSnapshotPaths(serverPaths, snapshot.pinMappings);
   const serverPositions = buildDefaultPositions(serverConnectors, serverJunctions);
   const draft = readRawCanvasLocalDraft(revisionId);
   const hasLegacyDirtyFlag = draft !== null && draft.dirty === undefined;
@@ -147,7 +165,7 @@ export function loadInitialCanvasDraft(
     return {
       connectors: serverConnectors,
       junctions: serverJunctions,
-      paths: serverPaths,
+      paths: cablePaths,
       positions: serverPositions,
       dirty: false,
       recoveredDirty: false
@@ -158,7 +176,10 @@ export function loadInitialCanvasDraft(
     Array.isArray(draft?.connectors) ? draft.connectors : serverConnectors
   );
   const junctions = Array.isArray(draft?.junctions) ? draft.junctions : serverJunctions;
-  const paths = Array.isArray(draft?.paths) ? normalizePathsWithWireDefaults(draft.paths) : serverPaths;
+  const draftPaths = Array.isArray(draft?.paths)
+    ? normalizePathsWithWireDefaults(draft.paths, snapshot.pinMappings)
+    : cablePaths;
+  const paths = draftPaths.filter((path) => isCableSectionPath(path, pinMappedPathIds(snapshot.pinMappings)));
   const draftPositions =
     draft?.positions && typeof draft.positions === "object" ? draft.positions : {};
   const legacyLayoutPositions = loadLegacyLayoutPositions(revisionId);
@@ -190,8 +211,6 @@ export function getSleevingLabel(value: SleevingValue): string {
   return SLEEVING_OPTIONS.find((option) => option.value === value)?.label ?? "no sleeving";
 }
 
-export const PIN_COUNT_FIELD_KEY = "pincount";
-
 export function parsePinCount(value: string): number | null {
   const normalized = value.trim();
   if (!normalized) {
@@ -215,10 +234,96 @@ export function buildConnectorPins(count: number): Connector["pins"] {
 }
 
 export function readPinCountFromComponent(component: LibraryComponentDto): number | null {
-  if (typeof component.pinCount === "number" && Number.isInteger(component.pinCount) && component.pinCount > 0) {
-    return component.pinCount;
+  const attrs = component.attributes as { pinCount?: unknown; pinIds?: unknown } | undefined;
+  if (typeof attrs?.pinCount === "number" && Number.isInteger(attrs.pinCount) && attrs.pinCount > 0) {
+    return attrs.pinCount;
   }
-  return parsePinCount(component.customFieldValues?.[PIN_COUNT_FIELD_KEY] ?? "");
+  if (Array.isArray(attrs?.pinIds) && attrs.pinIds.length > 0) {
+    return attrs.pinIds.length;
+  }
+  return null;
+}
+
+export function buildConnectorPinsFromComponent(component: LibraryComponentDto): Connector["pins"] {
+  const attrs = component.attributes as { pinIds?: unknown } | undefined;
+  if (Array.isArray(attrs?.pinIds) && attrs.pinIds.length > 0) {
+    return attrs.pinIds.map((pinId) => {
+      const number = String(pinId);
+      return { id: number, number };
+    });
+  }
+  return buildConnectorPins(readPinCountFromComponent(component) ?? 0);
+}
+
+export type AccessoryCompatStatus = "allowed" | "forbidden" | "review" | undefined;
+
+export type RankedAccessoryOption = {
+  component: LibraryComponentDto;
+  status: AccessoryCompatStatus;
+  /** Sort rank: allowed=0, unset=1, review=2, forbidden=3 */
+  rank: number;
+  label: string;
+};
+
+/**
+ * Rank accessory catalog options for a selected module using junction status.
+ * Forbidden options stay selectable but are labeled and sorted last.
+ */
+export function rankAccessoryOptionsForModule(
+  accessories: LibraryComponentDto[],
+  modulePartId: string | undefined,
+  statusByAccessoryId: Map<string, "allowed" | "forbidden" | "review">
+): RankedAccessoryOption[] {
+  const rankFor = (status: AccessoryCompatStatus): number => {
+    if (status === "allowed") return 0;
+    if (status === undefined) return 1;
+    if (status === "review") return 2;
+    return 3;
+  };
+  return accessories
+    .map((component) => {
+      const status = modulePartId ? statusByAccessoryId.get(component.id) : undefined;
+      const suffix =
+        status === "forbidden" ? " (forbidden)" : status === "review" ? " (review)" : status === "allowed" ? " (allowed)" : "";
+      return {
+        component,
+        status,
+        rank: rankFor(status),
+        label: `${component.partNumber}${component.description ? ` — ${component.description}` : ""}${suffix}`
+      };
+    })
+    .sort((left, right) => {
+      if (left.rank !== right.rank) {
+        return left.rank - right.rank;
+      }
+      return left.component.partNumber.localeCompare(right.component.partNumber);
+    });
+}
+
+export type AllowedAccessoryOption = {
+  component: LibraryComponentDto;
+  label: string;
+};
+
+/**
+ * Return only accessories explicitly marked allowed for the selected module.
+ * When no module is defined, returns an empty list.
+ */
+export function filterAllowedAccessoryOptionsForModule(
+  accessories: LibraryComponentDto[],
+  modulePartId: string | undefined,
+  statusByAccessoryId: Map<string, "allowed" | "forbidden" | "review">
+): AllowedAccessoryOption[] {
+  if (!modulePartId) {
+    return [];
+  }
+  return accessories
+    .filter((component) => statusByAccessoryId.get(component.id) === "allowed")
+    .map((component) => ({
+      component,
+      label: `${component.partNumber}${component.description ? ` — ${component.description}` : ""}`
+    }))
+    .sort((left, right) => left.component.partNumber.localeCompare(right.component.partNumber));
 }
 
 export function formatConnectorPinsLabel(connector: Connector): string {
@@ -238,12 +343,22 @@ export function normalizeUnassignedConnectors(connectors: Connector[]): Connecto
   });
 }
 
-export function normalizePathsWithWireDefaults(paths: RevisionDto["snapshot"]["paths"]): RevisionDto["snapshot"]["paths"] {
-  return paths.map((path, index) => ({
-    ...path,
-    wireName: path.wireName ?? `wire${index + 1}`,
-    sleeving: path.sleeving ?? "none"
-  }));
+export function normalizePathsWithWireDefaults(
+  paths: RevisionDto["snapshot"]["paths"],
+  pinMappings: RevisionDto["snapshot"]["pinMappings"] = []
+): RevisionDto["snapshot"]["paths"] {
+  const mappedPathIds = pinMappedPathIds(pinMappings);
+  return paths.map((path, index) => {
+    const pathType = normalizePathType(path, mappedPathIds);
+    return {
+      ...path,
+      pathType,
+      wireName:
+        path.wireName ??
+        (pathType === "cable" ? `cable${index + 1}` : `wire${index + 1}`),
+      sleeving: path.sleeving ?? "none"
+    };
+  });
 }
 
 export function readCanvasDraftSnapshot(
@@ -335,6 +450,7 @@ export function removeConnectorAndRelatedPaths(input: {
 
 export function buildUniqueWireSections(paths: Path[]): UniqueWireSection[] {
   return paths
+    .filter((path) => isCableSectionPath(path))
     .map((path) => ({
       pathId: path.id,
       wireName: path.wireName ?? path.id,
@@ -352,6 +468,7 @@ export function buildConnectorPairTotals(input: {
   junctions: Junction[];
   paths: Path[];
 }): ConnectorPairTotal[] {
+  const cablePaths = input.paths.filter((path) => isCableSectionPath(path));
   const nodeIds = new Set<string>([
     ...input.connectors.map((connector) => connector.id),
     ...input.junctions.map((junction) => junction.id)
@@ -361,7 +478,7 @@ export function buildConnectorPairTotals(input: {
     adjacency.set(nodeId, []);
   }
 
-  for (const path of input.paths) {
+  for (const path of cablePaths) {
     if (!nodeIds.has(path.fromConnectorId) || !nodeIds.has(path.toConnectorId)) {
       continue;
     }

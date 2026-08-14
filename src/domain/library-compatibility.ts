@@ -1,8 +1,12 @@
-import type { LibraryComponentIngestItem, LibraryComponentRecord } from "./library.js";
+import type {
+  ContactAttributes,
+  ModuleAttributes,
+  PartWithAttributes
+} from "./library.js";
 
 /**
  * Structured compatibility attributes consumed by the rules engine.
- * Values come from first-class LibraryComponentRecord columns (Priority 3).
+ * Values come from typed extension attributes on PartWithAttributes.
  */
 export interface LibraryCompatibility {
   pinCount?: number;
@@ -12,15 +16,27 @@ export interface LibraryCompatibility {
   acceptedFamilies?: string[];
 }
 
-function parsePositiveInt(value: string | undefined): number | undefined {
-  if (!value) {
-    return undefined;
+export function resolveLibraryCompatibility(part: PartWithAttributes): LibraryCompatibility {
+  if (part.category === "module") {
+    const attrs = part.attributes as ModuleAttributes;
+    return {
+      pinCount: attrs.pinCount,
+      pinIds: attrs.pinIds && attrs.pinIds.length > 0 ? attrs.pinIds : undefined
+    };
   }
-  const parsed = Number.parseInt(value, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+  if (part.category === "contact") {
+    const attrs = part.attributes as ContactAttributes;
+    return {
+      acceptedAwgMin: attrs.acceptedAwgMin,
+      acceptedAwgMax: attrs.acceptedAwgMax,
+      acceptedFamilies:
+        attrs.acceptedFamilies && attrs.acceptedFamilies.length > 0 ? attrs.acceptedFamilies : undefined
+    };
+  }
+  return {};
 }
 
-function parseAwgNumber(value: string | undefined): number | undefined {
+export function parseWireAwg(value: string | undefined): number | undefined {
   if (!value) {
     return undefined;
   }
@@ -30,72 +46,6 @@ function parseAwgNumber(value: string | undefined): number | undefined {
   }
   const parsed = Number.parseFloat(match[1]);
   return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-function parseList(value: string | undefined): string[] | undefined {
-  if (!value) {
-    return undefined;
-  }
-  const items = value
-    .split(/[,;|]/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-  return items.length > 0 ? items : undefined;
-}
-
-function readCustom(values: Record<string, string> | undefined, keys: string[]): string | undefined {
-  if (!values) {
-    return undefined;
-  }
-  for (const key of keys) {
-    const value = values[key]?.trim();
-    if (value) {
-      return value;
-    }
-  }
-  return undefined;
-}
-
-/**
- * Promote legacy customFieldValues compatibility keys into first-class fields
- * when the first-class value is absent (ingest/update write-path only).
- */
-export function promoteCompatibilityFields<T extends Partial<LibraryComponentIngestItem>>(
-  input: T
-): T & Pick<LibraryComponentIngestItem, "pinCount" | "pinIds" | "acceptedAwgMin" | "acceptedAwgMax" | "acceptedFamilies"> {
-  const values = input.customFieldValues ?? {};
-  const pinCount = input.pinCount ?? parsePositiveInt(readCustom(values, ["pinCount", "pin_count", "pincount"]));
-  const pinIds = input.pinIds ?? parseList(readCustom(values, ["pinIds", "pin_ids", "pins"]));
-  const acceptedAwgMin =
-    input.acceptedAwgMin ?? parseAwgNumber(readCustom(values, ["acceptedAwgMin", "accepted_awg_min"]));
-  const acceptedAwgMax =
-    input.acceptedAwgMax ?? parseAwgNumber(readCustom(values, ["acceptedAwgMax", "accepted_awg_max"]));
-  const acceptedFamilies =
-    input.acceptedFamilies ?? parseList(readCustom(values, ["acceptedFamilies", "accepted_families"]));
-
-  return {
-    ...input,
-    pinCount,
-    pinIds,
-    acceptedAwgMin,
-    acceptedAwgMax,
-    acceptedFamilies
-  };
-}
-
-export function resolveLibraryCompatibility(component: LibraryComponentRecord): LibraryCompatibility {
-  return {
-    pinCount: component.pinCount,
-    pinIds: component.pinIds && component.pinIds.length > 0 ? component.pinIds : undefined,
-    acceptedAwgMin: component.acceptedAwgMin,
-    acceptedAwgMax: component.acceptedAwgMax,
-    acceptedFamilies:
-      component.acceptedFamilies && component.acceptedFamilies.length > 0 ? component.acceptedFamilies : undefined
-  };
-}
-
-export function parseWireAwg(value: string | undefined): number | undefined {
-  return parseAwgNumber(value);
 }
 
 export function awgInAcceptedRange(

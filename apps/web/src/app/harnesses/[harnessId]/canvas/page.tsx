@@ -7,12 +7,14 @@ import {
   getRevision,
   ingestLibraryComponents,
   listLibraryComponents,
-  listLibraryFieldDefinitions,
+  listModuleBackshellCompat,
+  listModuleStrainReliefCompat,
   updateHarness,
   updateRevisionSnapshot,
   type RevisionDto
 } from "@/lib/api";
 import { requireSignedInUser } from "@/lib/auth";
+import { collectAttributesFromFormData } from "@/lib/part-fields";
 import { HarnessDescriptionField } from "./harness-description-field";
 import styles from "./page.module.css";
 
@@ -35,10 +37,6 @@ export default async function HarnessCanvasPage({
   const adminIsViewingAnotherUsersCanvas = signedInUser.accountRole === "admin" && harness.createdBy !== signedInUser.id;
   const isReadOnly = adminIsViewingAnotherUsersCanvas && mode !== "edit";
   const revision = await getRevision(harness.currentRevisionId);
-  const wireCatalog = await listLibraryComponents({
-    category: "wire",
-    isActive: true
-  });
   const connectorCatalog = connectorCatalogOnly(
     await listLibraryComponents({
       category: "module",
@@ -53,65 +51,10 @@ export default async function HarnessCanvasPage({
     category: "strain-relief",
     isActive: true
   });
-  const connectorFieldDefinitions = await listLibraryFieldDefinitions("module").catch(() => []);
-
-  async function quickAddWireAction(formData: FormData) {
-    "use server";
-    if (isReadOnly) {
-      return {
-        ok: false,
-        error: "Switch to edit mode to add wires.",
-        wireCatalog: await listLibraryComponents({ category: "wire", isActive: true })
-      };
-    }
-    const partNumber = String(formData.get("partNumber") ?? "").trim();
-    const awg = String(formData.get("awg") ?? "").trim();
-    const color = String(formData.get("color") ?? "").trim();
-    if (!partNumber || !awg || !color) {
-      return {
-        ok: false,
-        error: "Part number, AWG, and color are required.",
-        wireCatalog: await listLibraryComponents({ category: "wire", isActive: true })
-      };
-    }
-    try {
-      const ingestResult = await ingestLibraryComponents({
-        idempotencyKey: `wire-quick-add:${partNumber}:${awg}:${color}:${Date.now()}`,
-        items: [
-          {
-            category: "wire",
-            family: "User entered wire",
-            partNumber,
-            description: `User-entered wire ${partNumber} (${awg} AWG, ${color})`,
-            awg,
-            color,
-            isActive: true,
-            stockStatus: "in_stock",
-            compatibilityHints: [],
-            isReviewed: false
-          }
-        ]
-      });
-      const createdId = ingestResult.results.find((row) => row.status === "committed")?.componentId;
-      const refreshedWireCatalog = await listLibraryComponents({
-        category: "wire",
-        isActive: true
-      });
-      revalidatePath(`/harnesses/${harness.id}/canvas`);
-      return {
-        ok: true,
-        notice: createdId ? "Wire added as unreviewed entry." : "Wire ingest request completed.",
-        newWireComponentId: createdId,
-        wireCatalog: refreshedWireCatalog
-      };
-    } catch (error) {
-      return {
-        ok: false,
-        error: error instanceof Error ? error.message : "Wire quick-add failed.",
-        wireCatalog: await listLibraryComponents({ category: "wire", isActive: true })
-      };
-    }
-  }
+  const [moduleBackshellCompat, moduleStrainReliefCompat] = await Promise.all([
+    listModuleBackshellCompat(),
+    listModuleStrainReliefCompat()
+  ]);
 
   async function quickAddConnectorAction(formData: FormData) {
     "use server";
@@ -125,12 +68,7 @@ export default async function HarnessCanvasPage({
     const partNumber = String(formData.get("partNumber") ?? "").trim();
     const family = String(formData.get("family") ?? "").trim();
     const description = String(formData.get("description") ?? "").trim();
-    const customFieldValues = Object.fromEntries(
-      Array.from(formData.entries())
-        .filter(([key]) => key.startsWith("customField:"))
-        .map(([key, value]) => [key.replace("customField:", ""), String(value).trim()])
-        .filter(([, value]) => value.length > 0)
-    );
+    const attributes = collectAttributesFromFormData(formData, "module");
     if (!partNumber) {
       return {
         ok: false,
@@ -149,9 +87,8 @@ export default async function HarnessCanvasPage({
             description: description || `User-entered connector ${partNumber}`,
             isActive: true,
             stockStatus: "in_stock",
-            compatibilityHints: [],
             isReviewed: false,
-            customFieldValues
+            attributes
           }
         ]
       });
@@ -263,12 +200,11 @@ export default async function HarnessCanvasPage({
             revisionId={revision.id}
             snapshot={revision.snapshot}
             snapshotHash={revision.snapshotHash ?? ""}
-            wireCatalog={wireCatalog}
             connectorCatalog={connectorCatalog}
             backshellCatalog={backshellCatalog}
             strainReliefCatalog={strainReliefCatalog}
-            connectorFieldDefinitions={connectorFieldDefinitions}
-            quickAddWireAction={quickAddWireAction}
+            moduleBackshellCompat={moduleBackshellCompat}
+            moduleStrainReliefCompat={moduleStrainReliefCompat}
             quickAddConnectorAction={quickAddConnectorAction}
             saveCanvasAction={saveCanvasSnapshotAction}
             readOnly={isReadOnly}

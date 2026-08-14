@@ -10,50 +10,51 @@ export const LIBRARY_CATEGORIES = [
 ] as const;
 
 export type LibraryCategory = (typeof LIBRARY_CATEGORIES)[number];
-export type LibraryStockStatus = "in_stock" | "low_stock" | "out_of_stock";
-export type LibraryFieldValueType = "text";
+export type LibraryStockStatus = "in_stock" | "low_stock" | "out_of_stock" | "unknown";
 /** draft = unreviewed; reviewed_active = reviewed+active; inactive = reviewed but deactivated; archived = soft-deleted. */
 export type LibraryLifecycleStatus = "draft" | "reviewed_active" | "inactive" | "archived";
 
-export interface LibraryFieldDefinitionRecord {
-  id: string;
-  category: LibraryCategory;
-  key: string;
-  label: string;
-  valueType: LibraryFieldValueType;
-  isSystem: boolean;
-  isVisibleInViewer: boolean;
-  showOnAddForm: boolean;
-  showInSearch: boolean;
-  createdByUserId: string;
-  createdAt: string;
-  updatedAt: string;
+export type CompatStatus = "allowed" | "forbidden" | "review";
+
+export type PartAliasCodeSystem =
+  | "contact_3digit"
+  | "wire_3digit"
+  | "pc_designer_contact"
+  | "pc_designer_wire"
+  | "vendor_pn"
+  | string;
+
+export interface ModuleContactPosition {
+  contactSize: string;
+  contactFamily?: string;
+  pinCount: number;
 }
 
-export interface LibraryComponentRecord {
+export interface SleeveSizeRange {
+  minDia: number;
+  maxDia: number;
+  relatedPartId?: string;
+}
+
+export interface BackshellFitment {
+  familyType: string;
+  gender?: string;
+  backshellSize?: string;
+  emi?: boolean;
+}
+
+/** Shared identity + lifecycle for every catalog part (design doc §5.1). */
+export interface PartRecord {
   id: string;
   category: LibraryCategory;
   family: string;
   partNumber: string;
   description: string;
-  awg?: string;
-  color?: string;
   isActive: boolean;
   isReviewed: boolean;
   reviewedByUserId?: string;
   reviewedAt?: string;
   stockStatus: LibraryStockStatus;
-  compatibilityHints: string[];
-  /** Structured pin count for modules/connectors (rules + authoring). */
-  pinCount?: number;
-  /** Allowed pin ids/numbers from the manufacturer definition. */
-  pinIds?: string[];
-  /** Inclusive minimum accepted wire AWG for contacts/modules. */
-  acceptedAwgMin?: number;
-  /** Inclusive maximum accepted wire AWG for contacts/modules. */
-  acceptedAwgMax?: number;
-  /** Wire families accepted by this contact/module. */
-  acceptedFamilies?: string[];
   isArchived?: boolean;
   archivedAt?: string;
   archivedByUserId?: string;
@@ -62,34 +63,192 @@ export interface LibraryComponentRecord {
   lastEditedByUserId: string;
   lastEditedAt: string;
   updatedAt: string;
-  customFieldValues: Record<string, string>;
+  importBatchId?: string;
 }
 
-export interface LibraryReviewQueueRecord extends LibraryComponentRecord {
-  enteredByUserId: string;
-  enteredAt: string;
+export interface ModuleAttributes {
+  genre?: string;
+  gender?: string;
+  contactFamily1?: string;
+  pinCount?: number;
+  contactFamily2?: string;
+  pinCount2?: number;
+  emi?: boolean;
+  crimpGauge?: string;
+  contactSize?: string;
+  ampRating?: string;
+  operatingVoltage?: string;
+  operatingTemp?: string;
+  defaultProtectiveCoverPartId?: string;
+  insertArrangement?: string;
+  pinIds: string[];
+  contactPositions?: ModuleContactPosition[];
 }
 
-export interface LibraryComponentIngestItem {
+export interface ContactAttributes {
+  genre?: string;
+  gender?: string;
+  awg?: string;
+  plating?: string;
+  termType?: string;
+  ssCompatible?: boolean;
+  lengthAdded?: number;
+  acceptedAwgMin?: number;
+  acceptedAwgMax?: number;
+  acceptedFamilies: string[];
+  contactSize?: string;
+  studSize?: string;
+  tih?: boolean;
+}
+
+export interface WireAttributes {
+  milSpec?: string;
+  awg: string;
+  color: string;
+  cma?: number;
+  wireType?: string;
+  insulationMaterial?: string;
+  overallDia?: number;
+  conductorDia?: number;
+  numberOfConductors?: number;
+  tempMax?: number;
+  overallWireBraid?: boolean;
+  overallWireFoil?: boolean;
+  internalPairFoil?: boolean;
+  weightPerFt?: number;
+  k1?: number;
+  k2?: number;
+  lossCoefficient?: number;
+  maxFreq?: number;
+  impedance?: number;
+  maxVoltage?: number;
+}
+
+export interface LabelAttributes {
+  series?: string;
+  awgMin?: number;
+  awgMax?: number;
+  lengthIn?: number;
+  diaIn?: number;
+}
+
+export interface SleeveTubeBraidAttributes {
+  sizeRanges?: SleeveSizeRange[];
+}
+
+export interface BackshellAttributes {
+  keyingPartId?: string;
+  lengthAdded?: number;
+  bundleAllowance?: number;
+  fitments?: BackshellFitment[];
+}
+
+export interface StrainReliefAttributes {
+  gender?: string;
+  requiresBackshell?: boolean;
+  relatedModuleHintPartId?: string;
+}
+
+export interface SpliceAttributes {
+  conductorCount?: number;
+  awg?: string;
+  manufacturerPn?: string;
+  variant?: string;
+  cmaMin?: number;
+  cmaMax?: number;
+}
+
+export type CategoryAttributesMap = {
+  module: ModuleAttributes;
+  contact: ContactAttributes;
+  wire: WireAttributes;
+  label: LabelAttributes;
+  "sleeve-tube-braid": SleeveTubeBraidAttributes;
+  backshell: BackshellAttributes;
+  "strain-relief": StrainReliefAttributes;
+  splice: SpliceAttributes;
+};
+
+export type PartWithAttributes = {
+  [K in LibraryCategory]: PartRecord & { category: K; attributes: CategoryAttributesMap[K] };
+}[LibraryCategory];
+
+export interface PartAlias {
+  partId: string;
+  codeSystem: PartAliasCodeSystem;
+  code: string;
+}
+
+export interface ContactWireCompat {
+  contactPartId: string;
+  wirePartId: string;
+  status: CompatStatus;
+  notes?: string;
+  crimpClass?: string;
+}
+
+export interface ModuleContactCompat {
+  modulePartId: string;
+  contactPartId: string;
+  status: CompatStatus;
+  notes?: string;
+  source?: string;
+}
+
+export interface ModuleBackshellCompat {
+  modulePartId: string;
+  backshellPartId: string;
+  status: CompatStatus;
+  notes?: string;
+  source?: string;
+}
+
+export interface ModuleStrainReliefCompat {
+  modulePartId: string;
+  strainReliefPartId: string;
+  status: CompatStatus;
+  notes?: string;
+  source?: string;
+}
+
+export interface PartImportProvenance {
+  partId: string;
+  sourceSheet: string;
+  sourceRow?: number;
+  note?: string;
+}
+
+export interface PartComponent {
+  parentPartId: string;
+  childPartId: string;
+  quantity: number;
+  unit?: string;
+}
+
+export interface AwgCmaReference {
+  awg: string;
+  cma: number;
+}
+
+export type CompatPair =
+  | ({ kind: "contact-wire" } & ContactWireCompat)
+  | ({ kind: "module-contact" } & ModuleContactCompat)
+  | ({ kind: "module-backshell" } & ModuleBackshellCompat)
+  | ({ kind: "module-strain-relief" } & ModuleStrainReliefCompat);
+
+export interface PartIngestItem {
   id?: string;
   category: LibraryCategory;
   family: string;
   partNumber: string;
   description: string;
-  awg?: string;
-  color?: string;
   isActive: boolean;
   stockStatus: LibraryStockStatus;
-  compatibilityHints: string[];
-  pinCount?: number;
-  pinIds?: string[];
-  acceptedAwgMin?: number;
-  acceptedAwgMax?: number;
-  acceptedFamilies?: string[];
   isReviewed: boolean;
   reviewedByUserId?: string;
   reviewedAt?: string;
-  customFieldValues?: Record<string, string>;
+  attributes: CategoryAttributesMap[LibraryCategory];
+  aliases?: Array<{ codeSystem: string; code: string }>;
 }
 
 export interface LibraryIngestResultRow {
@@ -111,6 +270,14 @@ export interface LibraryIngestResult {
   results: LibraryIngestResultRow[];
 }
 
+export type LibraryReviewQueueRecord = PartWithAttributes & {
+  enteredByUserId: string;
+  enteredAt: string;
+};
+
+/** @deprecated Use PartWithAttributes. Kept as alias during migration of call sites. */
+export type LibraryComponentRecord = PartWithAttributes;
+
 export function resolveLibraryLifecycleStatus(component: {
   isReviewed: boolean;
   isActive: boolean;
@@ -128,269 +295,47 @@ export function resolveLibraryLifecycleStatus(component: {
   return "reviewed_active";
 }
 
-const SEED_AT = "2026-07-10T00:00:00.000Z";
-
-function pinSequence(count: number): string[] {
-  return Array.from({ length: count }, (_, index) => String(index + 1));
-}
-
-function seedComponent(
-  input: Omit<
-    LibraryComponentRecord,
-    | "createdByUserId"
-    | "createdAt"
-    | "lastEditedByUserId"
-    | "lastEditedAt"
-    | "updatedAt"
-    | "isReviewed"
-    | "reviewedByUserId"
-    | "reviewedAt"
-    | "customFieldValues"
-  > & {
-    isReviewed?: boolean;
-    reviewedByUserId?: string;
-    reviewedAt?: string;
-    customFieldValues?: Record<string, string>;
+export function emptyAttributesForCategory(category: LibraryCategory): CategoryAttributesMap[LibraryCategory] {
+  switch (category) {
+    case "module":
+      return { pinIds: [], contactPositions: [] };
+    case "contact":
+      return { acceptedFamilies: [] };
+    case "wire":
+      return { awg: "", color: "" };
+    case "label":
+      return {};
+    case "sleeve-tube-braid":
+      return { sizeRanges: [] };
+    case "backshell":
+      return { fitments: [] };
+    case "strain-relief":
+      return {};
+    case "splice":
+      return {};
   }
-): LibraryComponentRecord {
-  const isReviewed = input.isReviewed ?? true;
-  return {
-    ...input,
-    isReviewed,
-    reviewedByUserId: isReviewed ? (input.reviewedByUserId ?? "seed") : undefined,
-    reviewedAt: isReviewed ? (input.reviewedAt ?? SEED_AT) : undefined,
-    createdByUserId: "seed",
-    createdAt: SEED_AT,
-    lastEditedByUserId: "seed",
-    lastEditedAt: SEED_AT,
-    updatedAt: SEED_AT,
-    customFieldValues: input.customFieldValues ?? {}
-  };
 }
 
-function seedModule(input: {
-  id: string;
-  partNumber: string;
-  description: string;
-  family?: string;
-  pinCount: number;
-  acceptedAwgMin?: number;
-  acceptedAwgMax?: number;
-  acceptedFamilies?: string[];
-}): LibraryComponentRecord {
-  const pinIds = pinSequence(input.pinCount);
-  return seedComponent({
-    id: input.id,
-    category: "module",
-    family: input.family ?? "Micro-D",
-    partNumber: input.partNumber,
-    description: input.description,
-    isActive: true,
-    stockStatus: "in_stock",
-    compatibilityHints: [],
-    pinCount: input.pinCount,
-    pinIds,
-    acceptedAwgMin: input.acceptedAwgMin ?? 20,
-    acceptedAwgMax: input.acceptedAwgMax ?? 26,
-    acceptedFamilies: input.acceptedFamilies ?? ["MIL-W-22759"],
-    customFieldValues: { pins: pinIds.join(",") }
-  });
+export function isWirePart(
+  part: PartWithAttributes
+): part is PartRecord & { category: "wire"; attributes: WireAttributes } {
+  return part.category === "wire";
 }
 
-/**
- * Starter catalog for a fresh install. Covers every category needed to author one
- * complete cable from active, reviewed library entries. Seeded identically by
- * memory, sqlite, and postgres backends.
- */
-export const DEFAULT_LIBRARY_COMPONENTS: LibraryComponentRecord[] = [
-  seedModule({
-    id: "cmp-module-9p",
-    partNumber: "MDM-9P",
-    description: "9-pin Micro-D connector module",
-    pinCount: 9
-  }),
-  seedModule({
-    id: "cmp-module-001",
-    partNumber: "MDM-15P",
-    description: "15-pin Micro-D connector module",
-    pinCount: 15
-  }),
-  seedModule({
-    id: "cmp-module-25p",
-    partNumber: "DSUB-25P",
-    description: "25-pin D-Sub connector module",
-    family: "D-Sub",
-    pinCount: 25,
-    acceptedAwgMin: 18,
-    acceptedAwgMax: 24
-  }),
-  seedComponent({
-    id: "cmp-contact-001",
-    category: "contact",
-    family: "Micro-D",
-    partNumber: "CNT-22",
-    description: "Size 22 Micro-D socket contact",
-    isActive: true,
-    stockStatus: "in_stock",
-    compatibilityHints: ["Pairs with MDM-9P / MDM-15P"],
-    acceptedAwgMin: 20,
-    acceptedAwgMax: 26,
-    acceptedFamilies: ["MIL-W-22759"]
-  }),
-  seedComponent({
-    id: "cmp-contact-20",
-    category: "contact",
-    family: "Micro-D",
-    partNumber: "CNT-20",
-    description: "Size 20 Micro-D socket contact",
-    isActive: true,
-    stockStatus: "in_stock",
-    compatibilityHints: [],
-    acceptedAwgMin: 18,
-    acceptedAwgMax: 22,
-    acceptedFamilies: ["MIL-W-22759"]
-  }),
-  seedComponent({
-    id: "cmp-wire-001",
-    category: "wire",
-    family: "MIL-W-22759",
-    partNumber: "M22759/16-22",
-    description: "22 AWG PTFE wire, white",
-    awg: "22",
-    color: "white",
-    isActive: true,
-    stockStatus: "in_stock",
-    compatibilityHints: []
-  }),
-  seedComponent({
-    id: "cmp-wire-22-blk",
-    category: "wire",
-    family: "MIL-W-22759",
-    partNumber: "M22759/16-22-BLK",
-    description: "22 AWG PTFE wire, black",
-    awg: "22",
-    color: "black",
-    isActive: true,
-    stockStatus: "in_stock",
-    compatibilityHints: []
-  }),
-  seedComponent({
-    id: "cmp-wire-20-wht",
-    category: "wire",
-    family: "MIL-W-22759",
-    partNumber: "M22759/16-20",
-    description: "20 AWG PTFE wire, white",
-    awg: "20",
-    color: "white",
-    isActive: true,
-    stockStatus: "in_stock",
-    compatibilityHints: []
-  }),
-  seedComponent({
-    id: "cmp-label-001",
-    category: "label",
-    family: "Heatshrink",
-    partNumber: "LBL-22",
-    description: "Heatshrink wire marker, 22 AWG",
-    isActive: true,
-    stockStatus: "in_stock",
-    compatibilityHints: []
-  }),
-  seedComponent({
-    id: "cmp-label-hs",
-    category: "label",
-    family: "Heatshrink",
-    partNumber: "LBL-HS-025",
-    description: "Heatshrink cable label, 0.25 in",
-    isActive: true,
-    stockStatus: "in_stock",
-    compatibilityHints: []
-  }),
-  seedComponent({
-    id: "cmp-sleeve-exp",
-    category: "sleeve-tube-braid",
-    family: "Expandable",
-    partNumber: "SLV-EXP-025",
-    description: "Expandable PET sleeving, 0.25 in",
-    isActive: true,
-    stockStatus: "in_stock",
-    compatibilityHints: ["Maps to expandable_sleeving"]
-  }),
-  seedComponent({
-    id: "cmp-sleeve-braid",
-    category: "sleeve-tube-braid",
-    family: "Braided",
-    partNumber: "SLV-BRAID-025",
-    description: "Tinned copper braid under expandable sleeving, 0.25 in",
-    isActive: true,
-    stockStatus: "in_stock",
-    compatibilityHints: ["Maps to wire_braid_under_expandable_sleeving"]
-  }),
-  seedComponent({
-    id: "cmp-backshell-001",
-    category: "backshell",
-    family: "EMI",
-    partNumber: "BS-EMI-09",
-    description: "EMI backshell for 9-pin Micro-D (deprecated)",
-    isActive: false,
-    stockStatus: "out_of_stock",
-    compatibilityHints: ["Deprecated for new designs; use BS-EMI-09A replacement"]
-  }),
-  seedComponent({
-    id: "cmp-backshell-09a",
-    category: "backshell",
-    family: "EMI",
-    partNumber: "BS-EMI-09A",
-    description: "EMI backshell for 9-pin Micro-D",
-    isActive: true,
-    stockStatus: "in_stock",
-    compatibilityHints: ["Fits MDM-9P"]
-  }),
-  seedComponent({
-    id: "cmp-backshell-15",
-    category: "backshell",
-    family: "EMI",
-    partNumber: "BS-EMI-15",
-    description: "EMI backshell for 15-pin Micro-D",
-    isActive: true,
-    stockStatus: "in_stock",
-    compatibilityHints: ["Fits MDM-15P"]
-  }),
-  seedComponent({
-    id: "cmp-sr-09",
-    category: "strain-relief",
-    family: "Clamp",
-    partNumber: "SR-CLAMP-09",
-    description: "Strain-relief clamp for 9-pin Micro-D",
-    isActive: true,
-    stockStatus: "in_stock",
-    compatibilityHints: ["Fits MDM-9P / BS-EMI-09A"]
-  }),
-  seedComponent({
-    id: "cmp-sr-15",
-    category: "strain-relief",
-    family: "Clamp",
-    partNumber: "SR-CLAMP-15",
-    description: "Strain-relief clamp for 15-pin Micro-D",
-    isActive: true,
-    stockStatus: "in_stock",
-    compatibilityHints: ["Fits MDM-15P / BS-EMI-15"]
-  })
-];
+export function isModulePart(
+  part: PartWithAttributes
+): part is PartRecord & { category: "module"; attributes: ModuleAttributes } {
+  return part.category === "module";
+}
 
-/** Categories that must have at least one active, reviewed starter part. */
-export const STARTER_LIBRARY_ACTIVE_CATEGORIES = [
-  "module",
-  "contact",
-  "wire",
-  "label",
-  "sleeve-tube-braid",
-  "backshell",
-  "strain-relief"
-] as const satisfies readonly LibraryCategory[];
+export function isContactPart(
+  part: PartWithAttributes
+): part is PartRecord & { category: "contact"; attributes: ContactAttributes } {
+  return part.category === "contact";
+}
 
-export function listActiveReviewedStarterComponents(): LibraryComponentRecord[] {
-  return DEFAULT_LIBRARY_COMPONENTS.filter(
-    (component) => component.isActive && component.isReviewed && !component.isArchived
-  );
+export function isSleeveTubeBraidPart(
+  part: PartWithAttributes
+): part is PartRecord & { category: "sleeve-tube-braid"; attributes: SleeveTubeBraidAttributes } {
+  return part.category === "sleeve-tube-braid";
 }

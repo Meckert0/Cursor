@@ -1,5 +1,6 @@
 import type { LibraryLookup } from "./bom.js";
-import type { LibraryComponentRecord } from "./library.js";
+import type { CompatLookup } from "./compat-lookup.js";
+import { isWirePart, type CompatStatus, type LibraryComponentRecord } from "./library.js";
 import {
   awgInAcceptedRange,
   familyAccepted,
@@ -19,6 +20,7 @@ import type { DesignSnapshot, ValidationIssue, ValidationReport } from "./types.
 
 export interface ValidateSnapshotOptions {
   libraryLookup?: LibraryLookup;
+  compatLookup?: CompatLookup;
   rulesetVersion?: string;
   mode?: ValidationMode;
   policy?: ValidationPolicyOverrides;
@@ -379,7 +381,9 @@ export function validateSnapshot(snapshot: DesignSnapshot, options: ValidateSnap
         }
       }
 
-      const wireAwgValue = path.wireAwg ?? wireComponent?.awg;
+      const wireAwgValue =
+        path.wireAwg ??
+        (wireComponent && isWirePart(wireComponent) ? wireComponent.attributes.awg : undefined);
       const wireAwg = parseWireAwg(wireAwgValue);
 
       if (
@@ -406,6 +410,10 @@ export function validateSnapshot(snapshot: DesignSnapshot, options: ValidateSnap
           categories: ["module", "contact"]
         });
         if (!connectorComponent) {
+          continue;
+        }
+        // Contacts own accepted_*; modules no longer carry family/AWG restrictions.
+        if (connectorComponent.category !== "contact") {
           continue;
         }
         const compatibility = resolveLibraryCompatibility(connectorComponent);
@@ -459,6 +467,102 @@ export function validateSnapshot(snapshot: DesignSnapshot, options: ValidateSnap
             });
           }
         }
+        if (wireComponent && options.compatLookup) {
+          emitCompatFinding(emit, {
+            code: "RULE_COMPAT_CONTACT_WIRE",
+            status: options.compatLookup.contactWire(contactComponent.id, wireComponent.id),
+            entityType: "path",
+            entityId: path.id,
+            leftLabel: `Contact "${contactComponent.partNumber}"`,
+            rightLabel: `wire "${wireComponent.partNumber}"`
+          });
+        }
+      }
+
+      // Module ↔ contact pairs when both ends resolve.
+      for (const connectorId of endpointConnectorIds) {
+        const connector = connectorById.get(connectorId);
+        if (!connector || !options.compatLookup) {
+          continue;
+        }
+        const moduleComponent = resolveComponent(lookup, {
+          libraryComponentId: connector.libraryComponentId,
+          partNumber: connector.partNumber,
+          categories: "module"
+        });
+        if (!moduleComponent || moduleComponent.category !== "module") {
+          continue;
+        }
+        for (const contactPartNumber of [path.fromContact, path.toContact]) {
+          if (!contactPartNumber?.trim()) {
+            continue;
+          }
+          const contactComponent = resolveComponent(lookup, {
+            partNumber: contactPartNumber,
+            categories: "contact"
+          });
+          if (!contactComponent) {
+            continue;
+          }
+          emitCompatFinding(emit, {
+            code: "RULE_COMPAT_MODULE_CONTACT",
+            status: options.compatLookup.moduleContact(moduleComponent.id, contactComponent.id),
+            entityType: "path",
+            entityId: path.id,
+            leftLabel: `Module "${moduleComponent.partNumber}"`,
+            rightLabel: `contact "${contactComponent.partNumber}"`
+          });
+        }
+      }
+    }
+
+    // Module ↔ accessory (backshell / strain-relief) pairs on connectors.
+    if (options.compatLookup) {
+      for (const connector of snapshot.connectors) {
+        const moduleComponent = resolveComponent(lookup, {
+          libraryComponentId: connector.libraryComponentId,
+          partNumber: connector.partNumber,
+          categories: "module"
+        });
+        if (!moduleComponent || moduleComponent.category !== "module") {
+          continue;
+        }
+
+        if (connector.backshellLibraryComponentId || connector.backshellPartNumber?.trim()) {
+          const backshell = resolveComponent(lookup, {
+            libraryComponentId: connector.backshellLibraryComponentId,
+            partNumber: connector.backshellPartNumber,
+            categories: "backshell"
+          });
+          if (backshell) {
+            emitCompatFinding(emit, {
+              code: "RULE_COMPAT_MODULE_BACKSHELL",
+              status: options.compatLookup.moduleBackshell(moduleComponent.id, backshell.id),
+              entityType: "connector",
+              entityId: connector.id,
+              leftLabel: `Module "${moduleComponent.partNumber}"`,
+              rightLabel: `backshell "${backshell.partNumber}"`
+            });
+          }
+        }
+
+        if (connector.strainReliefLibraryComponentId || connector.strainReliefPartNumber?.trim()) {
+          const strainRelief = resolveComponent(lookup, {
+            libraryComponentId: connector.strainReliefLibraryComponentId,
+            partNumber: connector.strainReliefPartNumber,
+            categories: "strain-relief"
+          });
+          if (strainRelief) {
+            emitCompatFinding(emit, {
+              code: "RULE_COMPAT_MODULE_STRAIN_RELIEF",
+              status: options.compatLookup.moduleStrainRelief(moduleComponent.id, strainRelief.id),
+              entityType: "connector",
+              entityId: connector.id,
+              leftLabel: `Module "${moduleComponent.partNumber}"`,
+              rightLabel: `strain relief "${strainRelief.partNumber}"`
+            });
+          }
+        }
       }
     }
   }
@@ -474,6 +578,37 @@ export function validateSnapshot(snapshot: DesignSnapshot, options: ValidateSnap
   const infos = sortedIssues.filter((i) => i.severity === "info").length;
 
   return { errors, warnings, infos, results: sortedIssues };
+}
+
+function emitCompatFinding(
+  emit: (
+    code: RuleCode,
+    issue: Omit<ValidationIssue, "code" | "severity"> & { severity?: ValidationIssue["severity"] }
+  ) => void,
+  input: {
+    code:
+      | "RULE_COMPAT_CONTACT_WIRE"
+      | "RULE_COMPAT_MODULE_CONTACT"
+      | "RULE_COMPAT_MODULE_BACKSHELL"
+      | "RULE_COMPAT_MODULE_STRAIN_RELIEF";
+    status: CompatStatus | undefined;
+    entityType: string;
+    entityId: string;
+    leftLabel: string;
+    rightLabel: string;
+  }
+) {
+  if (!input.status || input.status === "allowed") {
+    return;
+  }
+  const severity = input.status === "forbidden" ? ("error" as const) : ("warning" as const);
+  const verb = input.status === "forbidden" ? "is forbidden" : "requires review";
+  emit(input.code, {
+    severity,
+    entityType: input.entityType,
+    entityId: input.entityId,
+    message: `${input.leftLabel} ${verb} with ${input.rightLabel} per catalog compatibility.`
+  });
 }
 
 function emitLibraryStatusIssues(

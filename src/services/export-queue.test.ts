@@ -48,25 +48,48 @@ async function seedRevision(store: MemoryStore) {
   });
 }
 
-async function waitForExport(
-  store: MemoryStore,
-  exportId: string,
-  predicate: (artifact: NonNullable<Awaited<ReturnType<MemoryStore["getExportArtifact"]>>>) => boolean
-) {
-  for (let attempt = 0; attempt < 40; attempt += 1) {
-    const current = await store.getExportArtifact(exportId);
-    if (current && predicate(current)) {
-      return current;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 25));
-  }
-  throw new Error(`Timed out waiting for export ${exportId}`);
-}
-
-test("export queue recovers interrupted processing jobs on startup", async () => {
+test("export queue recovers stale processing jobs then completes them", async () => {
   const store = new MemoryStore();
   const revision = await seedRevision(store);
   const artifact = await store.createExportArtifact({
+    revisionId: revision.id,
+    format: "json",
+    status: "processing"
+  });
+  const state = store.exportState();
+  const target = state.exports.find((item) => item.id === artifact.id);
+  assert.ok(target);
+  target.updatedAt = new Date("2020-01-01T00:00:00.000Z").toISOString();
+  const restored = MemoryStore.fromState(state);
+
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "cdt-export-"));
+  try {
+    const queue = new ExportQueueService(restored, new FileArtifactStorage(tempDir), {
+      maxAttempts: 3,
+      retryBaseDelayMs: 1,
+      retentionDays: 0,
+      staleProcessingMs: 60_000,
+      scheduleBackground: () => {},
+      now: () => new Date("2026-07-10T00:00:00.000Z")
+    });
+    const recovery = await queue.recoverOrphanedExports();
+    assert.equal(recovery.recovered, 1);
+    const due = await queue.processDueExports();
+    assert.equal(due.processed, 1);
+
+    const completed = await restored.getExportArtifact(artifact.id);
+    assert.equal(completed?.status, "completed");
+    assert.ok(completed?.contentHash);
+    assert.ok(completed?.artifactUri);
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("export queue does not recover fresh processing jobs", async () => {
+  const store = new MemoryStore();
+  const revision = await seedRevision(store);
+  await store.createExportArtifact({
     revisionId: revision.id,
     format: "json",
     status: "processing"
@@ -75,16 +98,12 @@ test("export queue recovers interrupted processing jobs on startup", async () =>
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "cdt-export-"));
   try {
     const queue = new ExportQueueService(store, new FileArtifactStorage(tempDir), {
-      maxAttempts: 3,
-      retryBaseDelayMs: 1,
-      retentionDays: 0
+      staleProcessingMs: 300_000,
+      scheduleBackground: () => {},
+      now: () => new Date()
     });
     const recovery = await queue.recoverOrphanedExports();
-    assert.equal(recovery.recovered, 1);
-
-    const completed = await waitForExport(store, artifact.id, (current) => current.status === "completed");
-    assert.ok(completed.contentHash);
-    assert.ok(completed.artifactUri);
+    assert.equal(recovery.recovered, 0);
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
@@ -94,8 +113,8 @@ test("export queue retries transient failures then completes", async () => {
   const store = new MemoryStore();
   const revision = await seedRevision(store);
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "cdt-export-"));
-  const delayedCallbacks: Array<() => void> = [];
   let saveAttempts = 0;
+  let currentTime = new Date("2026-07-10T00:00:00.000Z");
 
   class FlakyStorage extends FileArtifactStorage {
     override async saveArtifact(input: {
@@ -116,25 +135,26 @@ test("export queue retries transient failures then completes", async () => {
       maxAttempts: 3,
       retryBaseDelayMs: 60_000,
       retentionDays: 0,
-      scheduleDelayed: (callback) => {
-        delayedCallbacks.push(callback);
-      }
+      sameRequestRetryBudgetMs: 0,
+      scheduleBackground: () => {},
+      now: () => currentTime
     });
 
     const artifact = await queue.enqueueExport({ revisionId: revision.id, format: "json" });
-    const afterFailure = await waitForExport(
-      store,
-      artifact.id,
-      (current) => current.status === "queued" && current.attemptCount >= 1 && Boolean(current.nextAttemptAt)
-    );
-    assert.equal(afterFailure.failureKind, "transient");
-    assert.equal(afterFailure.attemptCount, 1);
-    assert.equal(delayedCallbacks.length, 1);
+    await queue.processUntilDone(artifact.id);
 
-    delayedCallbacks.shift()?.();
+    const afterFailure = await store.getExportArtifact(artifact.id);
+    assert.equal(afterFailure?.status, "queued");
+    assert.equal(afterFailure?.failureKind, "transient");
+    assert.equal(afterFailure?.attemptCount, 1);
+    assert.ok(afterFailure?.nextAttemptAt);
 
-    const completed = await waitForExport(store, artifact.id, (current) => current.status === "completed");
-    assert.equal(completed.attemptCount, 2);
+    currentTime = new Date("2026-07-10T00:01:00.000Z");
+    await queue.processUntilDone(artifact.id);
+
+    const completed = await store.getExportArtifact(artifact.id);
+    assert.equal(completed?.status, "completed");
+    assert.equal(completed?.attemptCount, 2);
     assert.equal(saveAttempts, 2);
   } finally {
     await rm(tempDir, { recursive: true, force: true });
@@ -156,13 +176,16 @@ test("export queue marks permanent failures without retry", async () => {
     const queue = new ExportQueueService(store, new PermanentFailStorage(tempDir), {
       maxAttempts: 3,
       retryBaseDelayMs: 1,
-      retentionDays: 0
+      retentionDays: 0,
+      scheduleBackground: () => {}
     });
     const artifact = await queue.enqueueExport({ revisionId: revision.id, format: "json" });
-    const failed = await waitForExport(store, artifact.id, (current) => current.status === "failed");
-    assert.equal(failed.failureKind, "permanent");
-    assert.equal(failed.attemptCount, 1);
-    assert.equal(failed.nextAttemptAt, undefined);
+    await queue.processUntilDone(artifact.id);
+    const failed = await store.getExportArtifact(artifact.id);
+    assert.equal(failed?.status, "failed");
+    assert.equal(failed?.failureKind, "permanent");
+    assert.equal(failed?.attemptCount, 1);
+    assert.equal(failed?.nextAttemptAt, undefined);
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }

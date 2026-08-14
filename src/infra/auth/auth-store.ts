@@ -16,4 +16,5 @@ export interface AuthStore {
   createSession(input: { userId: string; tokenHash: string; expiresAt: string }): Promise<AuthSession>;
   getSessionByTokenHash(tokenHash: string): Promise<AuthSession | null>;
   revokeSessionByTokenHash(tokenHash: string): Promise<boolean>;
+  syncAdminRolesFromEnv?(): Promise<void>;
 }

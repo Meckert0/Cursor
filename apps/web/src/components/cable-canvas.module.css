@@ -179,6 +179,27 @@
   font-size: 12px;
 }
 
+.changeConnectorButton {
+  border: none;
+  background: transparent;
+  color: #475569;
+  font: inherit;
+  font-size: 12px;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.changeConnectorButton:hover:not(:disabled) {
+  color: #1e293b;
+}
+
+.changeConnectorButton:disabled {
+  cursor: default;
+  text-decoration: none;
+}
+
 .connectorSearchDialog {
   display: grid;
   gap: 12px;

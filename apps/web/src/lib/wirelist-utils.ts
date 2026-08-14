@@ -1,4 +1,9 @@
 import type { LibraryComponentDto, RevisionDto } from "./api";
+import {
+  mergeSnapshotPaths,
+  partitionSnapshotPaths
+} from "../../../../src/domain/path-roles";
+import { buildConnectorPairTotals } from "./cable-canvas-utils";
 
 export const WIRELIST_SLEEVING_OPTIONS = [
   "none",
@@ -38,7 +43,6 @@ export const WIRELIST_TEMPLATE_HEADERS = [
   "Wire AWG",
   "Wire/Patchcord P/N",
   "Length (in)",
-  "Sleeving",
   "Wire Color",
   "Wire Group",
   "To Location (Conn-Pin)",
@@ -51,7 +55,12 @@ export const WIRELIST_TEMPLATE_HEADERS = [
 
 export type WirelistTemplateHeader = (typeof WIRELIST_TEMPLATE_HEADERS)[number];
 
-const HEADER_ALIASES: Record<string, WirelistTemplateHeader> = {
+type ConnectorCatalogEntry = {
+  partNumber: string;
+  attributes?: Record<string, unknown> | null;
+};
+
+const HEADER_ALIASES: Record<string, WirelistTemplateHeader | "Sleeving"> = {
   "run#": "Run #",
   "run #": "Run #",
   "from location (conn - pin)": "From Location (Conn - Pin)",
@@ -158,18 +167,71 @@ function buildEndpointLookups(snapshot: RevisionDto["snapshot"]) {
   return { connectorByReference, connectorById, junctionById };
 }
 
-function resolvePinId(connector: SnapshotConnector, pinNumber: string): string {
+function readModulePinIds(attributes: Record<string, unknown> | null | undefined): string[] {
+  if (!attributes) {
+    return [];
+  }
+  const pinIds = attributes.pinIds;
+  if (!Array.isArray(pinIds)) {
+    return [];
+  }
+  return pinIds.map((entry) => String(entry).trim()).filter((entry) => entry.length > 0);
+}
+
+function buildCatalogPinsByPartNumber(
+  connectorCatalog: ConnectorCatalogEntry[] = []
+): Map<string, string[]> {
+  const catalogPinsByPartNumber = new Map<string, string[]>();
+  for (const component of connectorCatalog) {
+    const partKey = component.partNumber?.trim().toLowerCase();
+    if (!partKey) {
+      continue;
+    }
+    const pinIds = readModulePinIds(component.attributes);
+    if (pinIds.length > 0) {
+      catalogPinsByPartNumber.set(partKey, pinIds);
+    }
+  }
+  return catalogPinsByPartNumber;
+}
+
+function catalogPinsForConnector(
+  connector: SnapshotConnector,
+  catalogPinsByPartNumber: Map<string, string[]>
+): string[] {
+  const partKey = connector.partNumber?.trim().toLowerCase();
+  if (!partKey) {
+    return [];
+  }
+  return catalogPinsByPartNumber.get(partKey) ?? [];
+}
+
+function resolvePinId(
+  connector: SnapshotConnector,
+  pinNumber: string,
+  catalogPinsByPartNumber: Map<string, string[]> = new Map()
+): string {
   const needle = pinNumber.trim().toLowerCase();
   if (!needle) {
     return "";
   }
-  const match = connector.pins.find((pin) => pin.number.trim().toLowerCase() === needle);
-  return match?.id ?? "";
+  const byNumber = connector.pins.find((pin) => pin.number.trim().toLowerCase() === needle);
+  if (byNumber) {
+    return byNumber.id;
+  }
+  const byId = connector.pins.find((pin) => pin.id.trim().toLowerCase() === needle);
+  if (byId) {
+    return byId.id;
+  }
+  const catalogPins = catalogPinsForConnector(connector, catalogPinsByPartNumber);
+  const catalogMatch = catalogPins.find((pin) => pin.toLowerCase() === needle);
+  return catalogMatch ?? "";
 }
 
 export function resolveWirelistEndpoint(
   location: string,
-  snapshot: RevisionDto["snapshot"]
+  snapshot: RevisionDto["snapshot"],
+  connectorCatalog: ConnectorCatalogEntry[] = []
 ): ResolvedWirelistEndpoint {
   const { connectorRef, pinNumber } = parseWirelistLocation(location);
   if (!connectorRef) {
@@ -177,6 +239,7 @@ export function resolveWirelistEndpoint(
   }
 
   const { connectorByReference, connectorById, junctionById } = buildEndpointLookups(snapshot);
+  const catalogPinsByPartNumber = buildCatalogPinsByPartNumber(connectorCatalog);
   const key = connectorRef.toLowerCase();
 
   // Prefer an exact connector reference match so "J1" stays a connector even when a
@@ -187,7 +250,7 @@ export function resolveWirelistEndpoint(
   if (exactConnector) {
     return {
       nodeId: exactConnector.id,
-      pinId: resolvePinId(exactConnector, pinNumber),
+      pinId: resolvePinId(exactConnector, pinNumber, catalogPinsByPartNumber),
       kind: "connector"
     };
   }
@@ -201,7 +264,7 @@ export function resolveWirelistEndpoint(
   if (connector) {
     return {
       nodeId: connector.id,
-      pinId: resolvePinId(connector, pinNumber),
+      pinId: resolvePinId(connector, pinNumber, catalogPinsByPartNumber),
       kind: "connector"
     };
   }
@@ -219,7 +282,7 @@ function formatEndpointFromMapping(
   const connector = connectorById.get(connectorId);
   if (connector) {
     const pin = connector.pins.find((entry) => entry.id === pinId);
-    return formatWirelistLocation(connector.reference, pin?.number ?? "");
+    return formatWirelistLocation(connector.reference, pin?.number ?? pinId);
   }
   const junction = junctionById.get(connectorId);
   if (junction) {
@@ -229,7 +292,7 @@ function formatEndpointFromMapping(
 }
 
 type HeaderResolution = {
-  resolved: Partial<Record<WirelistTemplateHeader, string>>;
+  resolved: Partial<Record<WirelistTemplateHeader | "Sleeving", string>>;
   missing: WirelistTemplateHeader[];
 };
 
@@ -241,7 +304,7 @@ function resolveTemplateHeaders(records: Array<Record<string, unknown>>): Header
     }
   }
 
-  const resolved: Partial<Record<WirelistTemplateHeader, string>> = {};
+  const resolved: Partial<Record<WirelistTemplateHeader | "Sleeving", string>> = {};
   for (const rawHeader of headerKeys) {
     const normalized = normalizeHeader(rawHeader);
     const canonical = HEADER_ALIASES[normalized];
@@ -256,8 +319,8 @@ function resolveTemplateHeaders(records: Array<Record<string, unknown>>): Header
 
 function getValue(
   record: Record<string, unknown>,
-  resolvedHeaders: Partial<Record<WirelistTemplateHeader, string>>,
-  header: WirelistTemplateHeader
+  resolvedHeaders: Partial<Record<WirelistTemplateHeader | "Sleeving", string>>,
+  header: WirelistTemplateHeader | "Sleeving"
 ): string {
   const key = resolvedHeaders[header];
   return key ? toStringValue(record[key]) : "";
@@ -267,8 +330,9 @@ export function snapshotToWirelistRows(snapshot: RevisionDto["snapshot"]): Wirel
   const connectorById = new Map(snapshot.connectors.map((connector) => [connector.id, connector]));
   const junctionById = new Map((snapshot.junctions ?? []).map((junction) => [junction.id, junction]));
   const pinMappingByPathId = new Map(snapshot.pinMappings.map((mapping) => [mapping.pathId, mapping]));
+  const { wireRunPaths } = partitionSnapshotPaths(snapshot.paths, snapshot.pinMappings);
 
-  return snapshot.paths.map((path, index) => {
+  return wireRunPaths.map((path, index) => {
     const mapping = pinMappingByPathId.get(path.id);
     let fromLocation = formatEndpointFromMapping(path.fromConnectorId, "", connectorById, junctionById);
     let toLocation = formatEndpointFromMapping(path.toConnectorId, "", connectorById, junctionById);
@@ -307,10 +371,15 @@ export function snapshotToWirelistRows(snapshot: RevisionDto["snapshot"]): Wirel
       }
     }
 
+    const storedFromLocation = path.fromLocation;
+    const storedToLocation = path.toLocation;
+    const hasStoredFrom = storedFromLocation !== undefined && storedFromLocation !== "";
+    const hasStoredTo = storedToLocation !== undefined && storedToLocation !== "";
+
     return {
       id: path.id,
       runNumber: String(path.runNumber ?? index + 1),
-      fromLocation,
+      fromLocation: hasStoredFrom ? storedFromLocation : fromLocation,
       fromContact: path.fromContact ?? "",
       fromSignalDescription: path.fromSignalDescription ?? "",
       wireAwg: path.wireAwg ?? "",
@@ -318,7 +387,7 @@ export function snapshotToWirelistRows(snapshot: RevisionDto["snapshot"]): Wirel
       length: typeof path.length === "number" ? String(path.length) : "",
       wireColor: path.wireColor ?? "",
       wireGroup: path.wireGroup ?? "",
-      toLocation,
+      toLocation: hasStoredTo ? storedToLocation : toLocation,
       toContact: path.toContact ?? "",
       toSignalDescription: path.toSignalDescription ?? "",
       labelPartNumber: path.labelPartNumber ?? "",
@@ -333,18 +402,20 @@ export function snapshotToWirelistRows(snapshot: RevisionDto["snapshot"]): Wirel
 
 export function wirelistRowsToSnapshot(
   baseline: RevisionDto["snapshot"],
-  rows: WirelistRow[]
+  rows: WirelistRow[],
+  connectorCatalog: ConnectorCatalogEntry[] = []
 ): RevisionDto["snapshot"] {
   const existingMappingByPathId = new Map(baseline.pinMappings.map((mapping) => [mapping.pathId, mapping]));
   const pinMappings: SnapshotPinMapping[] = [];
+  const { cablePaths } = partitionSnapshotPaths(baseline.paths, baseline.pinMappings);
 
-  const paths = rows.map((row, index) => {
+  const wireRunPaths = rows.map((row, index) => {
     const fromContact = row.fromContact.trim();
     const toContact = row.toContact.trim();
     const parsedLength = Number(row.length);
     const hasNumericLength = row.length.trim().length > 0 && Number.isFinite(parsedLength);
-    const fromEndpoint = resolveWirelistEndpoint(row.fromLocation, baseline);
-    const toEndpoint = resolveWirelistEndpoint(row.toLocation, baseline);
+    const fromEndpoint = resolveWirelistEndpoint(row.fromLocation, baseline, connectorCatalog);
+    const toEndpoint = resolveWirelistEndpoint(row.toLocation, baseline, connectorCatalog);
 
     if (
       fromEndpoint.kind === "connector" &&
@@ -371,6 +442,7 @@ export function wirelistRowsToSnapshot(
       fromConnectorId: fromEndpoint.nodeId,
       toConnectorId: toEndpoint.nodeId,
       pathType: "wire",
+      wirelistManaged: true,
       length: hasNumericLength ? parsedLength : undefined,
       sleeving: row.sleeving,
       wireComponentId: row.wireComponentId || undefined,
@@ -384,13 +456,18 @@ export function wirelistRowsToSnapshot(
       toSignalDescription: row.toSignalDescription.trim() || undefined,
       labelPartNumber: row.labelPartNumber.trim() || undefined,
       labelText: row.labelText.trim() || undefined,
-      notes: row.notes.trim() || undefined
+      notes: row.notes.trim() || undefined,
+      fromLocation: row.fromLocation || undefined,
+      toLocation: row.toLocation || undefined
     };
   });
 
+  const wireRunIds = new Set(wireRunPaths.map((path) => path.id));
+  const preservedCablePaths = cablePaths.filter((path) => !wireRunIds.has(path.id));
+
   return {
     ...baseline,
-    paths,
+    paths: mergeSnapshotPaths(preservedCablePaths, wireRunPaths),
     pinMappings
   };
 }
@@ -407,7 +484,8 @@ function validateWirelistLocationField(
   fieldLabel: string,
   value: string,
   validNodes: Set<string>,
-  connectorsByRefOrId: Map<string, SnapshotConnector>
+  connectorsByRefOrId: Map<string, SnapshotConnector>,
+  connectorPositions: Map<string, Set<string>>
 ): string | null {
   const trimmed = value.trim();
   if (!trimmed) {
@@ -421,21 +499,30 @@ function validateWirelistLocationField(
   if (!validNodes.has(key)) {
     return `${fieldLabel} references unknown connector "${connectorRef}".`;
   }
-  const connector = connectorsByRefOrId.get(key);
-  if (connector && pinNumber) {
-    const pinExists = connector.pins.some((pin) => pin.number.trim().toLowerCase() === pinNumber.toLowerCase());
-    if (!pinExists) {
-      return `${fieldLabel} pin "${pinNumber}" not found on connector ${connector.reference}.`;
+  if (pinNumber) {
+    const positions = connectorPositions.get(key);
+    const connector = connectorsByRefOrId.get(key);
+    if (positions && !positions.has(pinNumber)) {
+      const ref = connector?.reference ?? connectorRef;
+      return `${fieldLabel} pin "${pinNumber}" not found on connector ${ref}.`;
     }
   }
   return null;
 }
 
+type ValidateWirelistRowsOptions = {
+  includeLocationValidation?: boolean;
+};
+
 export function validateWirelistRows(
   rows: WirelistRow[],
   validNodeIds: string[],
-  connectors: SnapshotConnector[] = []
+  connectors: SnapshotConnector[] = [],
+  connectorCatalog: ConnectorCatalogEntry[] = [],
+  topology: Pick<RevisionDto["snapshot"], "connectors" | "junctions" | "paths" | "pinMappings"> | null = null,
+  options: ValidateWirelistRowsOptions = {}
 ): string[] {
+  const includeLocationValidation = options.includeLocationValidation ?? true;
   const validNodes = new Set(
     validNodeIds.map((id) => id.trim().toLowerCase()).filter((id) => id.length > 0)
   );
@@ -444,6 +531,17 @@ export function validateWirelistRows(
     connectorsByRefOrId.set(connector.reference.trim().toLowerCase(), connector);
     connectorsByRefOrId.set(connector.id.trim().toLowerCase(), connector);
   }
+  const connectorPositions = buildConnectorPositionLookup(connectors, connectorCatalog);
+  const connectorPairTotals =
+    topology === null
+      ? []
+      : buildConnectorPairTotals({
+          connectors: topology.connectors,
+          junctions: topology.junctions ?? [],
+          paths: partitionSnapshotPaths(topology.paths, topology.pinMappings).cablePaths
+        });
+  const cablePathCount =
+    topology === null ? 0 : partitionSnapshotPaths(topology.paths, topology.pinMappings).cablePaths.length;
 
   const errors: string[] = [];
   rows.forEach((row, index) => {
@@ -456,24 +554,52 @@ export function validateWirelistRows(
       errors.push(`${rowLabel}: Run # is required.`);
     }
 
-    const fromError = validateWirelistLocationField(
-      `${rowLabel}: From Location`,
-      row.fromLocation,
-      validNodes,
-      connectorsByRefOrId
-    );
-    if (fromError) {
-      errors.push(fromError);
+    if (includeLocationValidation) {
+      const fromError = validateWirelistLocationField(
+        `${rowLabel}: From Location`,
+        row.fromLocation,
+        validNodes,
+        connectorsByRefOrId,
+        connectorPositions
+      );
+      if (fromError) {
+        errors.push(fromError);
+      }
+
+      const toError = validateWirelistLocationField(
+        `${rowLabel}: To Location`,
+        row.toLocation,
+        validNodes,
+        connectorsByRefOrId,
+        connectorPositions
+      );
+      if (toError) {
+        errors.push(toError);
+      }
     }
 
-    const toError = validateWirelistLocationField(
-      `${rowLabel}: To Location`,
-      row.toLocation,
-      validNodes,
-      connectorsByRefOrId
-    );
-    if (toError) {
-      errors.push(toError);
+    if (
+      includeLocationValidation &&
+      topology &&
+      cablePathCount > 0 &&
+      row.fromLocation.trim() &&
+      row.toLocation.trim()
+    ) {
+      const fromEndpoint = resolveWirelistEndpoint(row.fromLocation, topology, connectorCatalog);
+      const toEndpoint = resolveWirelistEndpoint(row.toLocation, topology, connectorCatalog);
+      if (
+        fromEndpoint.kind === "connector" &&
+        toEndpoint.kind === "connector" &&
+        !connectorPairTotals.some(
+          (total) =>
+            (total.fromConnectorId === fromEndpoint.nodeId && total.toConnectorId === toEndpoint.nodeId) ||
+            (total.fromConnectorId === toEndpoint.nodeId && total.toConnectorId === fromEndpoint.nodeId)
+        )
+      ) {
+        errors.push(
+          `${rowLabel}: No cable route exists between the selected connectors on the canvas.`
+        );
+      }
     }
   });
   return errors;
@@ -496,33 +622,11 @@ export function parseConnectorPinsField(value: string | null | undefined): strin
     .filter((entry) => entry.length > 0);
 }
 
-function readPinsCustomField(customFieldValues: Record<string, string> | null | undefined): string {
-  if (!customFieldValues) {
-    return "";
-  }
-  for (const [key, value] of Object.entries(customFieldValues)) {
-    if (key.trim().toLowerCase() === "pins") {
-      return value ?? "";
-    }
-  }
-  return "";
-}
-
 export function buildConnectorPositionLookup(
   connectors: Array<{ reference: string; partNumber?: string; pins: Array<{ number: string }> }>,
-  connectorCatalog: Array<{ partNumber: string; customFieldValues?: Record<string, string> | null }> = []
+  connectorCatalog: ConnectorCatalogEntry[] = []
 ): Map<string, Set<string>> {
-  const catalogPinsByPartNumber = new Map<string, string[]>();
-  for (const component of connectorCatalog) {
-    const partKey = component.partNumber?.trim().toLowerCase();
-    if (!partKey) {
-      continue;
-    }
-    const parsed = parseConnectorPinsField(readPinsCustomField(component.customFieldValues));
-    if (parsed.length > 0) {
-      catalogPinsByPartNumber.set(partKey, parsed);
-    }
-  }
+  const catalogPinsByPartNumber = buildCatalogPinsByPartNumber(connectorCatalog);
 
   const lookup = new Map<string, Set<string>>();
   for (const connector of connectors) {
@@ -560,6 +664,69 @@ export function verifyWirelistLocation(
   return { state: "partial", message: "Connector position not correct" };
 }
 
+export type WirelistContactCompatRow = {
+  modulePartId: string;
+  contactPartId: string;
+  status: "allowed" | "forbidden" | "review";
+};
+
+function findConnectorForLocation(
+  location: string,
+  connectors: Array<{ id: string; reference: string; libraryComponentId?: string }>
+): { id: string; reference: string; libraryComponentId?: string } | undefined {
+  const { connectorRef } = parseWirelistLocation(location);
+  if (!connectorRef) {
+    return undefined;
+  }
+  const exact = connectors.find(
+    (connector) => connector.reference.trim() === connectorRef || connector.id.trim() === connectorRef
+  );
+  if (exact) {
+    return exact;
+  }
+  const key = connectorRef.toLowerCase();
+  return connectors.find(
+    (connector) => connector.reference.trim().toLowerCase() === key || connector.id.trim().toLowerCase() === key
+  );
+}
+
+export function verifyWirelistContact(
+  contactValue: string,
+  locationValue: string,
+  connectors: Array<{ id: string; reference: string; libraryComponentId?: string }>,
+  contactCatalog: Array<{ id: string; partNumber: string }>,
+  moduleContactCompat: WirelistContactCompatRow[]
+): WirelistLocationVerification {
+  const trimmedContact = contactValue.trim();
+  if (!trimmedContact) {
+    return { state: "empty", message: null };
+  }
+  const contact = contactCatalog.find(
+    (entry) => entry.partNumber.trim().toLowerCase() === trimmedContact.toLowerCase()
+  );
+  if (!contact) {
+    return { state: "invalid", message: "Contact part number not found" };
+  }
+  const connector = findConnectorForLocation(locationValue, connectors);
+  const modulePartId = connector?.libraryComponentId?.trim();
+  if (!modulePartId) {
+    return { state: "partial", message: "Connector module is not defined" };
+  }
+  const compat = moduleContactCompat.find(
+    (row) => row.modulePartId === modulePartId && row.contactPartId === contact.id
+  );
+  if (!compat) {
+    return { state: "empty", message: null };
+  }
+  if (compat.status === "allowed") {
+    return { state: "valid", message: null };
+  }
+  if (compat.status === "forbidden") {
+    return { state: "invalid", message: "Contact is not compatible with this module" };
+  }
+  return { state: "partial", message: "Contact compatibility requires review" };
+}
+
 export function parseImportedWirelistRows(input: {
   records: Array<Record<string, unknown>>;
   existingRows: WirelistRow[];
@@ -582,7 +749,7 @@ export function parseImportedWirelistRows(input: {
     const sleevingRaw = getValue(record, resolved, "Sleeving") || toStringValue(record.sleeving);
     const sleeving = WIRELIST_SLEEVING_OPTIONS.includes(sleevingRaw as WirelistSleeving)
       ? (sleevingRaw as WirelistSleeving)
-      : "none";
+      : existing?.sleeving ?? "none";
     return {
       id: existing?.id || `p_canvas_${index + 1}`,
       runNumber: getValue(record, resolved, "Run #") || existing?.runNumber || String(index + 1),
@@ -655,7 +822,6 @@ export function wirelistRowsToTemplateRecords(rows: WirelistRow[]): Array<Record
     "Wire AWG": row.wireAwg,
     "Wire/Patchcord P/N": row.wirePartNumber,
     "Length (in)": row.length,
-    Sleeving: row.sleeving,
     "Wire Color": row.wireColor,
     "Wire Group": row.wireGroup,
     "To Location (Conn-Pin)": row.toLocation,

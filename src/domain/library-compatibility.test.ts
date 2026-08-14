@@ -4,79 +4,52 @@ import {
   awgInAcceptedRange,
   familyAccepted,
   parseWireAwg,
-  promoteCompatibilityFields,
   resolveLibraryCompatibility
 } from "./library-compatibility.js";
-import { resolveLibraryLifecycleStatus, type LibraryComponentRecord } from "./library.js";
+import { resolveLibraryLifecycleStatus } from "./library.js";
+import { makePart } from "./part-test-helpers.js";
 import { resolveRule } from "./ruleset-definitions.js";
 
-function component(partial: Partial<LibraryComponentRecord> = {}): LibraryComponentRecord {
-  return {
-    id: "cmp-1",
-    category: "module",
-    family: "Micro-D",
-    partNumber: "MDM-9P",
-    description: "module",
-    isActive: true,
-    isReviewed: true,
-    stockStatus: "in_stock",
-    compatibilityHints: [],
-    createdByUserId: "seed",
-    createdAt: "2026-01-01T00:00:00.000Z",
-    lastEditedByUserId: "seed",
-    lastEditedAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
-    customFieldValues: {},
-    ...partial
-  };
-}
-
-test("resolveLibraryCompatibility reads first-class columns only", () => {
+test("resolveLibraryCompatibility reads module pin fields from attributes", () => {
   const resolved = resolveLibraryCompatibility(
-    component({
-      pinCount: 9,
-      pinIds: ["1", "2", "3"],
-      acceptedAwgMin: 20,
-      acceptedAwgMax: 24,
-      acceptedFamilies: ["MIL-W-22759", "Other"],
-      customFieldValues: {
-        pinCount: "99",
-        acceptedAwgMin: "10"
+    makePart({
+      id: "cmp-1",
+      category: "module",
+      family: "Micro-D",
+      partNumber: "MDM-9P",
+      description: "module",
+      attributes: {
+        pinIds: ["1", "2", "3"],
+        pinCount: 9
       }
     })
   );
   assert.deepEqual(resolved, {
     pinCount: 9,
-    pinIds: ["1", "2", "3"],
+    pinIds: ["1", "2", "3"]
+  });
+});
+
+test("resolveLibraryCompatibility reads contact acceptance from attributes", () => {
+  const resolved = resolveLibraryCompatibility(
+    makePart({
+      id: "cmp-contact",
+      category: "contact",
+      family: "Micro-D",
+      partNumber: "CNT-22",
+      description: "contact",
+      attributes: {
+        acceptedFamilies: ["MIL-W-22759", "Other"],
+        acceptedAwgMin: 20,
+        acceptedAwgMax: 24
+      }
+    })
+  );
+  assert.deepEqual(resolved, {
     acceptedAwgMin: 20,
     acceptedAwgMax: 24,
     acceptedFamilies: ["MIL-W-22759", "Other"]
   });
-});
-
-test("promoteCompatibilityFields lifts legacy customFieldValues into first-class fields", () => {
-  const promoted = promoteCompatibilityFields({
-    category: "module" as const,
-    family: "Micro-D",
-    partNumber: "MDM-9P",
-    description: "module",
-    isActive: true,
-    stockStatus: "in_stock" as const,
-    compatibilityHints: [],
-    isReviewed: false,
-    customFieldValues: {
-      pinCount: "9",
-      pinIds: "1,2,3",
-      acceptedAwgMin: "20",
-      acceptedAwgMax: "24",
-      acceptedFamilies: "MIL-W-22759; Other"
-    }
-  });
-  assert.equal(promoted.pinCount, 9);
-  assert.deepEqual(promoted.pinIds, ["1", "2", "3"]);
-  assert.equal(promoted.acceptedAwgMin, 20);
-  assert.equal(promoted.acceptedAwgMax, 24);
-  assert.deepEqual(promoted.acceptedFamilies, ["MIL-W-22759", "Other"]);
 });
 
 test("parseWireAwg and range helpers", () => {

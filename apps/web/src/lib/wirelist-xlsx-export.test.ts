@@ -1,6 +1,7 @@
 /** @vitest-environment node */
 import AdmZip from "adm-zip";
 import { describe, expect, it } from "vitest";
+import type { RevisionDto } from "./api";
 import { buildWirelistXlsxFromTemplateRows } from "../../../../src/domain/wirelist-xlsx-export";
 import { buildWirelistXlsxBuffer } from "./wirelist-xlsx-export";
 import { snapshotToWirelistRows, WIRELIST_TEMPLATE_HEADERS } from "./wirelist-utils";
@@ -76,7 +77,7 @@ describe("wirelist-xlsx-export", () => {
     pinMappings: [],
     bundles: [],
     annotations: []
-  } as const;
+  } as RevisionDto["snapshot"];
 
   it("fills the stored template workbook without rewriting its styles", async () => {
     const rows = snapshotToWirelistRows(snapshot);
@@ -90,29 +91,29 @@ describe("wirelist-xlsx-export", () => {
     expect(readCellValue(zip, "A2")).toBe(1);
     expect(readCellValue(zip, "B2")).toBe("J1");
     expect(readCellValue(zip, "F2")).toBe("PN-ROUNDTRIP");
-    expect(readCellValue(zip, "H2")).toBe("none");
-    expect(readCellValue(zip, "P2")).toBe("Roundtrip");
+    expect(readCellValue(zip, "H2")).toBe("white");
+    expect(readCellValue(zip, "O2")).toBe("Roundtrip");
 
     const headerValues = WIRELIST_TEMPLATE_HEADERS.map((_, index) => readCellValue(zip, `${String.fromCharCode(65 + index)}1`));
     expect(headerValues).toEqual([...WIRELIST_TEMPLATE_HEADERS]);
-    expect(sheetXml).toContain('<dimension ref="A1:P2"/>');
-    expect(zip.readAsText("xl/workbook.xml")).toContain("Wirelist!$A$1:$P$2");
+    expect(sheetXml).toContain('<dimension ref="A1:O2"/>');
+    expect(zip.readAsText("xl/workbook.xml")).toContain("Wirelist!$A$1:$O$2");
   });
 
   it("renders empty cells as dashes and shrinks the print area for short wirelists", async () => {
     const buffer = await buildWirelistXlsxFromTemplateRows([
-      [1, "J1", "", "SRC", "", "PN-1", "", "", "white", "", "J2", "", "", "", "", ""]
+      [1, "J1", "", "SRC", "", "PN-1", "", "white", "", "J2", "", "", "", "", ""]
     ]);
     const zip = new AdmZip(buffer);
     const row2 = zip.readAsText("xl/worksheets/sheet1.xml").match(/<row r="2"[^>]*>[\s\S]*?<\/row>/)?.[0] ?? "";
 
     expect(readCellValue(zip, "C2")).toBe("-");
     expect(readCellValue(zip, "G2")).toBe("-");
-    expect(readCellValue(zip, "H2")).toBe("-");
+    expect(readCellValue(zip, "H2")).toBe("white");
     expect(readCellValue(zip, "N2")).toBe("-");
     expect(row2).not.toContain('"/ t="inlineStr"');
     expect(row2).toContain('<c r="B2" s="5" t="inlineStr">');
-    expect(zip.readAsText("xl/worksheets/sheet1.xml")).toContain('<dimension ref="A1:P2"/>');
-    expect(zip.readAsText("xl/workbook.xml")).toContain("Wirelist!$A$1:$P$2");
+    expect(zip.readAsText("xl/worksheets/sheet1.xml")).toContain('<dimension ref="A1:O2"/>');
+    expect(zip.readAsText("xl/workbook.xml")).toContain("Wirelist!$A$1:$O$2");
   });
 });

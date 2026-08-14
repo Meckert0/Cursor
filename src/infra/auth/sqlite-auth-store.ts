@@ -30,6 +30,7 @@ export class SqliteAuthStore implements AuthStore {
       );
     `);
     this.ensureAccountRoleColumn();
+    void this.syncAdminRolesFromEnv();
   }
 
   private ensureAccountRoleColumn() {
@@ -38,6 +39,9 @@ export class SqliteAuthStore implements AuthStore {
     if (!hasAccountRole) {
       this.db.exec(`ALTER TABLE auth_users ADD COLUMN account_role TEXT NOT NULL DEFAULT 'regular';`);
     }
+  }
+
+  async syncAdminRolesFromEnv(): Promise<void> {
     const adminEmails = getAdminEmails();
     if (adminEmails.length === 0) {
       return;

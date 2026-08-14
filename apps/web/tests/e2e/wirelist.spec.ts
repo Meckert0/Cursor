@@ -67,7 +67,6 @@ test("wirelist template import and xlsx export round-trip", async ({ page }) => 
       "Wire AWG",
       "Wire/Patchcord P/N",
       "Length (in)",
-      "Sleeving",
       "Wire Color",
       "Wire Group",
       "To Location (Conn-Pin)",
@@ -77,7 +76,7 @@ test("wirelist template import and xlsx export round-trip", async ({ page }) => 
       "Label Text",
       "Notes"
     ],
-    [1, "J1", "1", "SRC", "22", "PN-ROUNDTRIP", "6.5", "expandable_sleeving", "white", "G1", "J2", "1", "DST", "LBL-1", "W1", "Roundtrip"]
+    [1, "J1", "1", "SRC", "22", "PN-ROUNDTRIP", "6.5", "white", "G1", "J2", "1", "DST", "LBL-1", "W1", "Roundtrip"]
   ];
   const sheet = XLSX.utils.aoa_to_sheet(rows);
   XLSX.utils.book_append_sheet(workbook, sheet, "Wirelist");
@@ -104,6 +103,6 @@ test("wirelist template import and xlsx export round-trip", async ({ page }) => 
   expect(exportedRows[1]?.[1]).toBe("J1");
   expect(exportedRows[1]?.[2]).toBe("1");
   expect(exportedRows[1]?.[5]).toBe("PN-ROUNDTRIP");
-  expect(exportedRows[1]?.[7]).toBe("expandable_sleeving");
-  expect(exportedRows[1]?.[15]).toBe("Roundtrip");
+  expect(exportedRows[1]?.[7]).toBe("white");
+  expect(exportedRows[1]?.[14]).toBe("Roundtrip");
 });

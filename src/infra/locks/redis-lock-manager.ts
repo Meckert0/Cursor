@@ -2,10 +2,13 @@ import type { Redis } from "ioredis";
 import type { LockInfo, LockManager } from "./lock-manager.js";
 
 export class RedisLockManager implements LockManager {
-  constructor(private readonly redis: Redis) {}
+  constructor(
+    private readonly redis: Redis,
+    private readonly keyPrefix = ""
+  ) {}
 
   async lock(designId: string, userId: string, ttlSeconds: number): Promise<LockInfo> {
-    const key = `design:${designId}:lock`;
+    const key = this.lockKey(designId);
     const payload = JSON.stringify({ lockedBy: userId, createdAt: new Date().toISOString() });
     const acquired = await this.redis.set(key, payload, "EX", ttlSeconds, "NX");
     if (!acquired) {
@@ -22,7 +25,7 @@ export class RedisLockManager implements LockManager {
   }
 
   async unlock(designId: string, userId: string): Promise<void> {
-    const key = `design:${designId}:lock`;
+    const key = this.lockKey(designId);
     const raw = await this.redis.get(key);
     if (!raw) {
       return;
@@ -32,6 +35,11 @@ export class RedisLockManager implements LockManager {
       throw new Error("LOCK_CONFLICT");
     }
     await this.redis.del(key);
+  }
+
+  private lockKey(designId: string): string {
+    const prefix = this.keyPrefix ? `${this.keyPrefix}:` : "";
+    return `${prefix}design:${designId}:lock`;
   }
 
   async healthCheck(): Promise<{ ok: boolean; backend: string; detail?: string }> {

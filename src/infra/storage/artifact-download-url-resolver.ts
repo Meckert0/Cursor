@@ -1,5 +1,6 @@
 import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { head } from "@vercel/blob";
 
 export interface ArtifactDownloadUrlResolver {
   resolveDownloadUrl(artifactUri: string): Promise<string>;
@@ -39,5 +40,19 @@ export class S3PresigningArtifactDownloadUrlResolver implements ArtifactDownload
     return getSignedUrl(this.client, command, {
       expiresIn: this.ttlSeconds
     });
+  }
+}
+
+export type BlobHeadFn = (urlOrPathname: string, options?: { token?: string }) => Promise<{ downloadUrl: string }>;
+
+export class BlobDownloadUrlResolver implements ArtifactDownloadUrlResolver {
+  constructor(
+    private readonly headBlob: BlobHeadFn = head,
+    private readonly token?: string
+  ) {}
+
+  async resolveDownloadUrl(artifactUri: string): Promise<string> {
+    const meta = await this.headBlob(artifactUri, { token: this.token });
+    return meta.downloadUrl || artifactUri;
   }
 }

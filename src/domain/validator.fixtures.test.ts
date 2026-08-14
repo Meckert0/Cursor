@@ -3,10 +3,9 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import type { LibraryComponentRecord } from "./library.js";
 import type { DesignSnapshot } from "./types.js";
 import { createLibraryLookup, buildBom } from "./bom.js";
-import { DEFAULT_LIBRARY_COMPONENTS } from "./library.js";
+import { makePart } from "./part-test-helpers.js";
 import { validateSnapshot } from "./validator.js";
 
 async function loadFixture(fileName: string): Promise<DesignSnapshot> {
@@ -16,31 +15,70 @@ async function loadFixture(fileName: string): Promise<DesignSnapshot> {
   return JSON.parse(raw) as DesignSnapshot;
 }
 
-function libraryComponent(
-  partial: Partial<LibraryComponentRecord> & Pick<LibraryComponentRecord, "id" | "category" | "partNumber">
-): LibraryComponentRecord {
-  return {
-    family: partial.family ?? "Generic",
-    description: partial.description ?? "part",
-    isActive: partial.isActive ?? true,
-    isReviewed: partial.isReviewed ?? true,
-    stockStatus: partial.stockStatus ?? "in_stock",
-    compatibilityHints: partial.compatibilityHints ?? [],
-    createdByUserId: "seed",
-    createdAt: "2026-01-01T00:00:00.000Z",
-    lastEditedByUserId: "seed",
-    lastEditedAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
-    customFieldValues: partial.customFieldValues ?? {},
-    awg: partial.awg,
-    color: partial.color,
-    ...partial
-  };
+/** Catalog parts referenced by full-cable.complete.json */
+function fullCableLibraryParts() {
+  return [
+    makePart({
+      id: "cmp-module-001",
+      category: "module",
+      family: "Micro-D",
+      partNumber: "MDM-15P",
+      description: "15-pin module",
+      attributes: {
+        pinCount: 15,
+        pinIds: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15"]
+      }
+    }),
+    makePart({
+      id: "cmp-wire-001",
+      category: "wire",
+      family: "MIL-W-22759",
+      partNumber: "M22759/16-22",
+      description: "22 AWG PTFE wire, white",
+      attributes: { awg: "22", color: "white" }
+    }),
+    makePart({
+      id: "cmp-label-001",
+      category: "label",
+      family: "Heatshrink",
+      partNumber: "LBL-22",
+      description: "Wire label"
+    }),
+    makePart({
+      id: "cmp-contact-001",
+      category: "contact",
+      family: "Micro-D",
+      partNumber: "CNT-22",
+      description: "Crimp contact",
+      attributes: { acceptedFamilies: [] }
+    }),
+    makePart({
+      id: "cmp-backshell-15",
+      category: "backshell",
+      family: "EMI",
+      partNumber: "BS-EMI-15",
+      description: "EMI backshell for 15-pin Micro-D"
+    }),
+    makePart({
+      id: "cmp-sr-15",
+      category: "strain-relief",
+      family: "Clamp",
+      partNumber: "SR-CLAMP-15",
+      description: "Strain-relief clamp for 15-pin Micro-D"
+    }),
+    makePart({
+      id: "cmp-sleeve-exp",
+      category: "sleeve-tube-braid",
+      family: "expandable_sleeving",
+      partNumber: "SLV-EXP-025",
+      description: "Expandable PET sleeving, 0.25 in"
+    })
+  ];
 }
 
-test("full-cable complete fixture validates with zero errors against starter library", async () => {
+test("full-cable complete fixture validates with zero errors against explicit library", async () => {
   const snapshot = await loadFixture("full-cable.complete.json");
-  const lookup = createLibraryLookup(DEFAULT_LIBRARY_COMPONENTS);
+  const lookup = createLibraryLookup(fullCableLibraryParts());
   const report = validateSnapshot(snapshot, {
     mode: "full",
     rulesetVersion: "rules-2026.03",
@@ -81,7 +119,6 @@ test("known-good fixture returns zero errors and warnings", async () => {
   assert.equal(report.results.length, 0);
 });
 
-
 test("known-bad fixture returns expected validation rule hits", async () => {
   const snapshot = await loadFixture("known-bad.multiple-errors.json");
   const report = validateSnapshot(snapshot);
@@ -100,29 +137,36 @@ test("known-bad fixture returns expected validation rule hits", async () => {
 test("known-bad compatibility fixture hits electrical and manufacturability rules under rules-2026.04", async () => {
   const snapshot = await loadFixture("known-bad.compatibility.json");
   const lookup = createLibraryLookup([
-    libraryComponent({
+    makePart({
       id: "cmp-module-9",
       category: "module",
+      family: "Micro-D",
       partNumber: "MDM-9P",
-      pinCount: 9,
-      pinIds: ["1", "2", "3", "4", "5", "6", "7", "8", "9"],
-      acceptedAwgMin: 20,
-      acceptedAwgMax: 24,
-      acceptedFamilies: ["MIL-W-22759"]
+      description: "9-pin module",
+      attributes: {
+        pinCount: 9,
+        pinIds: ["1", "2", "3", "4", "5", "6", "7", "8", "9"]
+      }
     }),
-    libraryComponent({
+    makePart({
       id: "cmp-wire-32",
       category: "wire",
       family: "Other",
       partNumber: "W-32",
-      awg: "32"
+      description: "unsupported gauge wire",
+      attributes: { awg: "32", color: "white" }
     }),
-    libraryComponent({
+    makePart({
       id: "cmp-contact-22",
       category: "contact",
+      family: "Micro-D",
       partNumber: "CNT-22",
-      acceptedAwgMin: 20,
-      acceptedAwgMax: 24
+      description: "contact",
+      attributes: {
+        acceptedFamilies: [],
+        acceptedAwgMin: 20,
+        acceptedAwgMax: 24
+      }
     })
   ]);
 
@@ -138,7 +182,8 @@ test("known-bad compatibility fixture hits electrical and manufacturability rule
   assert.ok(codes.has("RULE_PIN_MAPPING_JUNCTION_ENDPOINT"));
   assert.ok(codes.has("RULE_PIN_MAPPING_LOOPBACK_INVALID"));
   assert.ok(codes.has("RULE_WIRE_AWG_INCOMPATIBLE"));
-  assert.ok(codes.has("RULE_CONNECTOR_FAMILY_RESTRICTED"));
+  // Modules no longer carry acceptedFamilies — family restriction does not fire for module connectors.
+  assert.ok(!codes.has("RULE_CONNECTOR_FAMILY_RESTRICTED"));
   assert.ok(codes.has("RULE_WIRE_GAUGE_UNSUPPORTED"));
   assert.ok(codes.has("RULE_WIRE_LENGTH_UNSUPPORTED"));
   assert.ok(codes.has("RULE_CONNECTOR_INCOMPLETE_MAPPING"));

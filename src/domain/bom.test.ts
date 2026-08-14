@@ -1,26 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildBom, createLibraryLookup } from "./bom.js";
-import type { LibraryComponentRecord } from "./library.js";
+import { makePart } from "./part-test-helpers.js";
 import type { Revision } from "./types.js";
-
-function component(partial: Partial<LibraryComponentRecord> & Pick<LibraryComponentRecord, "id" | "category" | "partNumber">): LibraryComponentRecord {
-  return {
-    family: partial.family ?? "Test",
-    description: partial.description ?? `${partial.partNumber} description`,
-    isActive: partial.isActive ?? true,
-    isReviewed: partial.isReviewed ?? true,
-    stockStatus: partial.stockStatus ?? "in_stock",
-    compatibilityHints: partial.compatibilityHints ?? [],
-    createdByUserId: "seed",
-    createdAt: "2026-01-01T00:00:00.000Z",
-    lastEditedByUserId: "seed",
-    lastEditedAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
-    customFieldValues: {},
-    ...partial
-  };
-}
 
 function fullyAccessorizedRevision(): Revision {
   return {
@@ -95,50 +77,57 @@ function fullyAccessorizedRevision(): Revision {
 
 function fullLibrary() {
   return createLibraryLookup([
-    component({
+    makePart({
       id: "cmp-module-001",
       category: "module",
+      family: "Micro-D",
       partNumber: "MDM-15P",
-      description: "15-pin module"
+      description: "15-pin module",
+      attributes: { pinIds: [] }
     }),
-    component({
+    makePart({
       id: "cmp-wire-001",
       category: "wire",
+      family: "MIL-W-22759",
       partNumber: "M22759/16-22",
       description: "22 AWG PTFE wire, white",
-      awg: "22",
-      color: "white"
+      attributes: { awg: "22", color: "white" }
     }),
-    component({
+    makePart({
       id: "cmp-label-001",
       category: "label",
+      family: "Heatshrink",
       partNumber: "LBL-22",
       description: "Wire label"
     }),
-    component({
+    makePart({
       id: "cmp-contact-001",
       category: "contact",
+      family: "Micro-D",
       partNumber: "CNT-22",
-      description: "Crimp contact"
+      description: "Crimp contact",
+      attributes: { acceptedFamilies: [] }
     }),
-    component({
+    makePart({
       id: "cmp-backshell-15",
       category: "backshell",
+      family: "EMI",
       partNumber: "BS-EMI-15",
       description: "EMI backshell for 15-pin Micro-D"
     }),
-    component({
+    makePart({
       id: "cmp-sr-15",
       category: "strain-relief",
+      family: "Clamp",
       partNumber: "SR-CLAMP-15",
       description: "Strain-relief clamp for 15-pin Micro-D"
     }),
-    component({
+    makePart({
       id: "cmp-sleeve-exp",
       category: "sleeve-tube-braid",
+      family: "expandable_sleeving",
       partNumber: "SLV-EXP-025",
-      description: "Expandable PET sleeving, 0.25 in",
-      compatibilityHints: ["Maps to expandable_sleeving"]
+      description: "Expandable PET sleeving, 0.25 in"
     })
   ]);
 }
@@ -221,10 +210,36 @@ test("buildBom counts wire as ea when length is missing", () => {
     }
   ];
   const lookup = createLibraryLookup([
-    component({ id: "cmp-wire-001", category: "wire", partNumber: "M22759/16-22", awg: "22", color: "white" }),
-    component({ id: "cmp-module-001", category: "module", partNumber: "MDM-15P" }),
-    component({ id: "cmp-backshell-15", category: "backshell", partNumber: "BS-EMI-15" }),
-    component({ id: "cmp-sr-15", category: "strain-relief", partNumber: "SR-CLAMP-15" })
+    makePart({
+      id: "cmp-wire-001",
+      category: "wire",
+      family: "MIL-W-22759",
+      partNumber: "M22759/16-22",
+      description: "wire",
+      attributes: { awg: "22", color: "white" }
+    }),
+    makePart({
+      id: "cmp-module-001",
+      category: "module",
+      family: "Micro-D",
+      partNumber: "MDM-15P",
+      description: "module",
+      attributes: { pinIds: [] }
+    }),
+    makePart({
+      id: "cmp-backshell-15",
+      category: "backshell",
+      family: "EMI",
+      partNumber: "BS-EMI-15",
+      description: "backshell"
+    }),
+    makePart({
+      id: "cmp-sr-15",
+      category: "strain-relief",
+      family: "Clamp",
+      partNumber: "SR-CLAMP-15",
+      description: "strain relief"
+    })
   ]);
   const bom = buildBom(revision, lookup);
   const wireLine = bom.lines.find((line) => line.category === "wire");
@@ -233,6 +248,69 @@ test("buildBom counts wire as ea when length is missing", () => {
   assert.match(wireLine?.notes ?? "", /length missing/i);
   assert.equal(wireLine?.awg, "22");
   assert.equal(wireLine?.color, "white");
+});
+
+test("buildBom resolves contact alias code to canonical part", () => {
+  const revision = fullyAccessorizedRevision();
+  revision.snapshot.connectors = revision.snapshot.connectors.map((connector) => ({
+    ...connector,
+    backshellPartNumber: undefined,
+    backshellLibraryComponentId: undefined,
+    strainReliefPartNumber: undefined,
+    strainReliefLibraryComponentId: undefined
+  }));
+  revision.snapshot.paths = [
+    {
+      id: "p1",
+      runNumber: 1,
+      fromConnectorId: "c1",
+      toConnectorId: "c2",
+      pathType: "wire",
+      length: 12,
+      wireComponentId: "cmp-wire-001",
+      wirePartNumber: "M22759/16-22",
+      fromContact: "101",
+      toContact: "101"
+    }
+  ];
+
+  const lookup = createLibraryLookup(
+    [
+      makePart({
+        id: "cmp-module-001",
+        category: "module",
+        family: "Micro-D",
+        partNumber: "MDM-15P",
+        description: "module",
+        attributes: { pinIds: [] }
+      }),
+      makePart({
+        id: "cmp-wire-001",
+        category: "wire",
+        family: "MIL-W-22759",
+        partNumber: "M22759/16-22",
+        description: "wire",
+        attributes: { awg: "22", color: "white" }
+      }),
+      makePart({
+        id: "cmp-contact-001",
+        category: "contact",
+        family: "Micro-D",
+        partNumber: "CNT-22",
+        description: "Crimp contact",
+        attributes: { acceptedFamilies: [] }
+      })
+    ],
+    [{ partId: "cmp-contact-001", codeSystem: "contact_3digit", code: "101" }]
+  );
+
+  const bom = buildBom(revision, lookup);
+  const contactLine = bom.lines.find((line) => line.category === "contact");
+  assert.ok(contactLine);
+  assert.equal(contactLine?.partNumber, "CNT-22");
+  assert.equal(contactLine?.libraryComponentId, "cmp-contact-001");
+  assert.equal(contactLine?.resolution, "resolved");
+  assert.equal(contactLine?.quantity, 2);
 });
 
 test("buildBom falls back to enum sleeving label when no library mapping exists", () => {
@@ -260,8 +338,22 @@ test("buildBom falls back to enum sleeving label when no library mapping exists"
   const bom = buildBom(
     revision,
     createLibraryLookup([
-      component({ id: "cmp-module-001", category: "module", partNumber: "MDM-15P" }),
-      component({ id: "cmp-wire-001", category: "wire", partNumber: "M22759/16-22", awg: "22", color: "white" })
+      makePart({
+        id: "cmp-module-001",
+        category: "module",
+        family: "Micro-D",
+        partNumber: "MDM-15P",
+        description: "module",
+        attributes: { pinIds: [] }
+      }),
+      makePart({
+        id: "cmp-wire-001",
+        category: "wire",
+        family: "MIL-W-22759",
+        partNumber: "M22759/16-22",
+        description: "wire",
+        attributes: { awg: "22", color: "white" }
+      })
     ])
   );
   const sleevingLine = bom.lines.find((line) => line.category === "sleeving");

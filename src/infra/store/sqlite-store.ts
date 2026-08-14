@@ -1,6 +1,5 @@
 import Database from "better-sqlite3";
 import type {
-  AuditEvent,
   Design,
   DesignSnapshot,
   DesignStatus,
@@ -14,12 +13,17 @@ import type {
   ValidationRun
 } from "../../domain/types.js";
 import type {
+  AwgCmaReference,
+  CategoryAttributesMap,
+  ContactWireCompat,
   LibraryCategory,
-  LibraryComponentIngestItem,
-  LibraryComponentRecord,
-  LibraryFieldDefinitionRecord,
   LibraryIngestResult,
-  LibraryReviewQueueRecord
+  ModuleBackshellCompat,
+  ModuleContactCompat,
+  ModuleStrainReliefCompat,
+  PartAlias,
+  PartIngestItem,
+  PartWithAttributes
 } from "../../domain/library.js";
 import type { TablePreferencesRecord } from "../../domain/table-preferences.js";
 import { MemoryStore, type MemoryStoreState } from "./memory-store.js";
@@ -53,18 +57,14 @@ export class SqliteStore extends MemoryStore {
     const bootstrap = bootstrapDatabase(dbPath);
     super(bootstrap.state ? { state: bootstrap.state } : undefined);
     this.db = bootstrap.db;
-    // Persist backfilled starter catalog for existing sqlite databases.
-    this.persistState();
-  }
-
-  override async ensureDefaultLibrarySeeded(): Promise<void> {
-    await super.ensureDefaultLibrarySeeded();
     this.persistState();
   }
 
   private persistState() {
     this.db
-      .prepare(`INSERT INTO app_state (id, payload, updated_at) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload, updated_at=excluded.updated_at`)
+      .prepare(
+        `INSERT INTO app_state (id, payload, updated_at) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload, updated_at=excluded.updated_at`
+      )
       .run("memory_store", JSON.stringify(this.exportState()), new Date().toISOString());
   }
 
@@ -104,7 +104,11 @@ export class SqliteStore extends MemoryStore {
     return result;
   }
 
-  override async upsertProjectMember(input: { projectId: string; userId: string; role: ProjectMember["role"] }): Promise<ProjectMember> {
+  override async upsertProjectMember(input: {
+    projectId: string;
+    userId: string;
+    role: ProjectMember["role"];
+  }): Promise<ProjectMember> {
     const result = await super.upsertProjectMember(input);
     this.persistState();
     return result;
@@ -116,7 +120,7 @@ export class SqliteStore extends MemoryStore {
     createdBy: string;
     rulesetVersion?: string;
     libraryVersion?: string;
-  }): Promise<Design> {
+  }): Promise<import("../../domain/types.js").Design> {
     const result = await super.createDesign(input);
     this.persistState();
     return result;
@@ -128,7 +132,11 @@ export class SqliteStore extends MemoryStore {
     return result;
   }
 
-  override async updateDesign(input: { designId: string; name?: string; description?: string }): Promise<Design | null> {
+  override async updateDesign(input: {
+    designId: string;
+    name?: string;
+    description?: string;
+  }): Promise<import("../../domain/types.js").Design | null> {
     const result = await super.updateDesign(input);
     this.persistState();
     return result;
@@ -138,7 +146,7 @@ export class SqliteStore extends MemoryStore {
     designId: string;
     targetStatus: DesignStatus;
     expectedCurrentStatus?: DesignStatus;
-  }): Promise<Design | null> {
+  }): Promise<import("../../domain/types.js").Design | null> {
     const result = await super.updateDesignState(input);
     this.persistState();
     return result;
@@ -194,10 +202,10 @@ export class SqliteStore extends MemoryStore {
 
   override async createAuditEvent(input: {
     designId: string;
-    eventType: AuditEvent["eventType"];
+    eventType: import("../../domain/types.js").AuditEvent["eventType"];
     actorId: string;
-    payload: AuditEvent["payload"];
-  }): Promise<AuditEvent> {
+    payload: import("../../domain/types.js").AuditEvent["payload"];
+  }): Promise<import("../../domain/types.js").AuditEvent> {
     const result = await super.createAuditEvent(input);
     this.persistState();
     return result;
@@ -254,7 +262,7 @@ export class SqliteStore extends MemoryStore {
   }
 
   override async ingestLibraryComponents(input: {
-    items: LibraryComponentIngestItem[];
+    items: PartIngestItem[];
     requestedByUserId: string;
     dryRun: boolean;
     idempotencyKey?: string;
@@ -271,8 +279,18 @@ export class SqliteStore extends MemoryStore {
     isReviewed: boolean;
     reviewedByUserId?: string;
     reviewedAt?: string;
-  }): Promise<LibraryComponentRecord | null> {
+  }): Promise<PartWithAttributes | null> {
     const result = await super.setLibraryComponentReview(input);
+    this.persistState();
+    return result;
+  }
+
+  override async bulkSetLibraryComponentReview(input: {
+    componentIds: string[];
+    reviewedByUserId?: string;
+    reviewedAt?: string;
+  }): Promise<{ reviewed: number; missing: string[] }> {
+    const result = await super.bulkSetLibraryComponentReview(input);
     this.persistState();
     return result;
   }
@@ -280,23 +298,21 @@ export class SqliteStore extends MemoryStore {
   override async archiveLibraryComponent(input: {
     componentId: string;
     archivedByUserId: string;
-  }): Promise<LibraryComponentRecord | null> {
+  }): Promise<PartWithAttributes | null> {
     const result = await super.archiveLibraryComponent(input);
     this.persistState();
     return result;
   }
 
-  override async listArchivedLibraryComponents(): Promise<LibraryComponentRecord[]> {
-    const result = await super.listArchivedLibraryComponents();
-    this.persistState();
-    return result;
+  override async listArchivedLibraryComponents(): Promise<PartWithAttributes[]> {
+    return super.listArchivedLibraryComponents();
   }
 
   override async restoreLibraryComponent(input: {
     componentId: string;
     restoredByUserId: string;
     reactivate?: boolean;
-  }): Promise<LibraryComponentRecord | null> {
+  }): Promise<PartWithAttributes | null> {
     const result = await super.restoreLibraryComponent(input);
     this.persistState();
     return result;
@@ -313,80 +329,120 @@ export class SqliteStore extends MemoryStore {
     partNumber?: string;
     family?: string;
     description?: string;
-    awg?: string;
-    color?: string;
     isActive?: boolean;
     isReviewed?: boolean;
     reviewedByUserId?: string;
     reviewedAt?: string;
-    stockStatus?: LibraryComponentRecord["stockStatus"];
-    compatibilityHints?: string[];
-    pinCount?: number;
-    pinIds?: string[];
-    acceptedAwgMin?: number;
-    acceptedAwgMax?: number;
-    acceptedFamilies?: string[];
+    stockStatus?: PartWithAttributes["stockStatus"];
     createdByUserId?: string;
     createdAt?: string;
     lastEditedByUserId?: string;
     lastEditedAt?: string;
     editedByUserId?: string;
-    customFieldValues?: Record<string, string>;
-  }): Promise<LibraryComponentRecord | null> {
+    attributes?: Partial<CategoryAttributesMap[LibraryCategory]>;
+  }): Promise<PartWithAttributes | null> {
     const result = await super.updateLibraryComponent(input);
     this.persistState();
     return result;
   }
 
-  override async listLibraryFieldDefinitions(input: {
-    category: LibraryCategory;
-  }): Promise<LibraryFieldDefinitionRecord[]> {
-    return super.listLibraryFieldDefinitions(input);
-  }
-
-  override async createLibraryFieldDefinition(input: {
-    category: LibraryCategory;
-    key: string;
-    label: string;
-    valueType: "text";
-    isVisibleInViewer: boolean;
-    showOnAddForm: boolean;
-    showInSearch: boolean;
-    createdByUserId: string;
-  }): Promise<LibraryFieldDefinitionRecord> {
-    const result = await super.createLibraryFieldDefinition(input);
+  override async upsertContactWireCompat(input: ContactWireCompat): Promise<ContactWireCompat> {
+    const result = await super.upsertContactWireCompat(input);
     this.persistState();
     return result;
   }
 
-  override async updateLibraryFieldDefinition(input: {
-    fieldDefinitionId: string;
-    label?: string;
-    isVisibleInViewer?: boolean;
-    showOnAddForm?: boolean;
-    showInSearch?: boolean;
-  }): Promise<LibraryFieldDefinitionRecord | null> {
-    const result = await super.updateLibraryFieldDefinition(input);
+  override async deleteContactWireCompat(input: { contactPartId: string; wirePartId: string }): Promise<boolean> {
+    const result = await super.deleteContactWireCompat(input);
     this.persistState();
     return result;
   }
 
-  override async deleteLibraryFieldDefinition(input: { fieldDefinitionId: string }): Promise<boolean> {
-    const result = await super.deleteLibraryFieldDefinition(input);
+  override async bulkUpsertContactWireCompat(input: { rows: ContactWireCompat[] }): Promise<{ upserted: number }> {
+    const result = await super.bulkUpsertContactWireCompat(input);
     this.persistState();
     return result;
   }
 
-  override async listLibraryReviewQueue(input?: {
-    category?: LibraryCategory;
-    family?: string;
-    enteredByUserId?: string;
-  }): Promise<LibraryReviewQueueRecord[]> {
-    return super.listLibraryReviewQueue(input);
+  override async upsertModuleContactCompat(input: ModuleContactCompat): Promise<ModuleContactCompat> {
+    const result = await super.upsertModuleContactCompat(input);
+    this.persistState();
+    return result;
   }
 
-  override async getUserTablePreferences(input: { userId: string; scope: string }): Promise<TablePreferencesRecord | null> {
-    return super.getUserTablePreferences(input);
+  override async deleteModuleContactCompat(input: {
+    modulePartId: string;
+    contactPartId: string;
+  }): Promise<boolean> {
+    const result = await super.deleteModuleContactCompat(input);
+    this.persistState();
+    return result;
+  }
+
+  override async bulkUpsertModuleContactCompat(input: { rows: ModuleContactCompat[] }): Promise<{ upserted: number }> {
+    const result = await super.bulkUpsertModuleContactCompat(input);
+    this.persistState();
+    return result;
+  }
+
+  override async upsertModuleBackshellCompat(input: ModuleBackshellCompat): Promise<ModuleBackshellCompat> {
+    const result = await super.upsertModuleBackshellCompat(input);
+    this.persistState();
+    return result;
+  }
+
+  override async deleteModuleBackshellCompat(input: {
+    modulePartId: string;
+    backshellPartId: string;
+  }): Promise<boolean> {
+    const result = await super.deleteModuleBackshellCompat(input);
+    this.persistState();
+    return result;
+  }
+
+  override async bulkUpsertModuleBackshellCompat(input: { rows: ModuleBackshellCompat[] }): Promise<{ upserted: number }> {
+    const result = await super.bulkUpsertModuleBackshellCompat(input);
+    this.persistState();
+    return result;
+  }
+
+  override async upsertModuleStrainReliefCompat(input: ModuleStrainReliefCompat): Promise<ModuleStrainReliefCompat> {
+    const result = await super.upsertModuleStrainReliefCompat(input);
+    this.persistState();
+    return result;
+  }
+
+  override async bulkUpsertModuleStrainReliefCompat(input: { rows: ModuleStrainReliefCompat[] }): Promise<{ upserted: number }> {
+    const result = await super.bulkUpsertModuleStrainReliefCompat(input);
+    this.persistState();
+    return result;
+  }
+
+  override async deleteModuleStrainReliefCompat(input: {
+    modulePartId: string;
+    strainReliefPartId: string;
+  }): Promise<boolean> {
+    const result = await super.deleteModuleStrainReliefCompat(input);
+    this.persistState();
+    return result;
+  }
+
+  override async bulkUpsertAwgCmaReference(input: { rows: AwgCmaReference[] }): Promise<{ upserted: number }> {
+    const result = await super.bulkUpsertAwgCmaReference(input);
+    this.persistState();
+    return result;
+  }
+
+  override async upsertPartAlias(input: PartAlias): Promise<PartAlias> {
+    const result = await super.upsertPartAlias(input);
+    this.persistState();
+    return result;
+  }
+
+  override async deletePartAlias(input: { codeSystem: string; code: string }): Promise<boolean> {
+    const result = await super.deletePartAlias(input);
+    this.persistState();
+    return result;
   }
 
   override async upsertUserTablePreferences(input: {

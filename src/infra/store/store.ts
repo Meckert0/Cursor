@@ -13,12 +13,27 @@ import type {
   ValidationRun
 } from "../../domain/types.js";
 import type {
+  AwgCmaReference,
   LibraryCategory,
-  LibraryComponentIngestItem,
+  PartIngestItem,
   LibraryIngestResult,
-  LibraryComponentRecord,
+  PartWithAttributes,
   LibraryReviewQueueRecord,
-  LibraryFieldDefinitionRecord
+  CompatStatus,
+  ContactWireCompat,
+  ModuleContactCompat,
+  ModuleBackshellCompat,
+  ModuleStrainReliefCompat,
+  PartAlias,
+  ModuleAttributes,
+  ContactAttributes,
+  WireAttributes,
+  LabelAttributes,
+  SleeveTubeBraidAttributes,
+  BackshellAttributes,
+  StrainReliefAttributes,
+  SpliceAttributes,
+  CategoryAttributesMap
 } from "../../domain/library.js";
 import type { TablePreferencesRecord } from "../../domain/table-preferences.js";
 
@@ -137,7 +152,7 @@ export interface Store {
     unreviewedPartSeverity?: "error" | "warning" | "info";
   }): Promise<ProjectRulesetPolicy>;
   ingestLibraryComponents(input: {
-    items: LibraryComponentIngestItem[];
+    items: PartIngestItem[];
     requestedByUserId: string;
     dryRun: boolean;
     idempotencyKey?: string;
@@ -146,81 +161,78 @@ export interface Store {
     requestingUserId: string;
     canViewAllUnreviewed: boolean;
     canViewInactive: boolean;
-  }): Promise<LibraryComponentRecord[]>;
-  /** Idempotently seed DEFAULT_LIBRARY_COMPONENTS (insert-missing only). */
-  ensureDefaultLibrarySeeded(): Promise<void>;
+  }): Promise<PartWithAttributes[]>;
   getLibraryComponent(input: {
     componentId: string;
     requestingUserId: string;
     canViewAllUnreviewed: boolean;
     canViewInactive: boolean;
-  }): Promise<LibraryComponentRecord | null>;
+  }): Promise<PartWithAttributes | null>;
   setLibraryComponentReview(input: {
     componentId: string;
     isReviewed: boolean;
     reviewedByUserId?: string;
     reviewedAt?: string;
-  }): Promise<LibraryComponentRecord | null>;
+  }): Promise<PartWithAttributes | null>;
   archiveLibraryComponent(input: {
     componentId: string;
     archivedByUserId: string;
-  }): Promise<LibraryComponentRecord | null>;
-  listArchivedLibraryComponents(): Promise<LibraryComponentRecord[]>;
+  }): Promise<PartWithAttributes | null>;
+  listArchivedLibraryComponents(): Promise<PartWithAttributes[]>;
   restoreLibraryComponent(input: {
     componentId: string;
     restoredByUserId: string;
     reactivate?: boolean;
-  }): Promise<LibraryComponentRecord | null>;
+  }): Promise<PartWithAttributes | null>;
   deleteLibraryComponent(input: { componentId: string }): Promise<boolean>;
   updateLibraryComponent(input: {
     componentId: string;
     partNumber?: string;
     family?: string;
     description?: string;
-    awg?: string;
-    color?: string;
     isActive?: boolean;
     isReviewed?: boolean;
     reviewedByUserId?: string;
     reviewedAt?: string;
-    stockStatus?: LibraryComponentRecord["stockStatus"];
-    compatibilityHints?: string[];
-    pinCount?: number;
-    pinIds?: string[];
-    acceptedAwgMin?: number;
-    acceptedAwgMax?: number;
-    acceptedFamilies?: string[];
+    stockStatus?: PartWithAttributes["stockStatus"];
     createdByUserId?: string;
     createdAt?: string;
     lastEditedByUserId?: string;
     lastEditedAt?: string;
     editedByUserId?: string;
-    customFieldValues?: Record<string, string>;
-  }): Promise<LibraryComponentRecord | null>;
-  listLibraryFieldDefinitions(input: { category: LibraryCategory }): Promise<LibraryFieldDefinitionRecord[]>;
-  createLibraryFieldDefinition(input: {
-    category: LibraryCategory;
-    key: string;
-    label: string;
-    valueType: "text";
-    isVisibleInViewer: boolean;
-    showOnAddForm: boolean;
-    showInSearch: boolean;
-    createdByUserId: string;
-  }): Promise<LibraryFieldDefinitionRecord>;
-  updateLibraryFieldDefinition(input: {
-    fieldDefinitionId: string;
-    label?: string;
-    isVisibleInViewer?: boolean;
-    showOnAddForm?: boolean;
-    showInSearch?: boolean;
-  }): Promise<LibraryFieldDefinitionRecord | null>;
-  deleteLibraryFieldDefinition(input: { fieldDefinitionId: string }): Promise<boolean>;
+    attributes?: Partial<CategoryAttributesMap[LibraryCategory]>;
+  }): Promise<PartWithAttributes | null>;
   listLibraryReviewQueue(input?: {
     category?: LibraryCategory;
     family?: string;
     enteredByUserId?: string;
   }): Promise<LibraryReviewQueueRecord[]>;
+  bulkSetLibraryComponentReview(input: {
+    componentIds: string[];
+    reviewedByUserId?: string;
+    reviewedAt?: string;
+  }): Promise<{ reviewed: number; missing: string[] }>;
+  listContactWireCompat(): Promise<ContactWireCompat[]>;
+  upsertContactWireCompat(input: ContactWireCompat): Promise<ContactWireCompat>;
+  bulkUpsertContactWireCompat(input: { rows: ContactWireCompat[] }): Promise<{ upserted: number }>;
+  deleteContactWireCompat(input: { contactPartId: string; wirePartId: string }): Promise<boolean>;
+  listModuleContactCompat(): Promise<ModuleContactCompat[]>;
+  upsertModuleContactCompat(input: ModuleContactCompat): Promise<ModuleContactCompat>;
+  bulkUpsertModuleContactCompat(input: { rows: ModuleContactCompat[] }): Promise<{ upserted: number }>;
+  deleteModuleContactCompat(input: { modulePartId: string; contactPartId: string }): Promise<boolean>;
+  listModuleBackshellCompat(): Promise<ModuleBackshellCompat[]>;
+  upsertModuleBackshellCompat(input: ModuleBackshellCompat): Promise<ModuleBackshellCompat>;
+  bulkUpsertModuleBackshellCompat(input: { rows: ModuleBackshellCompat[] }): Promise<{ upserted: number }>;
+  deleteModuleBackshellCompat(input: { modulePartId: string; backshellPartId: string }): Promise<boolean>;
+  listModuleStrainReliefCompat(): Promise<ModuleStrainReliefCompat[]>;
+  upsertModuleStrainReliefCompat(input: ModuleStrainReliefCompat): Promise<ModuleStrainReliefCompat>;
+  bulkUpsertModuleStrainReliefCompat(input: { rows: ModuleStrainReliefCompat[] }): Promise<{ upserted: number }>;
+  deleteModuleStrainReliefCompat(input: { modulePartId: string; strainReliefPartId: string }): Promise<boolean>;
+  listAwgCmaReference(): Promise<AwgCmaReference[]>;
+  bulkUpsertAwgCmaReference(input: { rows: AwgCmaReference[] }): Promise<{ upserted: number }>;
+  listPartAliases(input?: { partId?: string }): Promise<PartAlias[]>;
+  upsertPartAlias(input: PartAlias): Promise<PartAlias>;
+  deletePartAlias(input: { codeSystem: string; code: string }): Promise<boolean>;
   getUserTablePreferences(input: { userId: string; scope: string }): Promise<TablePreferencesRecord | null>;
   upsertUserTablePreferences(input: {
     userId: string;

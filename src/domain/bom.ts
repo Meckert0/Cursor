@@ -1,4 +1,6 @@
-import type { LibraryCategory, LibraryComponentRecord } from "./library.js";
+import type { LibraryCategory, PartAlias, PartWithAttributes } from "./library.js";
+import { isSleeveTubeBraidPart, isWirePart } from "./library.js";
+import { isWireRunPath, pinMappedPathIds } from "./path-roles.js";
 import type { DesignSnapshot, Revision } from "./types.js";
 
 export type BomResolution = "resolved" | "not_found" | "inactive" | "unreviewed";
@@ -32,15 +34,19 @@ export interface BomResult {
 }
 
 export interface LibraryLookup {
-  byId(id: string): LibraryComponentRecord | undefined;
-  byPartNumber(partNumber: string, category?: LibraryCategory | LibraryCategory[]): LibraryComponentRecord | undefined;
-  listByCategory?(category: LibraryCategory): LibraryComponentRecord[];
+  byId(id: string): PartWithAttributes | undefined;
+  byPartNumber(partNumber: string, category?: LibraryCategory | LibraryCategory[]): PartWithAttributes | undefined;
+  listByCategory?(category: LibraryCategory): PartWithAttributes[];
 }
 
-export function createLibraryLookup(components: LibraryComponentRecord[]): LibraryLookup {
+export function createLibraryLookup(
+  components: PartWithAttributes[],
+  aliases: PartAlias[] = []
+): LibraryLookup {
   const byId = new Map(components.map((component) => [component.id, component]));
-  const byPartNumber = new Map<string, LibraryComponentRecord[]>();
-  const byCategory = new Map<LibraryCategory, LibraryComponentRecord[]>();
+  const byPartNumber = new Map<string, PartWithAttributes[]>();
+  const byCategory = new Map<LibraryCategory, PartWithAttributes[]>();
+  const byAliasCode = new Map<string, PartWithAttributes[]>();
   for (const component of components) {
     const key = normalizePartNumber(component.partNumber);
     if (key) {
@@ -52,6 +58,30 @@ export function createLibraryLookup(components: LibraryComponentRecord[]): Libra
     categoryItems.push(component);
     byCategory.set(component.category, categoryItems);
   }
+  for (const alias of aliases) {
+    const part = byId.get(alias.partId);
+    if (!part) {
+      continue;
+    }
+    const key = normalizePartNumber(alias.code);
+    if (!key) {
+      continue;
+    }
+    const existing = byAliasCode.get(key) ?? [];
+    existing.push(part);
+    byAliasCode.set(key, existing);
+  }
+
+  function pickMatch(
+    matches: PartWithAttributes[],
+    category?: LibraryCategory | LibraryCategory[]
+  ): PartWithAttributes | undefined {
+    if (!category) {
+      return matches[0];
+    }
+    const categories = Array.isArray(category) ? category : [category];
+    return matches.find((component) => categories.includes(component.category));
+  }
 
   return {
     byId(id: string) {
@@ -62,12 +92,11 @@ export function createLibraryLookup(components: LibraryComponentRecord[]): Libra
       if (!key) {
         return undefined;
       }
-      const matches = byPartNumber.get(key) ?? [];
-      if (!category) {
-        return matches[0];
+      const byPn = pickMatch(byPartNumber.get(key) ?? [], category);
+      if (byPn) {
+        return byPn;
       }
-      const categories = Array.isArray(category) ? category : [category];
-      return matches.find((component) => categories.includes(component.category));
+      return pickMatch(byAliasCode.get(key) ?? [], category);
     },
     listByCategory(category: LibraryCategory) {
       return byCategory.get(category) ?? [];
@@ -79,7 +108,7 @@ function normalizePartNumber(value: string | undefined): string {
   return (value ?? "").trim().toLowerCase();
 }
 
-function resolutionFor(component: LibraryComponentRecord | undefined): BomResolution {
+function resolutionFor(component: PartWithAttributes | undefined): BomResolution {
   if (!component) {
     return "not_found";
   }
@@ -178,7 +207,7 @@ function resolveComponent(
     partNumber?: string;
     categories?: LibraryCategory | LibraryCategory[];
   }
-): LibraryComponentRecord | undefined {
+): PartWithAttributes | undefined {
   if (input.libraryComponentId) {
     const byId = lookup.byId(input.libraryComponentId);
     if (byId) {
@@ -244,11 +273,19 @@ function emitAccessoryLine(
 function resolveSleevingComponent(
   lookup: LibraryLookup,
   sleeving: NonNullable<DesignSnapshot["paths"][number]["sleeving"]>
-): LibraryComponentRecord | undefined {
-  const hintNeedle = `maps to ${sleeving}`.toLowerCase();
-  return (lookup.listByCategory?.("sleeve-tube-braid") ?? []).find((component) =>
-    component.compatibilityHints.some((hint) => hint.toLowerCase().includes(hintNeedle))
-  );
+): PartWithAttributes | undefined {
+  const styleNeedle = sleeving.toLowerCase();
+  return (lookup.listByCategory?.("sleeve-tube-braid") ?? []).find((component) => {
+    if (!isSleeveTubeBraidPart(component)) {
+      return false;
+    }
+    // Sleeve style lives on parts.family after migration 028 (no sleeve_style column).
+    const style = component.family?.trim().toLowerCase();
+    if (!style) {
+      return false;
+    }
+    return style === styleNeedle || style.includes(styleNeedle) || styleNeedle.includes(style);
+  });
 }
 
 export function buildBom(revision: Revision, lookup: LibraryLookup): BomResult {
@@ -307,6 +344,9 @@ export function buildBom(revision: Revision, lookup: LibraryLookup): BomResult {
   }
 
   for (const path of snapshot.paths) {
+    if (!isWireRunPath(path, pinMappedPathIds(snapshot.pinMappings))) {
+      continue;
+    }
     const wirePartNumber = path.wirePartNumber?.trim();
     if (wirePartNumber || path.wireComponentId) {
       const component = resolveComponent(lookup, {
@@ -318,8 +358,14 @@ export function buildBom(revision: Revision, lookup: LibraryLookup): BomResult {
       const hasLength = typeof path.length === "number" && Number.isFinite(path.length);
       const quantity = hasLength ? path.length! : 1;
       const unit: BomUnit = hasLength ? "in" : "ea";
-      const awg = path.wireAwg?.trim() || component?.awg?.trim() || undefined;
-      const color = path.wireColor?.trim() || component?.color?.trim() || undefined;
+      const awg =
+        path.wireAwg?.trim() ||
+        (component && isWirePart(component) ? component.attributes.awg.trim() : undefined) ||
+        undefined;
+      const color =
+        path.wireColor?.trim() ||
+        (component && isWirePart(component) ? component.attributes.color.trim() : undefined) ||
+        undefined;
       const awgColorNote = formatWireAwgColorNote(awg, color);
       const lengthNote = hasLength ? undefined : "Path length missing; counted as 1 ea";
       const notes = [awgColorNote, lengthNote].filter(Boolean).join("; ") || undefined;

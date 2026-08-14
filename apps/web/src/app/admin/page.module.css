@@ -557,3 +557,66 @@
   flex-wrap: wrap;
   gap: 10px;
 }
+
+.compatTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.compatTab,
+.compatTabActive {
+  border: 1px solid #cdd3de;
+  background: #fff;
+  color: #334155;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.compatTabActive {
+  border-color: #1d4ed8;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
+.compatPanel {
+  display: grid;
+  gap: 12px;
+}
+
+.compatAddForm {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+  align-items: end;
+}
+
+.compatAddForm label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.compatAddForm input,
+.compatAddForm select {
+  border: 1px solid #cdd3de;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+}
+
+.compatAddForm button {
+  width: fit-content;
+  border: 1px solid #1d4ed8;
+  background: #2563eb;
+  color: #fff;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font: inherit;
+  cursor: pointer;
+}

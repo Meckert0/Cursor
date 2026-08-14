@@ -1,17 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   archiveLibraryComponent,
-  createLibraryFieldDefinition,
   createRevisionExport,
-  deleteLibraryFieldDefinition,
   extractApiErrorMessage,
   ingestLibraryComponents,
+  listContactWireCompat,
   listLibraryReviewQueue,
-  listLibraryFieldDefinitions,
   listLibraryComponents,
   updateLibraryComponent,
-  updateLibraryFieldDefinition,
   updateLibraryTablePreferences,
+  upsertContactWireCompat,
+  deleteContactWireCompat,
   toActionableApiErrorMessage,
   transitionHarnessState
 } from "./api";
@@ -141,12 +140,10 @@ describe("api client flows", () => {
           family: "MIL-W-22759",
           partNumber: "M22759/16-22",
           description: "Quick add wire",
-          awg: "22",
-          color: "white",
           isActive: true,
           stockStatus: "in_stock",
-          compatibilityHints: [],
-          isReviewed: false
+          isReviewed: false,
+          attributes: { awg: "22", color: "white" }
         }
       ]
     });
@@ -154,6 +151,7 @@ describe("api client flows", () => {
     expect(String(url)).toContain("/v1/library/components/ingest");
     expect(options.method).toBe("POST");
     expect(String(options.body)).toContain('"category":"wire"');
+    expect(String(options.body)).toContain('"attributes":{"awg":"22","color":"white"}');
   });
 
   it("sends keepalive option for table-preferences save", async () => {
@@ -175,33 +173,28 @@ describe("api client flows", () => {
     expect(options.keepalive).toBe(true);
   });
 
-  it("calls field-definition CRUD endpoints", async () => {
+  it("calls contact-wire compat list/upsert/delete endpoints", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({ ok: true, json: async () => ({ items: [] }) })
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ id: "fld-1", category: "wire", key: "insulation", label: "Insulation", valueType: "text", isSystem: false, isVisibleInViewer: true, createdByUserId: "user", createdAt: "", updatedAt: "" })
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ id: "fld-1", category: "wire", key: "insulation", label: "Insulation type", valueType: "text", isSystem: false, isVisibleInViewer: false, createdByUserId: "user", createdAt: "", updatedAt: "" })
+        json: async () => ({ contactPartId: "c1", wirePartId: "w1", status: "allowed" })
       })
       .mockResolvedValueOnce({ ok: true, status: 204, text: async () => "" });
     vi.stubGlobal("fetch", fetchMock);
 
-    await listLibraryFieldDefinitions("wire");
-    await createLibraryFieldDefinition({ category: "wire", key: "insulation", label: "Insulation", isVisibleInViewer: true });
-    await updateLibraryFieldDefinition({ fieldDefinitionId: "fld-1", label: "Insulation type", isVisibleInViewer: false });
-    await deleteLibraryFieldDefinition("fld-1");
+    await listContactWireCompat();
+    await upsertContactWireCompat({ contactPartId: "c1", wirePartId: "w1", status: "allowed" });
+    await deleteContactWireCompat({ contactPartId: "c1", wirePartId: "w1" });
 
-    expect(String(fetchMock.mock.calls[0][0])).toContain("/v1/library/field-definitions/wire");
-    expect(String(fetchMock.mock.calls[1][0])).toContain("/v1/library/field-definitions/wire");
-    expect(String(fetchMock.mock.calls[2][0])).toContain("/v1/library/field-definitions/fld-1");
-    expect(String(fetchMock.mock.calls[3][0])).toContain("/v1/library/field-definitions/fld-1");
+    expect(String(fetchMock.mock.calls[0][0])).toContain("/v1/library/compat/contact-wire");
+    expect(String(fetchMock.mock.calls[1][0])).toContain("/v1/library/compat/contact-wire");
+    expect(String(fetchMock.mock.calls[2][0])).toContain("/v1/library/compat/contact-wire?");
+    expect(String(fetchMock.mock.calls[2][0])).toContain("contactPartId=c1");
   });
 
-  it("sends custom field values in component updates", async () => {
+  it("sends attributes in component updates", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ id: "cmp-1" })
@@ -210,9 +203,9 @@ describe("api client flows", () => {
 
     await updateLibraryComponent({
       componentId: "cmp-1",
-      customFieldValues: { insulationType: "PTFE" }
+      attributes: { insulationMaterial: "PTFE" }
     });
     const [, options] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(String(options.body)).toContain('"customFieldValues":{"insulationType":"PTFE"}');
+    expect(String(options.body)).toContain('"attributes":{"insulationMaterial":"PTFE"}');
   });
 });

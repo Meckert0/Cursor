@@ -198,10 +198,12 @@ test("define connector can place an ITA frame with per-slot modules", async ({ p
   await expect(page.getByRole("row").filter({ hasText: moduleAPn })).toBeVisible();
   await expect(page.getByRole("row").filter({ hasText: otherPn })).toHaveCount(0);
   await expect(page.getByRole("row").filter({ hasText: reversePn })).toHaveCount(0);
-  await page.getByLabel("Reverse compatibility").check();
+  await page.getByRole("button", { name: "show reverse compatibility modules" }).click();
   await expect(page.getByRole("row").filter({ hasText: reversePn })).toBeVisible();
-  await page.getByLabel("Reverse compatibility").uncheck();
+  await expect(page.getByRole("row").filter({ hasText: moduleAPn })).toHaveCount(0);
+  await page.getByRole("button", { name: "show reverse compatibility modules" }).click();
   await expect(page.getByRole("row").filter({ hasText: reversePn })).toHaveCount(0);
+  await expect(page.getByRole("row").filter({ hasText: moduleAPn })).toBeVisible();
   await page.getByRole("row").filter({ hasText: moduleAPn }).getByRole("button", { name: "Select" }).click();
   await expect(page.getByRole("button", { name: "Change slot A module" })).toContainText(`Part number: ${moduleAPn}`);
 

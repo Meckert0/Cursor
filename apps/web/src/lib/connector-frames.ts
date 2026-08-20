@@ -146,22 +146,26 @@ export function normalizeCatalogSide(side?: string): CatalogSide {
 }
 
 /**
- * Reverse-compatibility filter: with includeReverse off, only modules on the
- * frame's side (or DUAL / unspecified) are suggested for its slots.
+ * Frame-side module filter.
+ * With reverseOnly off, only same-side modules (or DUAL / unspecified) are suggested.
+ * With reverseOnly on, only opposite-side modules are suggested.
  */
 export function moduleMatchesFrameSide(
   module: { side?: string },
   frame: { side?: string } | undefined,
-  includeReverse: boolean
+  reverseOnly: boolean
 ): boolean {
-  if (includeReverse) {
-    return true;
-  }
   const frameSide = normalizeCatalogSide(frame?.side);
+  const moduleSide = normalizeCatalogSide(module.side);
+  if (reverseOnly) {
+    if (!frameSide || frameSide === "DUAL" || !moduleSide || moduleSide === "DUAL") {
+      return false;
+    }
+    return moduleSide !== frameSide;
+  }
   if (!frameSide || frameSide === "DUAL") {
     return true;
   }
-  const moduleSide = normalizeCatalogSide(module.side);
   if (!moduleSide || moduleSide === "DUAL") {
     return true;
   }

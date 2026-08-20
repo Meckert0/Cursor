@@ -100,12 +100,19 @@ test("moduleMatchesFrameSide hides opposite-side modules unless reverse compatib
   assert.equal(moduleMatchesFrameSide({ side: "RCV" }, itaFrame, false), false);
   assert.equal(moduleMatchesFrameSide({ side: "DUAL" }, itaFrame, false), true);
   assert.equal(moduleMatchesFrameSide({}, itaFrame, false), true);
-  // Reverse compatibility checkbox keeps everything.
+  // Reverse-only mode shows opposite-side modules and hides same-side ones.
   assert.equal(moduleMatchesFrameSide({ side: "RECEIVER" }, itaFrame, true), true);
-  // Unknown or dual frame side cannot filter.
+  assert.equal(moduleMatchesFrameSide({ side: "RCV" }, itaFrame, true), true);
+  assert.equal(moduleMatchesFrameSide({ side: "ITA" }, itaFrame, true), false);
+  assert.equal(moduleMatchesFrameSide({ side: "DUAL" }, itaFrame, true), false);
+  assert.equal(moduleMatchesFrameSide({}, itaFrame, true), false);
+  // Unknown or dual frame side cannot filter in standard mode, and has no reverse matches.
   assert.equal(moduleMatchesFrameSide({ side: "RECEIVER" }, {}, false), true);
   assert.equal(moduleMatchesFrameSide({ side: "RECEIVER" }, { side: "DUAL" }, false), true);
   assert.equal(moduleMatchesFrameSide({ side: "ITA" }, undefined, false), true);
+  assert.equal(moduleMatchesFrameSide({ side: "RECEIVER" }, {}, true), false);
+  assert.equal(moduleMatchesFrameSide({ side: "RECEIVER" }, { side: "DUAL" }, true), false);
+  assert.equal(moduleMatchesFrameSide({ side: "ITA" }, undefined, true), false);
 });
 
 test("empty parentPositions allows the module in every slot", () => {

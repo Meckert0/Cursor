@@ -1495,14 +1495,14 @@ export function CableCanvas({
                   Add new connector
                 </button>
               ) : (
-                <label className={styles.reverseCompatToggle}>
-                  <input
-                    type="checkbox"
-                    checked={includeReverseCompat}
-                    onChange={(event) => setIncludeReverseCompat(event.target.checked)}
-                  />
-                  Reverse compatibility
-                </label>
+                <button
+                  type="button"
+                  className={styles.reverseCompatToggle}
+                  aria-pressed={includeReverseCompat}
+                  onClick={() => setIncludeReverseCompat((value) => !value)}
+                >
+                  show reverse compatibility modules
+                </button>
               )}
             </div>
             <div className={styles.connectorSearchTableWrap}>
@@ -1521,7 +1521,9 @@ export function CableCanvas({
                       <td colSpan={connectorSearchColumns.length + 1}>
                         {connectorSearchTarget === "housing"
                           ? "No connectors found."
-                          : "No compatible modules for this slot."}
+                          : includeReverseCompat
+                            ? "No reverse-compatible modules for this slot."
+                            : "No compatible modules for this slot."}
                       </td>
                     </tr>
                   ) : (

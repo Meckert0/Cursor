@@ -6,7 +6,8 @@ export const LIBRARY_CATEGORIES = [
   "backshell",
   "strain-relief",
   "module",
-  "splice"
+  "splice",
+  "frame"
 ] as const;
 
 export type LibraryCategory = (typeof LIBRARY_CATEGORIES)[number];
@@ -64,6 +65,11 @@ export interface PartRecord {
   lastEditedAt: string;
   updatedAt: string;
   importBatchId?: string;
+  partType?: string;
+  side?: string;
+  notes?: string;
+  electricalMode?: string;
+  extraAttributes?: Record<string, unknown>;
 }
 
 export interface ModuleAttributes {
@@ -83,6 +89,10 @@ export interface ModuleAttributes {
   insertArrangement?: string;
   pinIds: string[];
   contactPositions?: ModuleContactPosition[];
+  positionCount?: number;
+  simSlotCount?: number;
+  simSlotSections?: string[][];
+  slotOccupancy?: number;
 }
 
 export interface ContactAttributes {
@@ -99,6 +109,8 @@ export interface ContactAttributes {
   contactSize?: string;
   studSize?: string;
   tih?: boolean;
+  acceptedGauges?: string[];
+  wireInterface?: string;
 }
 
 export interface WireAttributes {
@@ -158,6 +170,11 @@ export interface SpliceAttributes {
   cmaMax?: number;
 }
 
+export interface FrameAttributes {
+  moduleCapacity?: number;
+  slotIds: string[];
+}
+
 export type CategoryAttributesMap = {
   module: ModuleAttributes;
   contact: ContactAttributes;
@@ -167,6 +184,7 @@ export type CategoryAttributesMap = {
   backshell: BackshellAttributes;
   "strain-relief": StrainReliefAttributes;
   splice: SpliceAttributes;
+  frame: FrameAttributes;
 };
 
 export type PartWithAttributes = {
@@ -211,6 +229,19 @@ export interface ModuleStrainReliefCompat {
   source?: string;
 }
 
+export interface PartRelationship {
+  id: string;
+  parentPartId: string;
+  childPartId?: string;
+  relationshipType: string;
+  positionType?: string;
+  parentPositions: string[];
+  status: CompatStatus;
+  sourceStatus?: string;
+  notes?: string;
+  extra?: Record<string, unknown>;
+}
+
 export interface PartImportProvenance {
   partId: string;
   sourceSheet: string;
@@ -247,6 +278,11 @@ export interface PartIngestItem {
   isReviewed: boolean;
   reviewedByUserId?: string;
   reviewedAt?: string;
+  partType?: string;
+  side?: string;
+  notes?: string;
+  electricalMode?: string;
+  extraAttributes?: Record<string, unknown>;
   attributes: CategoryAttributesMap[LibraryCategory];
   aliases?: Array<{ codeSystem: string; code: string }>;
 }
@@ -298,9 +334,9 @@ export function resolveLibraryLifecycleStatus(component: {
 export function emptyAttributesForCategory(category: LibraryCategory): CategoryAttributesMap[LibraryCategory] {
   switch (category) {
     case "module":
-      return { pinIds: [], contactPositions: [] };
+      return { pinIds: [], contactPositions: [], simSlotSections: [] };
     case "contact":
-      return { acceptedFamilies: [] };
+      return { acceptedFamilies: [], acceptedGauges: [] };
     case "wire":
       return { awg: "", color: "" };
     case "label":
@@ -313,7 +349,60 @@ export function emptyAttributesForCategory(category: LibraryCategory): CategoryA
       return {};
     case "splice":
       return {};
+    case "frame":
+      return { slotIds: [] };
   }
+}
+
+/** Natural key for generic catalog relationships (null child/position collapse to empty). */
+export function partRelationshipNaturalKey(row: {
+  parentPartId: string;
+  childPartId?: string;
+  relationshipType: string;
+  positionType?: string;
+}): string {
+  return `${row.parentPartId}::${row.childPartId ?? ""}::${row.relationshipType}::${row.positionType ?? ""}`;
+}
+
+export type PartRelationshipInput = Omit<PartRelationship, "id"> & { id?: string };
+
+function trimToUndefined(value?: string): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function objectOrUndefined(value?: Record<string, unknown>): Record<string, unknown> | undefined {
+  if (!value || Object.keys(value).length === 0) {
+    return undefined;
+  }
+  return value;
+}
+
+export function normalizePartRelationship(input: PartRelationshipInput): PartRelationship {
+  const parentPositions = Array.isArray(input.parentPositions)
+    ? input.parentPositions.map((entry) => String(entry).trim()).filter((entry) => entry.length > 0)
+    : [];
+  return {
+    id: input.id?.trim() || `rel-${crypto.randomUUID()}`,
+    parentPartId: input.parentPartId.trim(),
+    childPartId: trimToUndefined(input.childPartId),
+    relationshipType: input.relationshipType.trim(),
+    positionType: trimToUndefined(input.positionType),
+    parentPositions,
+    status: input.status,
+    sourceStatus: trimToUndefined(input.sourceStatus),
+    notes: trimToUndefined(input.notes),
+    extra: objectOrUndefined(input.extra)
+  };
+}
+
+/** Canvas connectors are modules that mount in a frame, not SIM inserts or frames. */
+export function isCanvasConnectorPart(part: { category: string; partType?: string }): boolean {
+  if (part.category !== "module") {
+    return false;
+  }
+  const partType = (part.partType ?? "MODULE").trim().toUpperCase();
+  return partType === "MODULE" || partType === "";
 }
 
 export function isWirePart(
@@ -338,4 +427,10 @@ export function isSleeveTubeBraidPart(
   part: PartWithAttributes
 ): part is PartRecord & { category: "sleeve-tube-braid"; attributes: SleeveTubeBraidAttributes } {
   return part.category === "sleeve-tube-braid";
+}
+
+export function isFramePart(
+  part: PartWithAttributes
+): part is PartRecord & { category: "frame"; attributes: FrameAttributes } {
+  return part.category === "frame";
 }

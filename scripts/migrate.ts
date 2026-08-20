@@ -2,6 +2,7 @@ import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Pool } from "pg";
+import { loadDotEnv } from "../src/infra/env/load-dotenv.js";
 
 type MigrationRow = {
   id: string;
@@ -9,6 +10,7 @@ type MigrationRow = {
 };
 
 async function main() {
+  loadDotEnv();
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
     throw new Error("DATABASE_URL is required to run migrations.");

@@ -240,8 +240,16 @@ export class ExportQueueService {
       if (artifact.artifactUri) {
         try {
           await this.artifactStorage.deleteArtifact(artifact.artifactUri);
-        } catch {
-          // Continue deleting DB rows even if object cleanup fails; next run can retry file cleanup.
+        } catch (error) {
+          this.logger.warn(
+            {
+              exportId: artifact.id,
+              artifactUri: artifact.artifactUri,
+              errorMessage: error instanceof Error ? error.message : String(error)
+            },
+            "export.retention.file_delete_failed"
+          );
+          continue;
         }
       }
       const removed = await this.store.deleteExportArtifact(artifact.id);

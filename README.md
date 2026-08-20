@@ -7,10 +7,9 @@ Vercel Production/Test hosting: `docs/deployment.md`.
 
 ## Run the local site
 
-Paste this into the terminal:
+Paste this into the terminal from the repo root:
 
 ```
-cd "C:\Users\meckert\Documents\New project"
 npm install
 npm --prefix apps/web install
 copy .env.example .env
@@ -52,7 +51,6 @@ Copy those paths to back up or move a local install.
   - `ARTIFACT_STORAGE_BACKEND=file` with local directory via `ARTIFACTS_DIR` (local only)
   - `ARTIFACT_STORAGE_BACKEND=s3` with S3-compatible object storage
   - `ARTIFACT_STORAGE_BACKEND=blob` with Vercel Blob (**Hobby**; requires `BLOB_READ_WRITE_TOKEN`)
-- Role-based endpoint authorization (`viewer/editor/owner/supplier_reviewer`)
 - Role-based endpoint authorization (`viewer/editor/owner/supplier_reviewer`)
 - Ruleset registry with active version selection policy
 - Per-project ruleset policy (default + allow-list enforcement)

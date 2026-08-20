@@ -56,7 +56,27 @@ const IDENTITY_CORE: PartFieldMeta[] = [
     required: true
   },
   { key: "isActive", label: "Active", inputType: "boolean", isIdentity: true, isVisibleInViewer: true, showOnAddForm: true },
-  { key: "stockStatus", label: "Stock status", inputType: "text", isIdentity: true, isVisibleInViewer: false, showOnAddForm: true }
+  { key: "stockStatus", label: "Stock status", inputType: "text", isIdentity: true, isVisibleInViewer: false, showOnAddForm: true },
+  {
+    key: "partType",
+    label: "Part type",
+    inputType: "text",
+    isIdentity: true,
+    isVisibleInViewer: true,
+    showOnAddForm: true,
+    showInSearch: true
+  },
+  {
+    key: "side",
+    label: "Side",
+    inputType: "text",
+    isIdentity: true,
+    isVisibleInViewer: true,
+    showOnAddForm: true,
+    showInSearch: true
+  },
+  { key: "electricalMode", label: "Electrical mode", inputType: "text", isIdentity: true, isVisibleInViewer: true, showOnAddForm: true },
+  { key: "notes", label: "Notes", inputType: "text", isIdentity: true, isVisibleInViewer: true, showOnAddForm: true }
 ];
 
 function attr(
@@ -97,6 +117,9 @@ export const PART_FIELDS_BY_CATEGORY: Record<LibraryItemCategory, PartFieldMeta[
       showOnAddForm: false
     }),
     attr("pinIds", "Pin IDs", "string-list", { isVisibleInViewer: false }),
+    attr("positionCount", "Position count", "number"),
+    attr("simSlotCount", "SIM slot count", "number", { isVisibleInViewer: false }),
+    attr("slotOccupancy", "Slot occupancy", "number", { isVisibleInViewer: false }),
     ...AUDIT_AND_REVIEW_FIELDS
   ],
   contact: [
@@ -114,6 +137,8 @@ export const PART_FIELDS_BY_CATEGORY: Record<LibraryItemCategory, PartFieldMeta[
     attr("acceptedAwgMin", "Accepted AWG min", "number"),
     attr("acceptedAwgMax", "Accepted AWG max", "number"),
     attr("acceptedFamilies", "Accepted wire families", "string-list"),
+    attr("acceptedGauges", "Accepted gauges", "string-list"),
+    attr("wireInterface", "Wire interface", "text"),
     ...AUDIT_AND_REVIEW_FIELDS
   ],
   wire: [
@@ -142,6 +167,7 @@ export const PART_FIELDS_BY_CATEGORY: Record<LibraryItemCategory, PartFieldMeta[
     attr("maxVoltage", "Max voltage", "number", { isVisibleInViewer: false }),
     IDENTITY_CORE[3],
     IDENTITY_CORE[4],
+    ...IDENTITY_CORE.slice(5),
     ...AUDIT_AND_REVIEW_FIELDS
   ],
   label: [
@@ -179,6 +205,12 @@ export const PART_FIELDS_BY_CATEGORY: Record<LibraryItemCategory, PartFieldMeta[
     attr("cmaMin", "CMA min", "number", { isVisibleInViewer: false }),
     attr("cmaMax", "CMA max", "number", { isVisibleInViewer: false }),
     attr("manufacturerPn", "Manufacturer PN", "text"),
+    ...AUDIT_AND_REVIEW_FIELDS
+  ],
+  frame: [
+    ...IDENTITY_CORE,
+    attr("moduleCapacity", "Module capacity", "number"),
+    attr("slotIds", "Slot IDs", "string-list"),
     ...AUDIT_AND_REVIEW_FIELDS
   ]
 };
@@ -262,21 +294,27 @@ export function collectAttributesFromFormData(
   if (category === "contact" && attributes.acceptedFamilies === undefined) {
     attributes.acceptedFamilies = [];
   }
+  if (category === "contact" && attributes.acceptedGauges === undefined) {
+    attributes.acceptedGauges = [];
+  }
   if (category === "sleeve-tube-braid" && attributes.sizeRanges === undefined) {
     attributes.sizeRanges = [];
   }
   if (category === "backshell" && attributes.fitments === undefined) {
     attributes.fitments = [];
   }
+  if (category === "frame" && attributes.slotIds === undefined) {
+    attributes.slotIds = [];
+  }
   return attributes;
 }
 
 export function emptyAttributesForCategory(category: LibraryItemCategory): Record<string, unknown> {
   if (category === "module") {
-    return { pinIds: [], contactPositions: [] };
+    return { pinIds: [], contactPositions: [], simSlotSections: [] };
   }
   if (category === "contact") {
-    return { acceptedFamilies: [] };
+    return { acceptedFamilies: [], acceptedGauges: [] };
   }
   if (category === "wire") {
     return { awg: "", color: "" };
@@ -287,5 +325,17 @@ export function emptyAttributesForCategory(category: LibraryItemCategory): Recor
   if (category === "backshell") {
     return { fitments: [] };
   }
+  if (category === "frame") {
+    return { slotIds: [] };
+  }
   return {};
+}
+
+/** Canvas connectors are modules that mount in a frame, not SIM inserts or frames. */
+export function isCanvasConnectorPart(part: { category: string; partType?: string }): boolean {
+  if (part.category !== "module") {
+    return false;
+  }
+  const partType = (part.partType ?? "MODULE").trim().toUpperCase();
+  return partType === "MODULE" || partType === "";
 }

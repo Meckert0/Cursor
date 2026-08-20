@@ -15,7 +15,9 @@ const listLibraryQuerySchema = z.object({
   awg: z.string().optional(),
   color: z.string().optional(),
   isActive: z.enum(["true", "false"]).optional(),
-  stockStatus: stockStatusSchema.optional()
+  stockStatus: stockStatusSchema.optional(),
+  partType: z.string().optional(),
+  side: z.string().optional()
 });
 
 const aliasEntrySchema = z.object({
@@ -58,7 +60,11 @@ const moduleAttributesSchema = z.object({
   defaultProtectiveCoverPartId: z.string().optional(),
   insertArrangement: z.string().optional(),
   pinIds: z.array(z.string().min(1)).default([]),
-  contactPositions: z.array(moduleContactPositionSchema).default([])
+  contactPositions: z.array(moduleContactPositionSchema).default([]),
+  positionCount: z.number().int().nonnegative().optional(),
+  simSlotCount: z.number().int().positive().optional(),
+  simSlotSections: z.array(z.array(z.string())).default([]),
+  slotOccupancy: z.number().int().positive().optional()
 });
 
 const contactAttributesSchema = z
@@ -75,7 +81,9 @@ const contactAttributesSchema = z
     acceptedFamilies: z.array(z.string().min(1)).default([]),
     contactSize: z.string().optional(),
     studSize: z.string().optional(),
-    tih: z.boolean().optional()
+    tih: z.boolean().optional(),
+    acceptedGauges: z.array(z.string().min(1)).default([]),
+    wireInterface: z.string().optional()
   })
   .superRefine((value, context) => {
     if (
@@ -148,6 +156,11 @@ const spliceAttributesSchema = z.object({
   cmaMax: z.number().optional()
 });
 
+const frameAttributesSchema = z.object({
+  moduleCapacity: z.number().int().positive().optional(),
+  slotIds: z.array(z.string().min(1)).default([])
+});
+
 const ingestCommonFields = {
   id: z.string().min(1).optional(),
   family: z.string().min(1),
@@ -158,6 +171,11 @@ const ingestCommonFields = {
   isReviewed: z.boolean().default(false),
   reviewedByUserId: z.string().optional(),
   reviewedAt: z.string().datetime().optional(),
+  partType: z.string().optional(),
+  side: z.string().optional(),
+  notes: z.string().optional(),
+  electricalMode: z.string().optional(),
+  extraAttributes: z.record(z.string(), z.unknown()).optional(),
   aliases: z.array(aliasEntrySchema).optional()
 };
 
@@ -201,6 +219,11 @@ const ingestItemSchema = z
     z.object({
       category: z.literal("splice"),
       attributes: spliceAttributesSchema,
+      ...ingestCommonFields
+    }),
+    z.object({
+      category: z.literal("frame"),
+      attributes: frameAttributesSchema,
       ...ingestCommonFields
     })
   ])
@@ -258,6 +281,10 @@ const updateAttributesSchema = z
     insertArrangement: z.string().optional(),
     pinIds: z.array(z.string().min(1)).optional(),
     contactPositions: z.array(moduleContactPositionSchema).optional(),
+    positionCount: z.number().int().nonnegative().optional(),
+    simSlotCount: z.number().int().positive().optional(),
+    simSlotSections: z.array(z.array(z.string())).optional(),
+    slotOccupancy: z.number().int().positive().optional(),
     awg: z.string().min(1).optional(),
     plating: z.string().optional(),
     termType: z.string().optional(),
@@ -268,6 +295,8 @@ const updateAttributesSchema = z
     acceptedFamilies: z.array(z.string().min(1)).optional(),
     studSize: z.string().optional(),
     tih: z.boolean().optional(),
+    acceptedGauges: z.array(z.string().min(1)).optional(),
+    wireInterface: z.string().optional(),
     milSpec: z.string().optional(),
     color: z.string().min(1).optional(),
     cma: z.number().optional(),
@@ -302,7 +331,9 @@ const updateAttributesSchema = z
     manufacturerPn: z.string().optional(),
     variant: z.string().optional(),
     cmaMin: z.number().optional(),
-    cmaMax: z.number().optional()
+    cmaMax: z.number().optional(),
+    moduleCapacity: z.number().int().positive().optional(),
+    slotIds: z.array(z.string().min(1)).optional()
   })
   .superRefine((value, context) => {
     if (
@@ -331,6 +362,11 @@ const updatePartSchema = z.object({
   createdAt: z.string().datetime().optional(),
   lastEditedByUserId: z.string().min(1).optional(),
   lastEditedAt: z.string().datetime().optional(),
+  partType: z.string().optional(),
+  side: z.string().optional(),
+  notes: z.string().optional(),
+  electricalMode: z.string().optional(),
+  extraAttributes: z.record(z.string(), z.unknown()).optional(),
   attributes: updateAttributesSchema.optional()
 });
 
@@ -390,6 +426,39 @@ const bulkModuleBackshellCompatSchema = z.object({
 
 const bulkModuleStrainReliefCompatSchema = z.object({
   rows: z.array(moduleStrainReliefCompatSchema).min(1)
+});
+
+const partRelationshipSchema = z
+  .object({
+    id: z.string().min(1).optional(),
+    parentPartId: z.string().min(1),
+    childPartId: z.string().min(1).optional(),
+    relationshipType: z.string().min(1),
+    positionType: z.string().min(1).optional(),
+    parentPositions: z.array(z.string().min(1)).default([]),
+    status: compatStatusSchema,
+    sourceStatus: z.string().optional(),
+    notes: z.string().optional(),
+    extra: z.record(z.string(), z.unknown()).optional()
+  })
+  .superRefine((value, context) => {
+    if (value.childPartId && value.childPartId === value.parentPartId) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "childPartId must differ from parentPartId",
+        path: ["childPartId"]
+      });
+    }
+  });
+
+const bulkPartRelationshipSchema = z.object({
+  rows: z.array(partRelationshipSchema).min(1)
+});
+
+const listRelationshipsQuerySchema = z.object({
+  parentPartId: z.string().min(1).optional(),
+  childPartId: z.string().min(1).optional(),
+  relationshipType: z.string().min(1).optional()
 });
 
 const bulkReviewSchema = z.object({
@@ -462,8 +531,14 @@ export function registerLibraryRoutes(app: FastifyInstance) {
       if (query.stockStatus && part.stockStatus !== query.stockStatus) {
         return false;
       }
+      if (query.partType && (part.partType ?? "").trim().toLowerCase() !== query.partType.trim().toLowerCase()) {
+        return false;
+      }
+      if (query.side && (part.side ?? "").trim().toLowerCase() !== query.side.trim().toLowerCase()) {
+        return false;
+      }
       if (q) {
-        const haystack = `${part.partNumber} ${part.description} ${part.family}`.toLowerCase();
+        const haystack = `${part.partNumber} ${part.description} ${part.family} ${part.partType ?? ""} ${part.side ?? ""} ${part.notes ?? ""}`.toLowerCase();
         return haystack.includes(q);
       }
       return true;
@@ -742,6 +817,11 @@ export function registerLibraryRoutes(app: FastifyInstance) {
         lastEditedByUserId: body.lastEditedByUserId,
         lastEditedAt: body.lastEditedAt,
         editedByUserId: request.currentUser?.id,
+        partType: body.partType,
+        side: body.side,
+        notes: body.notes,
+        electricalMode: body.electricalMode,
+        extraAttributes: body.extraAttributes,
         attributes: body.attributes
       });
     } catch (error) {
@@ -995,6 +1075,64 @@ export function registerLibraryRoutes(app: FastifyInstance) {
     const deleted = await app.store.deletePartAlias(query);
     if (!deleted) {
       return reply.notFound("Alias not found.");
+    }
+    return reply.code(204).send();
+  });
+
+  app.get("/v1/library/relationships", async (request, reply) => {
+    if (!requireAdmin(request, reply).ok) {
+      return;
+    }
+    const query = listRelationshipsQuerySchema.parse(request.query);
+    const items = await app.store.listPartRelationships({
+      parentPartId: query.parentPartId,
+      childPartId: query.childPartId,
+      relationshipType: query.relationshipType
+    });
+    return { items };
+  });
+
+  app.put("/v1/library/relationships", async (request, reply) => {
+    if (!requireAdmin(request, reply).ok) {
+      return;
+    }
+    const parsedBody = partRelationshipSchema.safeParse(request.body);
+    if (!parsedBody.success) {
+      return reply.badRequest(parsedBody.error.issues.map((issue) => issue.message).join("; "));
+    }
+    try {
+      return await app.store.upsertPartRelationship(parsedBody.data);
+    } catch (error) {
+      if (error instanceof Error && error.message === "RELATIONSHIP_SELF_REFERENCE") {
+        return reply.badRequest("childPartId must differ from parentPartId.");
+      }
+      throw error;
+    }
+  });
+
+  app.post("/v1/library/relationships/bulk", async (request, reply) => {
+    if (!requireAdmin(request, reply).ok) {
+      return;
+    }
+    const body = bulkPartRelationshipSchema.parse(request.body);
+    try {
+      return await app.store.bulkUpsertPartRelationships({ rows: body.rows });
+    } catch (error) {
+      if (error instanceof Error && error.message === "RELATIONSHIP_SELF_REFERENCE") {
+        return reply.badRequest("childPartId must differ from parentPartId.");
+      }
+      throw error;
+    }
+  });
+
+  app.delete("/v1/library/relationships", async (request, reply) => {
+    if (!requireAdmin(request, reply).ok) {
+      return;
+    }
+    const query = z.object({ id: z.string().min(1) }).parse(request.query);
+    const deleted = await app.store.deletePartRelationship(query);
+    if (!deleted) {
+      return reply.notFound("Relationship not found.");
     }
     return reply.code(204).send();
   });

@@ -17,6 +17,7 @@ test(
     const wireId = `pg-wre-${suffix}`;
     const backshellId = `pg-bs-${suffix}`;
     const strainId = `pg-sr-${suffix}`;
+    const frameId = `pg-frm-${suffix}`;
 
     try {
       // Ensure parts schema exists (migration 027).
@@ -80,10 +81,24 @@ test(
             stockStatus: "in_stock",
             isReviewed: false,
             attributes: {}
+          },
+          {
+            id: frameId,
+            category: "frame",
+            family: "iCon",
+            partNumber: `ITA-${suffix}`,
+            description: "PG test frame",
+            isActive: true,
+            stockStatus: "in_stock",
+            isReviewed: false,
+            partType: "ITA",
+            side: "ITA",
+            electricalMode: "NONE",
+            attributes: { moduleCapacity: 2, slotIds: ["A", "B"] }
           }
         ]
       });
-      assert.equal(ingest.summary.committed, 5);
+      assert.equal(ingest.summary.committed, 6);
 
       const listed = await store.listLibraryComponents({
         requestingUserId: "pg-test",
@@ -146,6 +161,20 @@ test(
       const aliases = await store.listPartAliases({ partId: contactId });
       assert.equal(aliases.length, 1);
 
+      const relationship = await store.upsertPartRelationship({
+        parentPartId: frameId,
+        childPartId: moduleId,
+        relationshipType: "MODULE_ALLOWED",
+        positionType: "MODULE_SLOT",
+        parentPositions: ["A", "B"],
+        status: "allowed",
+        sourceStatus: "CONFIRMED"
+      });
+      assert.equal(relationship.relationshipType, "MODULE_ALLOWED");
+      const listedRels = await store.listPartRelationships({ parentPartId: frameId });
+      assert.equal(listedRels.length, 1);
+      assert.equal(await store.deletePartRelationship({ id: relationship.id }), true);
+
       assert.equal(await store.deleteContactWireCompat({ contactPartId: contactId, wirePartId: wireId }), true);
       assert.equal(await store.deleteModuleContactCompat({ modulePartId: moduleId, contactPartId: contactId }), true);
       assert.equal(
@@ -168,6 +197,7 @@ test(
       assert.equal(await store.deleteLibraryComponent({ componentId: wireId }), true);
       assert.equal(await store.deleteLibraryComponent({ componentId: backshellId }), true);
       assert.equal(await store.deleteLibraryComponent({ componentId: strainId }), true);
+      assert.equal(await store.deleteLibraryComponent({ componentId: frameId }), true);
     } finally {
       await pool.end();
     }

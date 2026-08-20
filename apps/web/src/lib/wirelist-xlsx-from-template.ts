@@ -109,7 +109,7 @@ function buildDataRowXml(
 
 function fillSheetXml(sheetXml: string, dataRows: Array<Array<string | number>>): string {
   const prototypeRowAttrs = getRowAttrs(sheetXml, TEMPLATE_DATA_START_ROW);
-  let updatedSheetXml = sheetXml.replace(/<row r="(\d+)"([^>]*)>([\s\S]*?)<\/row>/g, (full, rowNumStr, rowAttrs, _rowInner) => {
+  let updatedSheetXml = sheetXml.replace(/<row r="(\d+)"([^>]*)>[\s\S]*?<\/row>/g, (full, rowNumStr, rowAttrs) => {
     const rowNum = Number(rowNumStr);
     const dataIndex = rowNum - TEMPLATE_DATA_START_ROW;
     if (dataIndex < 0 || dataIndex >= dataRows.length) {

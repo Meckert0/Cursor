@@ -54,7 +54,8 @@ export const LIBRARY_ITEM_CATEGORIES = [
   "backshell",
   "strain-relief",
   "module",
-  "splice"
+  "splice",
+  "frame"
 ] as const;
 
 export type LibraryItemCategory = (typeof LIBRARY_ITEM_CATEGORIES)[number];
@@ -82,6 +83,11 @@ export interface PartDto {
   lastEditedByUserId: string;
   lastEditedAt: string;
   updatedAt: string;
+  partType?: string;
+  side?: string;
+  notes?: string;
+  electricalMode?: string;
+  extraAttributes?: Record<string, unknown>;
   attributes: PartAttributesDto;
 }
 
@@ -123,6 +129,19 @@ export interface PartAliasDto {
   code: string;
 }
 
+export interface PartRelationshipDto {
+  id: string;
+  parentPartId: string;
+  childPartId?: string;
+  relationshipType: string;
+  positionType?: string;
+  parentPositions: string[];
+  status: CompatStatus;
+  sourceStatus?: string;
+  notes?: string;
+  extra?: Record<string, unknown>;
+}
+
 export interface LibraryTablePreferencesDto {
   scope: string;
   columnOrder: string[];
@@ -153,6 +172,11 @@ export interface LibraryIngestItemDto {
   isReviewed: boolean;
   reviewedByUserId?: string;
   reviewedAt?: string;
+  partType?: string;
+  side?: string;
+  notes?: string;
+  electricalMode?: string;
+  extraAttributes?: Record<string, unknown>;
   attributes: PartAttributesDto;
 }
 
@@ -544,6 +568,8 @@ export async function listLibraryComponents(input?: {
   color?: string;
   isActive?: boolean;
   stockStatus?: LibraryComponentDto["stockStatus"];
+  partType?: string;
+  side?: string;
 }): Promise<LibraryComponentDto[]> {
   const search = new URLSearchParams();
   if (input?.q) {
@@ -566,6 +592,12 @@ export async function listLibraryComponents(input?: {
   }
   if (input?.stockStatus) {
     search.set("stockStatus", input.stockStatus);
+  }
+  if (input?.partType) {
+    search.set("partType", input.partType);
+  }
+  if (input?.side) {
+    search.set("side", input.side);
   }
   const suffix = search.size > 0 ? `?${search.toString()}` : "";
   const response = await apiRequest<ListLibraryComponentsResponse>(`/v1/library/components${suffix}`);
@@ -679,6 +711,11 @@ export function updateLibraryComponent(input: {
   createdAt?: string;
   lastEditedByUserId?: string;
   lastEditedAt?: string;
+  partType?: string;
+  side?: string;
+  notes?: string;
+  electricalMode?: string;
+  extraAttributes?: Record<string, unknown>;
   attributes?: PartAttributesDto;
 }): Promise<LibraryComponentDto> {
   return apiRequest<LibraryComponentDto>(`/v1/library/components/${input.componentId}`, {
@@ -696,6 +733,11 @@ export function updateLibraryComponent(input: {
       createdAt: input.createdAt,
       lastEditedByUserId: input.lastEditedByUserId,
       lastEditedAt: input.lastEditedAt,
+      partType: input.partType,
+      side: input.side,
+      notes: input.notes,
+      electricalMode: input.electricalMode,
+      extraAttributes: input.extraAttributes,
       attributes: input.attributes
     }
   });
@@ -828,6 +870,40 @@ export async function deletePartAlias(input: { codeSystem: string; code: string 
     code: input.code
   });
   await apiRequest<undefined>(`/v1/library/aliases?${search.toString()}`, {
+    method: "DELETE"
+  });
+}
+
+export async function listPartRelationships(input?: {
+  parentPartId?: string;
+  childPartId?: string;
+  relationshipType?: string;
+}): Promise<PartRelationshipDto[]> {
+  const search = new URLSearchParams();
+  if (input?.parentPartId) {
+    search.set("parentPartId", input.parentPartId);
+  }
+  if (input?.childPartId) {
+    search.set("childPartId", input.childPartId);
+  }
+  if (input?.relationshipType) {
+    search.set("relationshipType", input.relationshipType);
+  }
+  const suffix = search.size > 0 ? `?${search.toString()}` : "";
+  const response = await apiRequest<{ items: PartRelationshipDto[] }>(`/v1/library/relationships${suffix}`);
+  return response.items;
+}
+
+export function upsertPartRelationship(input: Omit<PartRelationshipDto, "id"> & { id?: string }): Promise<PartRelationshipDto> {
+  return apiRequest<PartRelationshipDto>("/v1/library/relationships", {
+    method: "PUT",
+    body: input
+  });
+}
+
+export async function deletePartRelationship(input: { id: string }): Promise<void> {
+  const search = new URLSearchParams({ id: input.id });
+  await apiRequest<undefined>(`/v1/library/relationships?${search.toString()}`, {
     method: "DELETE"
   });
 }

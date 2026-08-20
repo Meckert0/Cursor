@@ -1,6 +1,6 @@
 # Export Operations Runbook
 
-Last updated: 2026-08-14
+Last updated: 2026-08-18
 
 ## Purpose
 
@@ -100,7 +100,9 @@ The details page "Retry export" button creates a **new** export job for the same
 
 Controlled by `EXPORT_ARTIFACT_RETENTION_DAYS` (default `30`).
 
-- `> 0`: maintenance deletes `completed`/`failed` export rows whose `updatedAt` is older than the cutoff, and deletes their artifact files/objects when possible.
+- `> 0`: maintenance deletes artifact files/objects first, then the matching `completed`/`failed` export rows whose `updatedAt` is older than the cutoff.
+- If object delete fails (Blob/S3/file), the DB row is left in place with its original `updatedAt` so the next cron/maintenance run can retry. Look for `export.retention.file_delete_failed`.
+- Rows with no `artifactUri` (failed exports that never wrote an object) are deleted from the DB immediately.
 - `0` or negative: retention cleanup disabled.
 
 On Vercel, artifacts live in S3 or Vercel Blob (separate Production and Test buckets, Blob stores, or key prefixes). Local file storage under `artifacts/` is development-only.

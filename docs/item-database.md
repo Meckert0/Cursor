@@ -4,7 +4,7 @@
 
 This document explains the item database (also called the parts library or component library): what it stores, where the data lives, how the tables relate to each other, and the full column reference for every table.
 
-The item database is the master catalog of physical parts used to build cable harnesses — contacts, wires, sleeves/tubes/braids, labels, backshells, strain reliefs, modules (connector bodies), and splices. Designs reference these parts by part number / part ID, the BOM generator resolves quantities against them, and the validator uses their attributes and compatibility rules to flag design problems.
+The item database is the master catalog of physical parts used to build cable harnesses — contacts, wires, sleeves/tubes/braids, labels, backshells, strain reliefs, modules (connector bodies), splices, and frames (ITA/Receiver housings). Designs reference these parts by part number / part ID, the BOM generator resolves quantities against them, and the validator uses their attributes and compatibility rules to flag design problems.
 
 It is managed in the admin UI ("Item Database" viewer plus the compatibility manager) and exposed over the `/v1/library/*` API.
 
@@ -15,7 +15,7 @@ The API server selects a storage backend at startup via the `STORE_BACKEND` envi
 | Backend | Selected by | Where item data lives | Notes |
 | --- | --- | --- | --- |
 | SQLite | `STORE_BACKEND=sqlite` (default when unset) + optional `SQLITE_PATH` (default `data/app.db`) | A single JSON blob | **Local durable default.** `SqliteStore` extends `MemoryStore` and serializes the entire in-memory state into one row (`id = 'memory_store'`) of an `app_state` table after each write. The relational schema below does **not** apply to SQLite. |
-| Postgres | `STORE_BACKEND=postgres` + `DATABASE_URL` | Normalized relational tables (described in this document) | Production path. Schema is created by SQL migrations through `028`. |
+| Postgres | `STORE_BACKEND=postgres` + `DATABASE_URL` | Normalized relational tables (described in this document) | Production path. Schema is created by SQL migrations through `029`. |
 | Memory | `STORE_BACKEND=memory` | In-process `Map`s, lost on restart | Tests / explicit ephemeral runs only. |
 
 The API loads a project `.env` file at startup (`src/infra/env/load-dotenv.ts`) without overriding shell-set variables. Copy `.env.example` to `.env` for local defaults.
@@ -24,18 +24,18 @@ The catalog is a **global shared item database**: parts created (and reviewed) o
 
 CPQMatricesInfo workbook load into this catalog is available via `npm run import:cpq` (see `scripts/import-cpq.ts` and `docs/cpq-import-report.md`). Schema readiness for that load is migration `028`.
 
-Postgres schema changes are plain `.sql` files in `db/migrations/`, applied in filename order by `npm run migrate` (`scripts/migrate.ts`), which tracks applied files in a `schema_migrations` table. The item model was introduced by `027_parts_model.sql` and corrected for CPQ ingest readiness by `028_parts_model_cpq_readiness.sql`.
+Postgres schema changes are plain `.sql` files in `db/migrations/`, applied in filename order by `npm run migrate` (`scripts/migrate.ts`), which tracks applied files in a `schema_migrations` table. The item model was introduced by `027_parts_model.sql`, corrected for CPQ ingest readiness by `028_parts_model_cpq_readiness.sql`, and extended for VPC i1/iCon catalog readiness by `029_vpc_catalog_readiness.sql`.
 
-> History: migration 027 replaced the earlier flat `library_components` table and its EAV companions (`library_field_definitions`, `library_component_custom_values`) with the typed schema described here. Existing catalog rows were intentionally discarded (no data migration). Migration 028 adds CPQ-required selection, provenance, and child tables. The web viewer still normalizes the legacy category name `connector` to `contact` when it encounters old records.
+> History: migration 027 replaced the earlier flat `library_components` table and its EAV companions (`library_field_definitions`, `library_component_custom_values`) with the typed schema described here. Existing catalog rows were intentionally discarded (no data migration). Migration 028 adds CPQ-required selection, provenance, and child tables. Migration 029 adds VPC shared taxonomy, the `frame` category, module/contact extensions, and `part_relationships`. The web viewer still normalizes the legacy category name `connector` to `contact` when it encounters old records.
 
 ## Storage Design
 
 The schema uses a **base table + typed extension tables** pattern (class-table inheritance):
 
 1. **`parts`** holds identity, lifecycle, and audit fields shared by every item, plus a `category` discriminator.
-2. **One extension table per category** (`modules`, `contacts`, `wires`, `labels`, `sleeve_tube_braids`, `backshells`, `strain_reliefs`, `splices`) holds the category-specific attributes. Each extension row shares its primary key with `parts.id` (a strict 1:1 relationship).
+2. **One extension table per category** (`modules`, `contacts`, `wires`, `labels`, `sleeve_tube_braids`, `backshells`, `strain_reliefs`, `splices`, `frames`) holds the category-specific attributes. Each extension row shares its primary key with `parts.id` (a strict 1:1 relationship).
 3. **`part_aliases`** maps external part-numbering systems (legacy 3-digit codes, PC Designer codes, etc.) onto parts.
-4. **Four compatibility junction tables** record pairwise allowed/forbidden/review relationships between specific parts; supporting child/reference tables retain multi-valued selection facts and ingest provenance.
+4. **Four compatibility junction tables** record pairwise allowed/forbidden/review relationships between specific parts; **`part_relationships`** stores position-scoped generic rules (frame slots, pin groups, SIM inserts, gauge/media) without adding a new junction per relationship type. Supporting child/reference tables retain multi-valued selection facts and ingest provenance.
 
 Important characteristics:
 
@@ -50,7 +50,7 @@ Important characteristics:
 
 `parts.category` must be one of:
 
-`contact`, `wire`, `sleeve-tube-braid`, `label`, `backshell`, `strain-relief`, `module`, `splice`
+`contact`, `wire`, `sleeve-tube-braid`, `label`, `backshell`, `strain-relief`, `module`, `splice`, `frame`
 
 Each category corresponds to exactly one extension table (see column reference below).
 
@@ -79,10 +79,12 @@ erDiagram
     parts ||--o| backshells : "1:1 when category=backshell"
     parts ||--o| strain_reliefs : "1:1 when category=strain-relief"
     parts ||--o| splices : "1:1 when category=splice"
+    parts ||--o| frames : "1:1 when category=frame"
 
     parts ||--o{ part_aliases : "external codes"
     parts ||--o{ part_import_provenance : "source rows"
     parts ||--o{ part_components : "parent assembly"
+    parts ||--o{ part_relationships : "generic rules"
     modules ||--o{ module_contact_positions : "contact-size positions"
     sleeve_tube_braids ||--o{ sleeve_size_ranges : "diameter bands"
     backshells ||--o{ backshell_fitments : "fitments"
@@ -101,11 +103,12 @@ erDiagram
     strain_reliefs }o--o| parts : "related_module_hint_part_id"
 ```
 
-Three kinds of relationships exist:
+Four kinds of relationships exist:
 
 1. **Extension (1:1)** — every part has exactly one extension row in the table matching its category. `ON DELETE CASCADE` from `parts`, so deleting a part removes its extension row (and, transitively, its compat rows).
 2. **Cross-part reference columns (soft pointers)** — a few extension columns point at other parts (`default_protective_cover_part_id`, `keying_part_id`, `related_module_hint_part_id`), while `sleeve_size_ranges.related_part_id` points to an optional paired part. All are nullable with `ON DELETE SET NULL`, so removing the referenced part just clears the pointer.
 3. **Compatibility junctions (many-to-many)** — pairwise rules between two specific parts with a status of `allowed`, `forbidden`, or `review`. Managed in the admin compatibility manager, consumed by the validator via `createCompatLookup` (`src/domain/compat-lookup.ts`).
+4. **Generic relationships** — `part_relationships` rows scoped by `relationship_type`, optional child part, and `parent_positions_json` (slots, pin groups, SIM sections, gauges). New relationship types do not need a new SQL table. Canvas connector picking uses `category === "module"` and `partType === "MODULE"` so frames and SIM inserts stay out of the top-level picker.
 
 Alias rows form a fourth, simpler relationship: many aliases per part, with `(code_system, code)` globally unique — a given code within a code system resolves to exactly one part. The BOM builder (`src/domain/bom.ts`) uses aliases to resolve legacy part numbers found in design snapshots.
 
@@ -116,7 +119,7 @@ Alias rows form a fourth, simpler relationship: many aliases per part, with `(co
 | Column | Type | Nullable | Default | Notes |
 | --- | --- | --- | --- | --- |
 | `id` | TEXT | no | — | Primary key. Application-generated string ID. |
-| `category` | TEXT | no | — | CHECK: one of the eight categories listed above. Determines the extension table. |
+| `category` | TEXT | no | — | CHECK: one of the nine categories listed above. Determines the extension table. |
 | `part_number` | TEXT | no | — | Manufacturer/internal part number. Part of the active identity. |
 | `family` | TEXT | no | — | Product family/series grouping. Required filter/display field, not identity. |
 | `description` | TEXT | no | — | Human-readable description. |
@@ -134,6 +137,11 @@ Alias rows form a fourth, simpler relationship: many aliases per part, with `(co
 | `last_edited_by_user_id` | TEXT | no | — | Most recent editor. |
 | `last_edited_at` | TIMESTAMPTZ | no | — | Most recent edit time. |
 | `updated_at` | TIMESTAMPTZ | no | — | System bookkeeping timestamp (updated on any write, including review/archive actions). |
+| `part_type` | TEXT | yes | — | Open taxonomy (`ITA`, `RECEIVER`, `MODULE`, `SIM_INSERT`, `CONTACT`, …). |
+| `side` | TEXT | yes | — | `ITA`, `RECEIVER`, or `DUAL`. |
+| `notes` | TEXT | yes | — | Free-text catalog notes. |
+| `electrical_mode` | TEXT | yes | — | `NONE`, `CONTACT`, `SELECTABLE`, or `INSERT_HOST`. |
+| `extra_attributes` | JSONB | no | `'{}'` | Bag for facts that have not earned typed columns yet. |
 
 Indexes:
 
@@ -141,6 +149,8 @@ Indexes:
 - `parts_category_idx` — on `category`.
 - `parts_is_archived_idx` — on `is_archived`.
 - `parts_import_batch_id_idx` — on non-null `import_batch_id`.
+- `parts_part_type_idx` — on non-null `part_type`.
+- `parts_side_idx` — on non-null `side`.
 
 ### `modules` (category `module` — connector bodies/inserts)
 
@@ -162,6 +172,10 @@ Indexes:
 | `operating_temp` | TEXT | yes | — | Temperature rating. |
 | `default_protective_cover_part_id` | TEXT | yes | — | FK → `parts.id`, ON DELETE SET NULL. Suggested protective cover part. |
 | `pin_ids_json` | JSONB | no | `'[]'` | String array of pin identifiers (maps to `pinIds`). Used by validation for pin-ID checks. |
+| `position_count` | INTEGER | yes | — | CHECK: ≥ 0 when set. Total electrical positions; may populate `pin_count` for simple modules. |
+| `sim_slot_count` | INTEGER | yes | — | CHECK: > 0 when set. SIM host slot count. |
+| `sim_slot_sections_json` | JSONB | no | `'[]'` | Array of section arrays for SIM hosts (maps to `simSlotSections`). |
+| `slot_occupancy` | INTEGER | yes | — | CHECK: > 0 when set. Adjacent SIM slots occupied by an insert. |
 
 ### `module_contact_positions`
 
@@ -190,6 +204,8 @@ Indexes:
 | `accepted_awg_min` | DOUBLE PRECISION | yes | — | CHECK: > 0 when set. Smallest accepted wire AWG value. |
 | `accepted_awg_max` | DOUBLE PRECISION | yes | — | CHECK: > 0 when set. Largest accepted wire AWG value. |
 | `accepted_families_json` | JSONB | no | `'[]'` | String array of accepted wire families (maps to `acceptedFamilies`). Used by attribute-based compatibility validation. |
+| `accepted_gauges_json` | JSONB | no | `'[]'` | String list of gauges/media (`22`, `RG316`, `FLEX405`). Not always numeric AWG. |
+| `wire_interface` | TEXT | yes | — | Optional interface note from wire/cable compatibility. |
 
 ### `wires` (category `wire`)
 
@@ -288,6 +304,16 @@ This extension is identity-only; sleeve style is stored in `parts.family`.
 
 Splice series is stored in `parts.family`.
 
+### `frames` (category `frame` — ITA / Receiver housings)
+
+ITA and Receiver share this extension. They must not be stored as `module`, or they would appear in the canvas connector picker. `parts.part_type` distinguishes ITA vs Receiver.
+
+| Column | Type | Nullable | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `part_id` | TEXT | no | — | PK, FK → `parts.id`, ON DELETE CASCADE. |
+| `module_capacity` | INTEGER | yes | — | CHECK: > 0 when set. Named slot count (1 or 2 for i1/iCon). |
+| `slot_ids_json` | JSONB | no | `'[]'` | String array of slot ids (e.g. `["A","B"]`). |
+
 ### `part_aliases`
 
 Maps codes from external/legacy numbering systems onto parts. Many aliases per part; a code is unique within its code system.
@@ -346,6 +372,27 @@ All four share the same shape: a composite primary key of the two part IDs plus 
 
 `module_strain_relief_compat` ships empty in v1 pending a reliable source of fit rules.
 
+### `part_relationships`
+
+Generic, position-scoped catalog rules. New relationship types (`ACCESSORY_ALLOWED`, `COVER_INCLUDED`, …) are new `relationship_type` values, not new tables. Child is nullable so `WIRE_COMPATIBILITY` can store gauges/media without a child SKU.
+
+| Column | Type | Nullable | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `id` | TEXT | no | — | Primary key. Application-generated. |
+| `parent_part_id` | TEXT | no | — | FK → `parts.id`, ON DELETE CASCADE. |
+| `child_part_id` | TEXT | yes | — | FK → `parts.id`, ON DELETE CASCADE. Null for gauge/media rules. Must differ from parent when set. |
+| `relationship_type` | TEXT | no | — | Open text (`MODULE_ALLOWED`, `CONTACT_ALLOWED`, `MATES_WITH`, `INSERT_ALLOWED`, `WIRE_COMPATIBILITY`, …). |
+| `position_type` | TEXT | yes | — | `MODULE_SLOT`, `QUADRAPADDLE`, `SIM_SLOT`, `WIRE`, … |
+| `parent_positions_json` | JSONB | no | `'[]'` | Slot ids or pin ids (`["A","B"]`). |
+| `status` | TEXT | no | — | CHECK: `allowed` / `forbidden` / `review`. |
+| `source_status` | TEXT | yes | — | Original workbook value (`CONFIRMED`, `CONDITIONAL_CLEARANCE`, …). |
+| `notes` | TEXT | yes | — | Free-text notes. |
+| `extra_json` | JSONB | no | `'{}'` | Gauges, interface, quantity, removable, and other extras. |
+
+Natural uniqueness: `(parent_part_id, COALESCE(child_part_id,''), relationship_type, COALESCE(position_type,''))`.
+
+Workbook status mapping used by the later import: `CONFIRMED` / `CONFIRMED_FAMILY` / `FAMILY_CONFIRMED` / `CONFIRMED_REVERSE` / `EXCLUSIVE_CONFIRMED` → `allowed`; `CONDITIONAL_CLEARANCE` → `review`. Dual-write into the old junctions happens only in Phase 3 (`CONTACT_ALLOWED` → `module_contact_compat`; numeric `WIRE_COMPATIBILITY` gauges onto the contact).
+
 ### Supporting tables
 
 #### `awg_cma_reference`
@@ -379,10 +426,11 @@ All four share the same shape: a composite primary key of the two part IDs plus 
 
 `src/domain/library.ts` defines the canonical shapes:
 
-- `PartRecord` — mirrors the `parts` table (camelCase).
-- `ModuleAttributes`, `ContactAttributes`, `WireAttributes`, `LabelAttributes`, `SleeveTubeBraidAttributes`, `BackshellAttributes`, `StrainReliefAttributes`, `SpliceAttributes` — mirror the extension tables.
+- `PartRecord` — mirrors the `parts` table (camelCase), including `partType`, `side`, `notes`, `electricalMode`, and `extraAttributes`.
+- `ModuleAttributes`, `ContactAttributes`, `WireAttributes`, `LabelAttributes`, `SleeveTubeBraidAttributes`, `BackshellAttributes`, `StrainReliefAttributes`, `SpliceAttributes`, `FrameAttributes` — mirror the extension tables.
 - `PartWithAttributes` — a discriminated union of `PartRecord & { category, attributes }`; this is the shape the API returns and the stores accept. (`LibraryComponentRecord` is a deprecated alias for it.)
-- `PartAlias`, `ContactWireCompat`, `ModuleContactCompat`, `ModuleBackshellCompat`, `ModuleStrainReliefCompat`, `CompatStatus` — mirror the alias and junction tables.
+- `PartAlias`, `ContactWireCompat`, `ModuleContactCompat`, `ModuleBackshellCompat`, `ModuleStrainReliefCompat`, `PartRelationship`, `CompatStatus` — mirror the alias, junction, and generic relationship tables.
+- `isCanvasConnectorPart` — true only for `category === "module"` with `partType` `MODULE` or empty.
 
 The Postgres store (`src/infra/store/postgres-store.ts`) reads `parts` rows, batch-loads the matching extension rows, and assembles `PartWithAttributes` objects; writes insert/upsert the `parts` row and extension row in one transaction.
 
@@ -394,14 +442,15 @@ The Postgres store (`src/infra/store/postgres-store.ts`) reads `parts` rows, bat
 
 All under `/v1/library` (`src/routes/library.ts`):
 
-- **Items**: `GET/POST` variants on `/components` — list (with `q`, `category`, `family`, `awg`, `color` filters), get by ID, bulk `ingest` (with `dry-run`), `PATCH` update, `DELETE`, plus lifecycle actions `review`, `unreview`, `archive`, `restore`, `GET /components/archived`, and `GET /components/review-queue`.
+- **Items**: `GET/POST` variants on `/components` — list (with `q`, `category`, `family`, `awg`, `color`, `partType`, `side` filters), get by ID, bulk `ingest` (with `dry-run`), `PATCH` update, `DELETE`, plus lifecycle actions `review`, `unreview`, `archive`, `restore`, `GET /components/archived`, and `GET /components/review-queue`.
 - **Compatibility**: `GET/PUT/DELETE` on `/compat/contact-wire`, `/compat/module-contact`, `/compat/module-backshell`, `/compat/module-strain-relief`.
+- **Generic relationships**: admin `GET/PUT/DELETE` on `/relationships`, plus `POST /relationships/bulk`.
 - **Aliases**: `GET/PUT/DELETE` on `/aliases`.
 - **Table preferences**: `GET/PUT /table-preferences/:scope` (per-user column layout for the viewer; stored separately from item data).
 
 ### Consumers
 
-- **Admin UI** — `apps/web/src/app/admin/page.tsx` hosts the item database viewer (`item-database-viewer.tsx`, per-category virtualized tables with create/edit/delete) and the compatibility manager (`compatibility-manager.tsx`, junction + alias editing).
+- **Admin UI** — `apps/web/src/app/admin/page.tsx` hosts the item database viewer (`item-database-viewer.tsx`, per-category virtualized tables with create/edit/delete) and the compatibility manager (`compatibility-manager.tsx`, junction, generic relationship, and alias editing).
 - **BOM generation** — `src/domain/bom.ts` resolves snapshot part numbers against parts, including alias codes from `part_aliases`.
 - **Validation** — `src/domain/validator.ts` uses `createCompatLookup` (`src/domain/compat-lookup.ts`) over the four junction tables for pairwise checks, and `resolveLibraryCompatibility` (`src/domain/library-compatibility.ts`) for attribute-driven checks (module pin counts/pin IDs, contact accepted-AWG range, accepted wire families).
 
@@ -409,7 +458,7 @@ All under `/v1/library` (`src/routes/library.ts`):
 
 | Concern | Location |
 | --- | --- |
-| Schema (Postgres) | `db/migrations/027_parts_model.sql`, `db/migrations/028_parts_model_cpq_readiness.sql` |
+| Schema (Postgres) | `db/migrations/027_parts_model.sql`, `db/migrations/028_parts_model_cpq_readiness.sql`, `db/migrations/029_vpc_catalog_readiness.sql` |
 | Migration runner | `scripts/migrate.ts` (`npm run migrate`) |
 | Domain types & lifecycle | `src/domain/library.ts` |
 | Per-category field metadata | `src/domain/part-fields.ts`, `apps/web/src/lib/part-fields.ts` |

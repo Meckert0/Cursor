@@ -23,6 +23,8 @@ import type {
   ModuleStrainReliefCompat,
   PartAlias,
   PartIngestItem,
+  PartRelationship,
+  PartRelationshipInput,
   PartWithAttributes
 } from "../../domain/library.js";
 import type { TablePreferencesRecord } from "../../domain/table-preferences.js";
@@ -339,6 +341,11 @@ export class SqliteStore extends MemoryStore {
     lastEditedByUserId?: string;
     lastEditedAt?: string;
     editedByUserId?: string;
+    partType?: string;
+    side?: string;
+    notes?: string;
+    electricalMode?: string;
+    extraAttributes?: Record<string, unknown>;
     attributes?: Partial<CategoryAttributesMap[LibraryCategory]>;
   }): Promise<PartWithAttributes | null> {
     const result = await super.updateLibraryComponent(input);
@@ -441,6 +448,24 @@ export class SqliteStore extends MemoryStore {
 
   override async deletePartAlias(input: { codeSystem: string; code: string }): Promise<boolean> {
     const result = await super.deletePartAlias(input);
+    this.persistState();
+    return result;
+  }
+
+  override async upsertPartRelationship(input: PartRelationshipInput): Promise<PartRelationship> {
+    const result = await super.upsertPartRelationship(input);
+    this.persistState();
+    return result;
+  }
+
+  override async bulkUpsertPartRelationships(input: { rows: PartRelationshipInput[] }): Promise<{ upserted: number }> {
+    const result = await super.bulkUpsertPartRelationships(input);
+    this.persistState();
+    return result;
+  }
+
+  override async deletePartRelationship(input: { id: string }): Promise<boolean> {
+    const result = await super.deletePartRelationship(input);
     this.persistState();
     return result;
   }

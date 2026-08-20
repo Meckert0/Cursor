@@ -92,6 +92,13 @@ test("bulk endpoints require an admin account", async () => {
         method: "PUT",
         url: "/v1/library/awg-cma-reference",
         payload: { rows: [{ awg: "22", cma: 640 }] }
+      },
+      {
+        method: "POST",
+        url: "/v1/library/relationships/bulk",
+        payload: {
+          rows: [{ parentPartId: "a", childPartId: "b", relationshipType: "MATES_WITH", status: "allowed" }]
+        }
       }
     ];
     for (const testCase of cases) {
@@ -340,6 +347,134 @@ test("awg-cma reference bulk upsert and list roundtrip", async () => {
     const items = listResponse.json().items as Array<{ awg: string; cma: number }>;
     assert.equal(items.length, 2);
     assert.equal(items.find((item) => item.awg === "22")?.cma, 642);
+  } finally {
+    await app.close();
+  }
+});
+
+test("frame ingest, partType filter, and generic relationship CRUD", async () => {
+  const app = buildTestApp();
+  try {
+    const admin = await registerAndGetCookie(app, "admin-vpc-rel", "meckert@vpc.com");
+    const ingestResponse = await app.inject({
+      method: "POST",
+      url: "/v1/library/components/ingest",
+      headers: { cookie: admin.cookie },
+      payload: {
+        items: [
+          {
+            ...ingestItem({
+              id: "frame-ita",
+              category: "frame",
+              family: "iCon",
+              partNumber: "ITA-100",
+              attributes: { moduleCapacity: 2, slotIds: ["A", "B"] }
+            }),
+            partType: "ITA",
+            side: "ITA",
+            electricalMode: "NONE"
+          },
+          {
+            ...ingestItem({
+              id: "mod-ita",
+              category: "module",
+              family: "iCon",
+              partNumber: "MOD-100",
+              attributes: { positionCount: 4, pinIds: ["1", "2", "3", "4"] }
+            }),
+            partType: "MODULE",
+            side: "ITA"
+          },
+          {
+            ...ingestItem({
+              id: "sim-insert",
+              category: "module",
+              family: "iCon",
+              partNumber: "SIM-100",
+              attributes: { slotOccupancy: 1, pinIds: [] }
+            }),
+            partType: "SIM_INSERT"
+          }
+        ]
+      }
+    });
+    assert.equal(ingestResponse.statusCode, 201);
+    assert.equal(ingestResponse.json().summary.committed, 3);
+
+    const filtered = await app.inject({
+      method: "GET",
+      url: "/v1/library/components?partType=ITA&side=ITA",
+      headers: { cookie: admin.cookie }
+    });
+    assert.equal(filtered.statusCode, 200);
+    const filteredItems = filtered.json().items as Array<{ id: string; partType?: string }>;
+    assert.equal(filteredItems.length, 1);
+    assert.equal(filteredItems[0]?.id, "frame-ita");
+
+    const upsert = await app.inject({
+      method: "PUT",
+      url: "/v1/library/relationships",
+      headers: { cookie: admin.cookie },
+      payload: {
+        parentPartId: "frame-ita",
+        childPartId: "mod-ita",
+        relationshipType: "MODULE_ALLOWED",
+        positionType: "MODULE_SLOT",
+        parentPositions: ["A", "B"],
+        status: "allowed",
+        sourceStatus: "CONFIRMED"
+      }
+    });
+    assert.equal(upsert.statusCode, 200);
+    const created = upsert.json() as { id: string; status: string };
+    assert.equal(created.status, "allowed");
+
+    const bulk = await app.inject({
+      method: "POST",
+      url: "/v1/library/relationships/bulk",
+      headers: { cookie: admin.cookie },
+      payload: {
+        rows: [
+          {
+            parentPartId: "frame-ita",
+            childPartId: "mod-ita",
+            relationshipType: "MODULE_ALLOWED",
+            positionType: "MODULE_SLOT",
+            parentPositions: ["A"],
+            status: "review",
+            sourceStatus: "CONDITIONAL_CLEARANCE"
+          },
+          {
+            parentPartId: "mod-ita",
+            childPartId: "sim-insert",
+            relationshipType: "INSERT_ALLOWED",
+            positionType: "SIM_SLOT",
+            parentPositions: ["A1"],
+            status: "allowed"
+          }
+        ]
+      }
+    });
+    assert.equal(bulk.statusCode, 200);
+    assert.equal(bulk.json().upserted, 2);
+
+    const listed = await app.inject({
+      method: "GET",
+      url: "/v1/library/relationships?parentPartId=frame-ita",
+      headers: { cookie: admin.cookie }
+    });
+    assert.equal(listed.statusCode, 200);
+    const rows = listed.json().items as Array<{ id: string; status: string; parentPositions: string[] }>;
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]?.status, "review");
+    assert.deepEqual(rows[0]?.parentPositions, ["A"]);
+
+    const deleted = await app.inject({
+      method: "DELETE",
+      url: `/v1/library/relationships?id=${encodeURIComponent(created.id)}`,
+      headers: { cookie: admin.cookie }
+    });
+    assert.equal(deleted.statusCode, 204);
   } finally {
     await app.close();
   }

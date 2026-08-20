@@ -40,8 +40,6 @@ export const FULL_CABLE_BOM_EXPECTATIONS = [
   { category: "sleeve-tube-braid", partNumber: FULL_CABLE.sleevingPartNumber, quantity: String(FULL_CABLE.wireLengthIn) }
 ] as const;
 
-const REVIEWED_AT = "2026-07-10T00:00:00.000Z";
-
 /** Catalog parts required by the full-cable e2e journey (ingested unreviewed, then reviewed via owner role). */
 export const FULL_CABLE_CATALOG_ITEMS = [
   {

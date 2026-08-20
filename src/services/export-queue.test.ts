@@ -229,3 +229,56 @@ test("export retention cleanup deletes expired artifacts and files", async () =>
   assert.equal(await restored.getExportArtifact(oldExport.id), null);
   await assert.rejects(() => readFile(filePath), /ENOENT/);
 });
+
+test("export retention cleanup keeps DB record when file delete fails", async () => {
+  const store = new MemoryStore();
+  const revision = await seedRevision(store);
+
+  const oldExport = await store.createExportArtifact({
+    revisionId: revision.id,
+    format: "json",
+    status: "queued"
+  });
+  await store.updateExportArtifact({
+    exportId: oldExport.id,
+    status: "completed",
+    contentHash: "abc",
+    artifactUri: "blob://orphan-export.json",
+    errorMessage: null
+  });
+
+  const state = store.exportState();
+  const target = state.exports.find((item) => item.id === oldExport.id);
+  assert.ok(target);
+  target.updatedAt = new Date("2020-01-01T00:00:00.000Z").toISOString();
+  const restored = MemoryStore.fromState(state);
+
+  const failingStorage = {
+    async saveArtifact(): Promise<string> {
+      throw new Error("save should not run during retention cleanup");
+    },
+    async deleteArtifact(): Promise<void> {
+      throw new Error("blob delete failed");
+    },
+    async healthCheck() {
+      return { ok: false, backend: "blob", detail: "forced failure" };
+    }
+  };
+
+  const warnings: Array<{ msg?: string; exportId?: string }> = [];
+  const queue = new ExportQueueService(restored, failingStorage, {
+    retentionDays: 30,
+    now: () => new Date("2026-07-10T00:00:00.000Z"),
+    logger: {
+      info() {},
+      warn(obj, msg) {
+        warnings.push({ msg, exportId: obj.exportId as string | undefined });
+      },
+      error() {}
+    }
+  });
+  const result = await queue.runRetentionCleanup();
+  assert.equal(result.deleted, 0);
+  assert.equal((await restored.getExportArtifact(oldExport.id))?.id, oldExport.id);
+  assert.equal(warnings.some((entry) => entry.msg === "export.retention.file_delete_failed"), true);
+});

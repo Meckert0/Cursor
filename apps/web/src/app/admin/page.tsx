@@ -12,6 +12,7 @@ import {
   deleteModuleContactCompat,
   deleteModuleStrainReliefCompat,
   deletePartAlias,
+  deletePartRelationship,
   ingestLibraryComponents,
   getPageDescriptions,
   listAdminProjectOverview,
@@ -22,13 +23,15 @@ import {
   listModuleContactCompat,
   listModuleStrainReliefCompat,
   listPartAliases,
+  listPartRelationships,
   updateAdminPageDescriptions,
   updateLibraryComponent,
   upsertContactWireCompat,
   upsertModuleBackshellCompat,
   upsertModuleContactCompat,
   upsertModuleStrainReliefCompat,
-  upsertPartAlias
+  upsertPartAlias,
+  upsertPartRelationship
 } from "@/lib/api";
 import { requireAdminUser } from "@/lib/auth";
 import { collectAttributesFromFormData } from "@/lib/part-fields";
@@ -74,6 +77,10 @@ function parseOptionalDateTime(raw: string): string | undefined {
 
 function normalizeRequiredIngestText(raw: string): string {
   return raw.length > 0 ? raw : " ";
+}
+
+function optionalFormText(formData: FormData, key: string): string {
+  return String(formData.get(key) ?? "").trim();
 }
 
 async function editItemAction(formData: FormData) {
@@ -125,6 +132,10 @@ async function editItemAction(formData: FormData) {
     reviewedAt,
     lastEditedByUserId: lastEditedBy,
     lastEditedAt,
+    partType: optionalFormText(formData, "partType"),
+    side: optionalFormText(formData, "side"),
+    notes: optionalFormText(formData, "notes"),
+    electricalMode: optionalFormText(formData, "electricalMode"),
     attributes
   });
   revalidatePath("/admin");
@@ -181,6 +192,10 @@ async function createItemAction(formData: FormData) {
         isReviewed,
         reviewedByUserId,
         reviewedAt,
+        partType: optionalFormText(formData, "partType") || undefined,
+        side: optionalFormText(formData, "side") || undefined,
+        notes: optionalFormText(formData, "notes") || undefined,
+        electricalMode: optionalFormText(formData, "electricalMode") || undefined,
         attributes
       }
     ]
@@ -320,10 +335,43 @@ async function deleteAliasAction(formData: FormData) {
   revalidatePath("/admin");
 }
 
+function parseParentPositions(raw: string): string[] {
+  return raw
+    .split(/[,;\s]+/)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+}
+
+async function upsertRelationshipAction(formData: FormData) {
+  "use server";
+  await requireAdminUser();
+  const childPartId = optionalFormText(formData, "childPartId");
+  await upsertPartRelationship({
+    parentPartId: requireFormField(formData, "parentPartId"),
+    childPartId: childPartId || undefined,
+    relationshipType: requireFormField(formData, "relationshipType"),
+    positionType: optionalFormText(formData, "positionType") || undefined,
+    parentPositions: parseParentPositions(String(formData.get("parentPositions") ?? "")),
+    status: parseCompatStatus(requireFormField(formData, "status")),
+    sourceStatus: optionalFormText(formData, "sourceStatus") || undefined,
+    notes: optionalFormText(formData, "notes") || undefined
+  });
+  revalidatePath("/admin");
+}
+
+async function deleteRelationshipAction(formData: FormData) {
+  "use server";
+  await requireAdminUser();
+  await deletePartRelationship({
+    id: requireFormField(formData, "id")
+  });
+  revalidatePath("/admin");
+}
+
 export default async function AdminOverviewPage({ searchParams }: { searchParams: AdminPageSearchParams }) {
   const signedInUser = await requireAdminUser();
   const { q, category, family, awg, color } = await searchParams;
-  const [users, projects, items, pageDescriptions, contactWire, moduleContact, moduleBackshell, moduleStrainRelief, aliases] =
+  const [users, projects, items, pageDescriptions, contactWire, moduleContact, moduleBackshell, moduleStrainRelief, aliases, relationships] =
     await Promise.all([
       listAdminUsers(),
       listAdminProjectOverview(),
@@ -339,7 +387,8 @@ export default async function AdminOverviewPage({ searchParams }: { searchParams
       listModuleContactCompat(),
       listModuleBackshellCompat(),
       listModuleStrainReliefCompat(),
-      listPartAliases()
+      listPartAliases(),
+      listPartRelationships()
     ]);
 
   const projectsByUserId = new Map<
@@ -369,7 +418,8 @@ export default async function AdminOverviewPage({ searchParams }: { searchParams
     backshell: "Backshell",
     "strain-relief": "Strain-Relief",
     module: "Module",
-    splice: "Splice"
+    splice: "Splice",
+    frame: "Frame"
   };
   const visibleCategories = category ? [category] : categoryOrder;
 
@@ -530,7 +580,8 @@ export default async function AdminOverviewPage({ searchParams }: { searchParams
                   moduleContact.length +
                   moduleBackshell.length +
                   moduleStrainRelief.length +
-                  aliases.length}{" "}
+                  aliases.length +
+                  relationships.length}{" "}
                 rows - expand panel
               </span>
             </summary>
@@ -541,6 +592,7 @@ export default async function AdminOverviewPage({ searchParams }: { searchParams
               moduleBackshell={moduleBackshell}
               moduleStrainRelief={moduleStrainRelief}
               aliases={aliases}
+              relationships={relationships}
               upsertContactWireAction={upsertContactWireAction}
               deleteContactWireAction={deleteContactWireAction}
               upsertModuleContactAction={upsertModuleContactAction}
@@ -551,6 +603,8 @@ export default async function AdminOverviewPage({ searchParams }: { searchParams
               deleteModuleStrainReliefAction={deleteModuleStrainReliefAction}
               upsertAliasAction={upsertAliasAction}
               deleteAliasAction={deleteAliasAction}
+              upsertRelationshipAction={upsertRelationshipAction}
+              deleteRelationshipAction={deleteRelationshipAction}
             />
           </details>
         </section>

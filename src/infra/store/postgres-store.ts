@@ -37,16 +37,20 @@ import type {
   BackshellFitment,
   StrainReliefAttributes,
   SpliceAttributes,
-  CategoryAttributesMap
+  FrameAttributes,
+  CategoryAttributesMap,
+  PartRelationship,
+  PartRelationshipInput
 } from "../../domain/library.js";
-import { emptyAttributesForCategory } from "../../domain/library.js";
+import { emptyAttributesForCategory, normalizePartRelationship } from "../../domain/library.js";
 import { hashDesignSnapshot } from "../../domain/snapshot-hash.js";
 import type { TablePreferencesRecord } from "../../domain/table-preferences.js";
 import type { Store } from "./store.js";
 
 const PART_COLUMNS = `id, category, family, part_number, description, is_active, stock_status, import_batch_id,
               created_by_user_id, created_at, last_edited_by_user_id, last_edited_at, is_reviewed, reviewed_by_user_id, reviewed_at,
-              is_archived, archived_at, archived_by_user_id, updated_at`;
+              is_archived, archived_at, archived_by_user_id, updated_at,
+              part_type, side, notes, electrical_mode, extra_attributes`;
 
 const EMPTY_SNAPSHOT: DesignSnapshot = {
   connectors: [],
@@ -197,6 +201,11 @@ type PartRow = {
   archived_at: Date | null;
   archived_by_user_id: string | null;
   updated_at: Date;
+  part_type: string | null;
+  side: string | null;
+  notes: string | null;
+  electrical_mode: string | null;
+  extra_attributes: unknown;
 };
 
 type ModuleExtRow = {
@@ -215,7 +224,11 @@ type ModuleExtRow = {
   operating_temp: string | null;
   default_protective_cover_part_id: string | null;
   insert_arrangement: string | null;
-  pin_ids_json: string[] | null;
+  pin_ids_json: unknown;
+  position_count: number | null;
+  sim_slot_count: number | null;
+  sim_slot_sections_json: unknown;
+  slot_occupancy: number | null;
 };
 
 type ModuleContactPositionRow = {
@@ -240,6 +253,8 @@ type ContactExtRow = {
   contact_size: string | null;
   stud_size: string | null;
   tih: boolean | null;
+  accepted_gauges_json: unknown;
+  wire_interface: string | null;
 };
 
 type WireExtRow = {
@@ -316,6 +331,25 @@ type SpliceExtRow = {
   variant: string | null;
   cma_min: number | null;
   cma_max: number | null;
+};
+
+type FrameExtRow = {
+  part_id: string;
+  module_capacity: number | null;
+  slot_ids_json: unknown;
+};
+
+type PartRelationshipRow = {
+  id: string;
+  parent_part_id: string;
+  child_part_id: string | null;
+  relationship_type: string;
+  position_type: string | null;
+  parent_positions_json: unknown;
+  status: CompatStatus;
+  source_status: string | null;
+  notes: string | null;
+  extra_json: unknown;
 };
 
 type PartAliasRow = {
@@ -535,6 +569,46 @@ function optionalBoolean(value: boolean | null | undefined): boolean | undefined
   return value;
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  if (typeof value === "string" && value.trim()) {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.map((entry) => String(entry));
+}
+
+function asStringMatrix(value: unknown): string[][] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.map((row) => (Array.isArray(row) ? row.map((entry) => String(entry)) : []));
+}
+
+function extraAttributesOrUndefined(value: unknown): Record<string, unknown> | undefined {
+  const record = asRecord(value);
+  return Object.keys(record).length > 0 ? record : undefined;
+}
+
+function extraOrUndefined(value: unknown): Record<string, unknown> | undefined {
+  return extraAttributesOrUndefined(value);
+}
+
 function groupRowsByKey<T>(rows: T[], key: (row: T) => string): Map<string, T[]> {
   const grouped = new Map<string, T[]>();
   for (const row of rows) {
@@ -569,7 +643,12 @@ function mapPartRecord(row: PartRow): Omit<PartWithAttributes, "attributes"> {
     createdAt: row.created_at.toISOString(),
     lastEditedByUserId: row.last_edited_by_user_id,
     lastEditedAt: row.last_edited_at.toISOString(),
-    updatedAt: row.updated_at.toISOString()
+    updatedAt: row.updated_at.toISOString(),
+    partType: optionalString(row.part_type),
+    side: optionalString(row.side),
+    notes: optionalString(row.notes),
+    electricalMode: optionalString(row.electrical_mode),
+    extraAttributes: extraAttributesOrUndefined(row.extra_attributes)
   };
 }
 
@@ -602,7 +681,11 @@ function mapModuleAttributes(
       contactFamily: optionalString(position.contact_family),
       pinCount: position.pin_count
     })),
-    pinIds: row.pin_ids_json ?? []
+    pinIds: asStringArray(row.pin_ids_json),
+    positionCount: optionalNumber(row.position_count),
+    simSlotCount: optionalNumber(row.sim_slot_count),
+    simSlotSections: asStringMatrix(row.sim_slot_sections_json),
+    slotOccupancy: optionalNumber(row.slot_occupancy)
   };
 }
 
@@ -622,10 +705,12 @@ function mapContactAttributes(row: ContactExtRow | undefined): ContactAttributes
     lengthAdded: optionalNumber(row.length_added),
     acceptedAwgMin: optionalNumber(row.accepted_awg_min),
     acceptedAwgMax: optionalNumber(row.accepted_awg_max),
-    acceptedFamilies: row.accepted_families_json ?? [],
+    acceptedFamilies: asStringArray(row.accepted_families_json),
     contactSize: optionalString(row.contact_size),
     studSize: optionalString(row.stud_size),
-    tih: optionalBoolean(row.tih)
+    tih: optionalBoolean(row.tih),
+    acceptedGauges: asStringArray(row.accepted_gauges_json),
+    wireInterface: optionalString(row.wire_interface)
   };
 }
 
@@ -740,6 +825,18 @@ function mapSpliceAttributes(row: SpliceExtRow | undefined): SpliceAttributes {
   };
 }
 
+function mapFrameAttributes(row: FrameExtRow | undefined): FrameAttributes {
+  const base = emptyAttributesForCategory("frame") as FrameAttributes;
+  if (!row) {
+    return base;
+  }
+  return {
+    ...base,
+    moduleCapacity: optionalNumber(row.module_capacity),
+    slotIds: asStringArray(row.slot_ids_json)
+  };
+}
+
 function attributesForPart(
   row: PartRow,
   extensions: {
@@ -754,6 +851,7 @@ function attributesForPart(
     backshellFitments: Map<string, BackshellFitmentRow[]>;
     strainReliefs: Map<string, StrainReliefExtRow>;
     splices: Map<string, SpliceExtRow>;
+    frames: Map<string, FrameExtRow>;
   }
 ): CategoryAttributesMap[LibraryCategory] {
   switch (row.category) {
@@ -773,6 +871,8 @@ function attributesForPart(
       return mapStrainReliefAttributes(extensions.strainReliefs.get(row.id));
     case "splice":
       return mapSpliceAttributes(extensions.splices.get(row.id));
+    case "frame":
+      return mapFrameAttributes(extensions.frames.get(row.id));
   }
 }
 
@@ -791,6 +891,7 @@ async function loadExtensionMaps(
   backshellFitments: Map<string, BackshellFitmentRow[]>;
   strainReliefs: Map<string, StrainReliefExtRow>;
   splices: Map<string, SpliceExtRow>;
+  frames: Map<string, FrameExtRow>;
 }> {
   const empty = {
     modules: new Map<string, ModuleExtRow>(),
@@ -803,13 +904,14 @@ async function loadExtensionMaps(
     backshells: new Map<string, BackshellExtRow>(),
     backshellFitments: new Map<string, BackshellFitmentRow[]>(),
     strainReliefs: new Map<string, StrainReliefExtRow>(),
-    splices: new Map<string, SpliceExtRow>()
+    splices: new Map<string, SpliceExtRow>(),
+    frames: new Map<string, FrameExtRow>()
   };
   if (partIds.length === 0) {
     return empty;
   }
 
-  const [modules, moduleContactPositions, contacts, wires, labels, sleeveTubeBraids, sleeveSizeRanges, backshells, backshellFitments, strainReliefs, splices] =
+  const [modules, moduleContactPositions, contacts, wires, labels, sleeveTubeBraids, sleeveSizeRanges, backshells, backshellFitments, strainReliefs, splices, frames] =
     await Promise.all([
       queryClient.query<ModuleExtRow>(`SELECT * FROM modules WHERE part_id = ANY($1::text[])`, [partIds]),
       queryClient.query<ModuleContactPositionRow>(
@@ -830,7 +932,8 @@ async function loadExtensionMaps(
         `SELECT * FROM strain_reliefs WHERE part_id = ANY($1::text[])`,
         [partIds]
       ),
-      queryClient.query<SpliceExtRow>(`SELECT * FROM splices WHERE part_id = ANY($1::text[])`, [partIds])
+      queryClient.query<SpliceExtRow>(`SELECT * FROM splices WHERE part_id = ANY($1::text[])`, [partIds]),
+      queryClient.query<FrameExtRow>(`SELECT * FROM frames WHERE part_id = ANY($1::text[])`, [partIds])
     ]);
 
   return {
@@ -844,7 +947,8 @@ async function loadExtensionMaps(
     backshells: new Map(backshells.rows.map((row) => [row.part_id, row])),
     backshellFitments: groupRowsByKey(backshellFitments.rows, (row) => row.part_id),
     strainReliefs: new Map(strainReliefs.rows.map((row) => [row.part_id, row])),
-    splices: new Map(splices.rows.map((row) => [row.part_id, row]))
+    splices: new Map(splices.rows.map((row) => [row.part_id, row])),
+    frames: new Map(frames.rows.map((row) => [row.part_id, row]))
   };
 }
 
@@ -938,6 +1042,21 @@ function mapModuleStrainReliefCompat(row: ModuleStrainReliefCompatRow): ModuleSt
   };
 }
 
+function mapPartRelationship(row: PartRelationshipRow): PartRelationship {
+  return normalizePartRelationship({
+    id: row.id,
+    parentPartId: row.parent_part_id,
+    childPartId: row.child_part_id ?? undefined,
+    relationshipType: row.relationship_type,
+    positionType: row.position_type ?? undefined,
+    parentPositions: asStringArray(row.parent_positions_json),
+    status: row.status,
+    sourceStatus: row.source_status ?? undefined,
+    notes: row.notes ?? undefined,
+    extra: extraOrUndefined(row.extra_json)
+  });
+}
+
 function mapStoredIngestResults(
   job: DatastoreIngestJobRow,
   rows: DatastoreIngestJobResultRow[]
@@ -1013,11 +1132,13 @@ export class PostgresStore implements Store {
           `INSERT INTO modules (
              part_id, genre, gender, contact_family_1, pin_count, contact_family_2, pin_count_2,
              emi, crimp_gauge, contact_size, amp_rating, operating_voltage, operating_temp,
-             default_protective_cover_part_id, insert_arrangement, pin_ids_json
+             default_protective_cover_part_id, insert_arrangement, pin_ids_json,
+             position_count, sim_slot_count, sim_slot_sections_json, slot_occupancy
            ) VALUES (
              $1, $2, $3, $4, $5, $6, $7,
              $8, $9, $10, $11, $12, $13,
-             $14, $15, $16::jsonb
+             $14, $15, $16::jsonb,
+             $17, $18, $19::jsonb, $20
            )
            ON CONFLICT (part_id) DO UPDATE SET
              genre = EXCLUDED.genre,
@@ -1034,7 +1155,11 @@ export class PostgresStore implements Store {
              operating_temp = EXCLUDED.operating_temp,
              default_protective_cover_part_id = EXCLUDED.default_protective_cover_part_id,
              insert_arrangement = EXCLUDED.insert_arrangement,
-             pin_ids_json = EXCLUDED.pin_ids_json`,
+             pin_ids_json = EXCLUDED.pin_ids_json,
+             position_count = EXCLUDED.position_count,
+             sim_slot_count = EXCLUDED.sim_slot_count,
+             sim_slot_sections_json = EXCLUDED.sim_slot_sections_json,
+             slot_occupancy = EXCLUDED.slot_occupancy`,
           [
             partId,
             attrs.genre ?? null,
@@ -1051,7 +1176,11 @@ export class PostgresStore implements Store {
             attrs.operatingTemp ?? null,
             attrs.defaultProtectiveCoverPartId ?? null,
             attrs.insertArrangement ?? null,
-            JSON.stringify(attrs.pinIds ?? [])
+            JSON.stringify(attrs.pinIds ?? []),
+            attrs.positionCount ?? null,
+            attrs.simSlotCount ?? null,
+            JSON.stringify(attrs.simSlotSections ?? []),
+            attrs.slotOccupancy ?? null
           ]
         );
         await client.query(`DELETE FROM module_contact_positions WHERE module_part_id = $1`, [partId]);
@@ -1069,10 +1198,12 @@ export class PostgresStore implements Store {
         await client.query(
           `INSERT INTO contacts (
              part_id, genre, gender, awg, plating, term_type, ss_compatible, length_added,
-             accepted_awg_min, accepted_awg_max, accepted_families_json, contact_size, stud_size, tih
+             accepted_awg_min, accepted_awg_max, accepted_families_json, contact_size, stud_size, tih,
+             accepted_gauges_json, wire_interface
            ) VALUES (
              $1, $2, $3, $4, $5, $6, $7, $8,
-             $9, $10, $11::jsonb, $12, $13, $14
+             $9, $10, $11::jsonb, $12, $13, $14,
+             $15::jsonb, $16
            )
            ON CONFLICT (part_id) DO UPDATE SET
              genre = EXCLUDED.genre,
@@ -1087,7 +1218,9 @@ export class PostgresStore implements Store {
              accepted_families_json = EXCLUDED.accepted_families_json,
              contact_size = EXCLUDED.contact_size,
              stud_size = EXCLUDED.stud_size,
-             tih = EXCLUDED.tih`,
+             tih = EXCLUDED.tih,
+             accepted_gauges_json = EXCLUDED.accepted_gauges_json,
+             wire_interface = EXCLUDED.wire_interface`,
           [
             partId,
             attrs.genre ?? null,
@@ -1102,7 +1235,9 @@ export class PostgresStore implements Store {
             JSON.stringify(attrs.acceptedFamilies ?? []),
             attrs.contactSize ?? null,
             attrs.studSize ?? null,
-            attrs.tih ?? null
+            attrs.tih ?? null,
+            JSON.stringify(attrs.acceptedGauges ?? []),
+            attrs.wireInterface ?? null
           ]
         );
         return;
@@ -1270,6 +1405,18 @@ export class PostgresStore implements Store {
             attrs.cmaMin ?? null,
             attrs.cmaMax ?? null
           ]
+        );
+        return;
+      }
+      case "frame": {
+        const attrs = attributes as FrameAttributes;
+        await client.query(
+          `INSERT INTO frames (part_id, module_capacity, slot_ids_json)
+           VALUES ($1, $2, $3::jsonb)
+           ON CONFLICT (part_id) DO UPDATE SET
+             module_capacity = EXCLUDED.module_capacity,
+             slot_ids_json = EXCLUDED.slot_ids_json`,
+          [partId, attrs.moduleCapacity ?? null, JSON.stringify(attrs.slotIds ?? [])]
         );
         return;
       }
@@ -2279,6 +2426,11 @@ export class PostgresStore implements Store {
                 existing.description !== item.description.trim() ||
                 existing.is_active !== item.isActive ||
                 existing.stock_status !== item.stockStatus ||
+                (existing.part_type ?? "") !== (item.partType?.trim() ?? "") ||
+                (existing.side ?? "") !== (item.side?.trim() ?? "") ||
+                (existing.notes ?? "") !== (item.notes?.trim() ?? "") ||
+                (existing.electrical_mode ?? "") !== (item.electricalMode?.trim() ?? "") ||
+                JSON.stringify(asRecord(existing.extra_attributes)) !== JSON.stringify(item.extraAttributes ?? {}) ||
                 JSON.stringify(existingPart.attributes) !== JSON.stringify(nextAttributes))
           );
         const effectiveIsReviewed = editedReviewedEntry ? false : item.isReviewed;
@@ -2291,11 +2443,13 @@ export class PostgresStore implements Store {
             `INSERT INTO parts (
                id, category, family, part_number, description, is_active, stock_status,
                created_by_user_id, created_at, last_edited_by_user_id, last_edited_at,
-               is_reviewed, reviewed_by_user_id, reviewed_at, is_archived, updated_at
+               is_reviewed, reviewed_by_user_id, reviewed_at, is_archived, updated_at,
+               part_type, side, notes, electrical_mode, extra_attributes
              ) VALUES (
                $1, $2, $3, $4, $5, $6, $7,
                $8, $9, $8, $9,
-               $10, $11, $12, FALSE, $9
+               $10, $11, $12, FALSE, $9,
+               $13, $14, $15, $16, $17::jsonb
              )
              ON CONFLICT (id)
              DO UPDATE SET
@@ -2310,7 +2464,12 @@ export class PostgresStore implements Store {
                reviewed_at = EXCLUDED.reviewed_at,
                last_edited_by_user_id = EXCLUDED.last_edited_by_user_id,
                last_edited_at = EXCLUDED.last_edited_at,
-               updated_at = EXCLUDED.updated_at`,
+               updated_at = EXCLUDED.updated_at,
+               part_type = EXCLUDED.part_type,
+               side = EXCLUDED.side,
+               notes = EXCLUDED.notes,
+               electrical_mode = EXCLUDED.electrical_mode,
+               extra_attributes = EXCLUDED.extra_attributes`,
             [
               componentId,
               item.category,
@@ -2323,7 +2482,12 @@ export class PostgresStore implements Store {
               now,
               effectiveIsReviewed,
               normalizedReviewedByUserId,
-              normalizedReviewedAt
+              normalizedReviewedAt,
+              item.partType?.trim() || null,
+              item.side?.trim() || null,
+              item.notes?.trim() || null,
+              item.electricalMode?.trim() || null,
+              JSON.stringify(item.extraAttributes ?? {})
             ]
           );
           await this.upsertExtensionRow(client, componentId, item.category, nextAttributes);
@@ -2585,6 +2749,11 @@ export class PostgresStore implements Store {
     lastEditedByUserId?: string;
     lastEditedAt?: string;
     editedByUserId?: string;
+    partType?: string;
+    side?: string;
+    notes?: string;
+    electricalMode?: string;
+    extraAttributes?: Record<string, unknown>;
     attributes?: Partial<CategoryAttributesMap[LibraryCategory]>;
   }): Promise<PartWithAttributes | null> {
     const client = await this.pool.connect();
@@ -2627,6 +2796,11 @@ export class PostgresStore implements Store {
              created_at = COALESCE($10::timestamptz, created_at),
              last_edited_by_user_id = COALESCE($11, $12, last_edited_by_user_id),
              last_edited_at = COALESCE($13::timestamptz, NOW()),
+             part_type = CASE WHEN $15::text IS NULL THEN part_type ELSE NULLIF(BTRIM($15), '') END,
+             side = CASE WHEN $16::text IS NULL THEN side ELSE NULLIF(BTRIM($16), '') END,
+             notes = CASE WHEN $17::text IS NULL THEN notes ELSE NULLIF(BTRIM($17), '') END,
+             electrical_mode = CASE WHEN $18::text IS NULL THEN electrical_mode ELSE NULLIF(BTRIM($18), '') END,
+             extra_attributes = CASE WHEN $19::jsonb IS NULL THEN extra_attributes ELSE $19::jsonb END,
              updated_at = NOW()
          WHERE id = $14 AND is_archived = FALSE
          RETURNING ${PART_COLUMNS}`,
@@ -2644,7 +2818,12 @@ export class PostgresStore implements Store {
           input.lastEditedByUserId ?? null,
           input.editedByUserId ?? null,
           input.lastEditedAt ?? null,
-          input.componentId
+          input.componentId,
+          input.partType ?? null,
+          input.side ?? null,
+          input.notes ?? null,
+          input.electricalMode ?? null,
+          input.extraAttributes === undefined ? null : JSON.stringify(input.extraAttributes)
         ]
       );
       if (!result.rows[0]) {
@@ -2992,6 +3171,94 @@ export class PostgresStore implements Store {
        WHERE code_system = $1 AND code = $2`,
       [input.codeSystem, input.code]
     );
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async listPartRelationships(input?: {
+    parentPartId?: string;
+    childPartId?: string;
+    relationshipType?: string;
+  }): Promise<PartRelationship[]> {
+    const result = await this.pool.query<PartRelationshipRow>(
+      `SELECT id, parent_part_id, child_part_id, relationship_type, position_type,
+              parent_positions_json, status, source_status, notes, extra_json
+       FROM part_relationships
+       WHERE ($1::text IS NULL OR parent_part_id = $1::text)
+         AND ($2::text IS NULL OR child_part_id = $2::text)
+         AND ($3::text IS NULL OR relationship_type = $3::text)
+       ORDER BY relationship_type ASC, parent_part_id ASC, child_part_id ASC NULLS LAST`,
+      [input?.parentPartId ?? null, input?.childPartId ?? null, input?.relationshipType ?? null]
+    );
+    return result.rows.map(mapPartRelationship);
+  }
+
+  async upsertPartRelationship(input: PartRelationshipInput): Promise<PartRelationship> {
+    const normalized = normalizePartRelationship(input);
+    if (normalized.childPartId && normalized.childPartId === normalized.parentPartId) {
+      throw new Error("RELATIONSHIP_SELF_REFERENCE");
+    }
+    const existing = await this.pool.query<PartRelationshipRow>(
+      `SELECT id, parent_part_id, child_part_id, relationship_type, position_type,
+              parent_positions_json, status, source_status, notes, extra_json
+       FROM part_relationships
+       WHERE parent_part_id = $1
+         AND COALESCE(child_part_id, '') = COALESCE($2, '')
+         AND relationship_type = $3
+         AND COALESCE(position_type, '') = COALESCE($4, '')`,
+      [
+        normalized.parentPartId,
+        normalized.childPartId ?? null,
+        normalized.relationshipType,
+        normalized.positionType ?? null
+      ]
+    );
+    const id = existing.rows[0]?.id ?? normalized.id;
+    const result = await this.pool.query<PartRelationshipRow>(
+      `INSERT INTO part_relationships (
+         id, parent_part_id, child_part_id, relationship_type, position_type,
+         parent_positions_json, status, source_status, notes, extra_json
+       ) VALUES (
+         $1, $2, $3, $4, $5,
+         $6::jsonb, $7, $8, $9, $10::jsonb
+       )
+       ON CONFLICT (id)
+       DO UPDATE SET
+         parent_part_id = EXCLUDED.parent_part_id,
+         child_part_id = EXCLUDED.child_part_id,
+         relationship_type = EXCLUDED.relationship_type,
+         position_type = EXCLUDED.position_type,
+         parent_positions_json = EXCLUDED.parent_positions_json,
+         status = EXCLUDED.status,
+         source_status = EXCLUDED.source_status,
+         notes = EXCLUDED.notes,
+         extra_json = EXCLUDED.extra_json
+       RETURNING id, parent_part_id, child_part_id, relationship_type, position_type,
+                 parent_positions_json, status, source_status, notes, extra_json`,
+      [
+        id,
+        normalized.parentPartId,
+        normalized.childPartId ?? null,
+        normalized.relationshipType,
+        normalized.positionType ?? null,
+        JSON.stringify(normalized.parentPositions),
+        normalized.status,
+        normalized.sourceStatus ?? null,
+        normalized.notes ?? null,
+        JSON.stringify(normalized.extra ?? {})
+      ]
+    );
+    return mapPartRelationship(result.rows[0]);
+  }
+
+  async bulkUpsertPartRelationships(input: { rows: PartRelationshipInput[] }): Promise<{ upserted: number }> {
+    for (const row of input.rows) {
+      await this.upsertPartRelationship(row);
+    }
+    return { upserted: input.rows.length };
+  }
+
+  async deletePartRelationship(input: { id: string }): Promise<boolean> {
+    const result = await this.pool.query(`DELETE FROM part_relationships WHERE id = $1`, [input.id]);
     return (result.rowCount ?? 0) > 0;
   }
 

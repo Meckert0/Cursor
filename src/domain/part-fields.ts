@@ -56,7 +56,27 @@ const IDENTITY_CORE: PartFieldMeta[] = [
     required: true
   },
   { key: "isActive", label: "Active", inputType: "boolean", isIdentity: true, isVisibleInViewer: true, showOnAddForm: true },
-  { key: "stockStatus", label: "Stock status", inputType: "text", isIdentity: true, isVisibleInViewer: false, showOnAddForm: true }
+  { key: "stockStatus", label: "Stock status", inputType: "text", isIdentity: true, isVisibleInViewer: false, showOnAddForm: true },
+  {
+    key: "partType",
+    label: "Part type",
+    inputType: "text",
+    isIdentity: true,
+    isVisibleInViewer: true,
+    showOnAddForm: true,
+    showInSearch: true
+  },
+  {
+    key: "side",
+    label: "Side",
+    inputType: "text",
+    isIdentity: true,
+    isVisibleInViewer: true,
+    showOnAddForm: true,
+    showInSearch: true
+  },
+  { key: "electricalMode", label: "Electrical mode", inputType: "text", isIdentity: true, isVisibleInViewer: true, showOnAddForm: true },
+  { key: "notes", label: "Notes", inputType: "text", isIdentity: true, isVisibleInViewer: true, showOnAddForm: true }
 ];
 
 function attr(
@@ -97,6 +117,9 @@ export const PART_FIELDS_BY_CATEGORY: Record<LibraryCategory, PartFieldMeta[]> =
       showOnAddForm: false
     }),
     attr("pinIds", "Pin IDs", "string-list", { isVisibleInViewer: false }),
+    attr("positionCount", "Position count", "number"),
+    attr("simSlotCount", "SIM slot count", "number", { isVisibleInViewer: false }),
+    attr("slotOccupancy", "Slot occupancy", "number", { isVisibleInViewer: false }),
     ...AUDIT_AND_REVIEW_FIELDS
   ],
   contact: [
@@ -114,6 +137,8 @@ export const PART_FIELDS_BY_CATEGORY: Record<LibraryCategory, PartFieldMeta[]> =
     attr("acceptedAwgMin", "Accepted AWG min", "number"),
     attr("acceptedAwgMax", "Accepted AWG max", "number"),
     attr("acceptedFamilies", "Accepted wire families", "string-list"),
+    attr("acceptedGauges", "Accepted gauges", "string-list"),
+    attr("wireInterface", "Wire interface", "text"),
     ...AUDIT_AND_REVIEW_FIELDS
   ],
   wire: [
@@ -142,6 +167,7 @@ export const PART_FIELDS_BY_CATEGORY: Record<LibraryCategory, PartFieldMeta[]> =
     attr("maxVoltage", "Max voltage", "number", { isVisibleInViewer: false }),
     IDENTITY_CORE[3],
     IDENTITY_CORE[4],
+    ...IDENTITY_CORE.slice(5),
     ...AUDIT_AND_REVIEW_FIELDS
   ],
   label: [
@@ -182,6 +208,12 @@ export const PART_FIELDS_BY_CATEGORY: Record<LibraryCategory, PartFieldMeta[]> =
     attr("cmaMin", "CMA min", "number", { isVisibleInViewer: false }),
     attr("cmaMax", "CMA max", "number", { isVisibleInViewer: false }),
     attr("manufacturerPn", "Manufacturer PN", "text"),
+    ...AUDIT_AND_REVIEW_FIELDS
+  ],
+  frame: [
+    ...IDENTITY_CORE,
+    attr("moduleCapacity", "Module capacity", "number"),
+    attr("slotIds", "Slot IDs", "string-list"),
     ...AUDIT_AND_REVIEW_FIELDS
   ]
 };

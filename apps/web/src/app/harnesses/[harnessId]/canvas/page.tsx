@@ -14,12 +14,12 @@ import {
   type RevisionDto
 } from "@/lib/api";
 import { requireSignedInUser } from "@/lib/auth";
-import { collectAttributesFromFormData } from "@/lib/part-fields";
+import { collectAttributesFromFormData, isCanvasConnectorPart } from "@/lib/part-fields";
 import { HarnessDescriptionField } from "./harness-description-field";
 import styles from "./page.module.css";
 
 function connectorCatalogOnly(catalog: Awaited<ReturnType<typeof listLibraryComponents>>) {
-  return catalog.filter((item) => item.category === "module");
+  return catalog.filter((item) => isCanvasConnectorPart(item));
 }
 
 export default async function HarnessCanvasPage({
@@ -88,6 +88,7 @@ export default async function HarnessCanvasPage({
             isActive: true,
             stockStatus: "in_stock",
             isReviewed: false,
+            partType: "MODULE",
             attributes
           }
         ]

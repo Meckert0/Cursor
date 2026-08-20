@@ -33,7 +33,9 @@ import type {
   BackshellAttributes,
   StrainReliefAttributes,
   SpliceAttributes,
-  CategoryAttributesMap
+  CategoryAttributesMap,
+  PartRelationship,
+  PartRelationshipInput
 } from "../../domain/library.js";
 import type { TablePreferencesRecord } from "../../domain/table-preferences.js";
 
@@ -200,6 +202,11 @@ export interface Store {
     lastEditedByUserId?: string;
     lastEditedAt?: string;
     editedByUserId?: string;
+    partType?: string;
+    side?: string;
+    notes?: string;
+    electricalMode?: string;
+    extraAttributes?: Record<string, unknown>;
     attributes?: Partial<CategoryAttributesMap[LibraryCategory]>;
   }): Promise<PartWithAttributes | null>;
   listLibraryReviewQueue(input?: {
@@ -233,6 +240,14 @@ export interface Store {
   listPartAliases(input?: { partId?: string }): Promise<PartAlias[]>;
   upsertPartAlias(input: PartAlias): Promise<PartAlias>;
   deletePartAlias(input: { codeSystem: string; code: string }): Promise<boolean>;
+  listPartRelationships(input?: {
+    parentPartId?: string;
+    childPartId?: string;
+    relationshipType?: string;
+  }): Promise<PartRelationship[]>;
+  upsertPartRelationship(input: PartRelationshipInput): Promise<PartRelationship>;
+  bulkUpsertPartRelationships(input: { rows: PartRelationshipInput[] }): Promise<{ upserted: number }>;
+  deletePartRelationship(input: { id: string }): Promise<boolean>;
   getUserTablePreferences(input: { userId: string; scope: string }): Promise<TablePreferencesRecord | null>;
   upsertUserTablePreferences(input: {
     userId: string;

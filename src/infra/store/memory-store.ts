@@ -13,6 +13,8 @@ import type {
 } from "../../domain/types.js";
 import {
   emptyAttributesForCategory,
+  normalizePartRelationship,
+  partRelationshipNaturalKey,
   type AwgCmaReference,
   type LibraryCategory,
   type PartIngestItem,
@@ -24,6 +26,8 @@ import {
   type ModuleBackshellCompat,
   type ModuleStrainReliefCompat,
   type PartAlias,
+  type PartRelationship,
+  type PartRelationshipInput,
   type CategoryAttributesMap
 } from "../../domain/library.js";
 import { hashDesignSnapshot } from "../../domain/snapshot-hash.js";
@@ -84,6 +88,7 @@ export interface MemoryStoreState {
   moduleContactCompat?: ModuleContactCompat[];
   moduleBackshellCompat?: ModuleBackshellCompat[];
   moduleStrainReliefCompat?: ModuleStrainReliefCompat[];
+  partRelationships?: PartRelationship[];
   awgCmaReference?: AwgCmaReference[];
   userTablePreferences: TablePreferencesRecord[];
 }
@@ -108,6 +113,7 @@ export class MemoryStore implements Store {
   private readonly moduleContactCompat = new Map<string, ModuleContactCompat>();
   private readonly moduleBackshellCompat = new Map<string, ModuleBackshellCompat>();
   private readonly moduleStrainReliefCompat = new Map<string, ModuleStrainReliefCompat>();
+  private readonly partRelationships = new Map<string, PartRelationship>();
   private readonly awgCmaReference = new Map<string, AwgCmaReference>();
   private readonly userTablePreferences = new Map<string, TablePreferencesRecord>();
 
@@ -161,6 +167,7 @@ export class MemoryStore implements Store {
       moduleContactCompat: Array.from(this.moduleContactCompat.values()),
       moduleBackshellCompat: Array.from(this.moduleBackshellCompat.values()),
       moduleStrainReliefCompat: Array.from(this.moduleStrainReliefCompat.values()),
+      partRelationships: Array.from(this.partRelationships.values()),
       awgCmaReference: Array.from(this.awgCmaReference.values()),
       userTablePreferences: Array.from(this.userTablePreferences.values())
     };
@@ -278,6 +285,12 @@ export class MemoryStore implements Store {
     this.moduleStrainReliefCompat.clear();
     for (const row of state.moduleStrainReliefCompat ?? []) {
       this.moduleStrainReliefCompat.set(`${row.modulePartId}:${row.strainReliefPartId}`, row);
+    }
+
+    this.partRelationships.clear();
+    for (const row of state.partRelationships ?? []) {
+      const normalized = normalizePartRelationship(row);
+      this.partRelationships.set(partRelationshipNaturalKey(normalized), normalized);
     }
 
     this.awgCmaReference.clear();
@@ -1030,6 +1043,11 @@ export class MemoryStore implements Store {
                 existing.description !== item.description.trim() ||
                 existing.isActive !== item.isActive ||
                 existing.stockStatus !== item.stockStatus ||
+                (existing.partType ?? "") !== (item.partType?.trim() ?? "") ||
+                (existing.side ?? "") !== (item.side?.trim() ?? "") ||
+                (existing.notes ?? "") !== (item.notes?.trim() ?? "") ||
+                (existing.electricalMode ?? "") !== (item.electricalMode?.trim() ?? "") ||
+                JSON.stringify(existing.extraAttributes ?? {}) !== JSON.stringify(item.extraAttributes ?? {}) ||
                 JSON.stringify(existing.attributes) !== JSON.stringify(attributes))
           );
         const isReviewed = editedReviewedEntry ? false : item.isReviewed;
@@ -1044,6 +1062,12 @@ export class MemoryStore implements Store {
           reviewedByUserId: isReviewed ? item.reviewedByUserId ?? input.requestedByUserId : undefined,
           reviewedAt: isReviewed ? item.reviewedAt ?? now : undefined,
           stockStatus: item.stockStatus,
+          partType: item.partType?.trim() || undefined,
+          side: item.side?.trim() || undefined,
+          notes: item.notes?.trim() || undefined,
+          electricalMode: item.electricalMode?.trim() || undefined,
+          extraAttributes:
+            item.extraAttributes && Object.keys(item.extraAttributes).length > 0 ? item.extraAttributes : undefined,
           attributes,
           createdByUserId: existing?.createdByUserId ?? input.requestedByUserId,
           createdAt: existing?.createdAt ?? now,
@@ -1244,6 +1268,11 @@ export class MemoryStore implements Store {
       return false;
     }
     this.parts.delete(input.componentId);
+    for (const [key, row] of this.partRelationships.entries()) {
+      if (row.parentPartId === input.componentId || row.childPartId === input.componentId) {
+        this.partRelationships.delete(key);
+      }
+    }
     return true;
   }
 
@@ -1262,6 +1291,11 @@ export class MemoryStore implements Store {
     lastEditedByUserId?: string;
     lastEditedAt?: string;
     editedByUserId?: string;
+    partType?: string;
+    side?: string;
+    notes?: string;
+    electricalMode?: string;
+    extraAttributes?: Record<string, unknown>;
     attributes?: Partial<CategoryAttributesMap[LibraryCategory]>;
   }): Promise<PartWithAttributes | null> {
     const part = this.parts.get(input.componentId);
@@ -1282,6 +1316,17 @@ export class MemoryStore implements Store {
     const nextIsReviewed = input.isReviewed ?? part.isReviewed;
     const nextReviewedByUserId = nextIsReviewed ? (input.reviewedByUserId ?? part.reviewedByUserId) : undefined;
     const nextReviewedAt = nextIsReviewed ? (input.reviewedAt ?? part.reviewedAt) : undefined;
+    const nextPartType = input.partType !== undefined ? input.partType.trim() || undefined : part.partType;
+    const nextSide = input.side !== undefined ? input.side.trim() || undefined : part.side;
+    const nextNotes = input.notes !== undefined ? input.notes.trim() || undefined : part.notes;
+    const nextElectricalMode =
+      input.electricalMode !== undefined ? input.electricalMode.trim() || undefined : part.electricalMode;
+    const nextExtraAttributes =
+      input.extraAttributes !== undefined
+        ? Object.keys(input.extraAttributes).length > 0
+          ? input.extraAttributes
+          : undefined
+        : part.extraAttributes;
     const updated = {
       ...part,
       partNumber: input.partNumber ?? part.partNumber,
@@ -1292,6 +1337,11 @@ export class MemoryStore implements Store {
       reviewedByUserId: nextReviewedByUserId,
       reviewedAt: nextReviewedAt,
       stockStatus: input.stockStatus ?? part.stockStatus,
+      partType: nextPartType,
+      side: nextSide,
+      notes: nextNotes,
+      electricalMode: nextElectricalMode,
+      extraAttributes: nextExtraAttributes,
       attributes: nextAttributes,
       createdByUserId: input.createdByUserId ?? part.createdByUserId,
       createdAt: input.createdAt ?? part.createdAt,
@@ -1489,6 +1539,65 @@ export class MemoryStore implements Store {
 
   async deletePartAlias(input: { codeSystem: string; code: string }): Promise<boolean> {
     return this.partAliases.delete(`${input.codeSystem}:${input.code}`);
+  }
+
+  async listPartRelationships(input?: {
+    parentPartId?: string;
+    childPartId?: string;
+    relationshipType?: string;
+  }): Promise<PartRelationship[]> {
+    return Array.from(this.partRelationships.values()).filter((row) => {
+      if (input?.parentPartId && row.parentPartId !== input.parentPartId) {
+        return false;
+      }
+      if (input?.childPartId && (row.childPartId ?? "") !== input.childPartId) {
+        return false;
+      }
+      if (input?.relationshipType && row.relationshipType !== input.relationshipType) {
+        return false;
+      }
+      return true;
+    });
+  }
+
+  async upsertPartRelationship(input: PartRelationshipInput): Promise<PartRelationship> {
+    const normalized = normalizePartRelationship(input);
+    if (normalized.childPartId && normalized.childPartId === normalized.parentPartId) {
+      throw new Error("RELATIONSHIP_SELF_REFERENCE");
+    }
+    const naturalKey = partRelationshipNaturalKey(normalized);
+    const existingByNaturalKey = this.partRelationships.get(naturalKey);
+    const row: PartRelationship = {
+      ...normalized,
+      id: existingByNaturalKey?.id ?? normalized.id
+    };
+    if (existingByNaturalKey && existingByNaturalKey.id !== row.id) {
+      this.partRelationships.delete(naturalKey);
+    }
+    for (const [key, existing] of this.partRelationships.entries()) {
+      if (existing.id === row.id && key !== naturalKey) {
+        this.partRelationships.delete(key);
+      }
+    }
+    this.partRelationships.set(naturalKey, row);
+    return row;
+  }
+
+  async bulkUpsertPartRelationships(input: { rows: PartRelationshipInput[] }): Promise<{ upserted: number }> {
+    for (const row of input.rows) {
+      await this.upsertPartRelationship(row);
+    }
+    return { upserted: input.rows.length };
+  }
+
+  async deletePartRelationship(input: { id: string }): Promise<boolean> {
+    for (const [key, row] of this.partRelationships.entries()) {
+      if (row.id === input.id) {
+        this.partRelationships.delete(key);
+        return true;
+      }
+    }
+    return false;
   }
 
   async getUserTablePreferences(input: { userId: string; scope: string }): Promise<TablePreferencesRecord | null> {

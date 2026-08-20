@@ -17,7 +17,7 @@ import {
   normalizeSelectedPathId,
   SLEEVING_OPTIONS
 } from "@/lib/cable-canvas-utils";
-import { getPartFieldsForCategory, readPartFieldRawValue, formatPartFieldDisplayValue } from "@/lib/part-fields";
+import { getPartFieldsForCategory, readPartFieldRawValue, formatPartFieldDisplayValue, isCanvasConnectorPart } from "@/lib/part-fields";
 import {
   useCanvasHistory,
   type CanvasNodePosition as NodePosition,
@@ -290,7 +290,7 @@ export function CableCanvas({
     return junction ? `junction ${junction.label ?? junction.id}` : "junction";
   }, [connectors, junctions, pathsState, selectedEntity]);
   const connectorOptions = useMemo(
-    () => connectorCatalogState.filter((component) => component.category === "module"),
+    () => connectorCatalogState.filter((component) => isCanvasConnectorPart(component)),
     [connectorCatalogState]
   );
   const selectedConnector = useMemo(() => {

@@ -1,4 +1,5 @@
 import type { RevisionDto } from "./api";
+import { usedConnectorReferences } from "./connector-frames";
 
 export function buildNextWireName(paths: RevisionDto["snapshot"]["paths"]): string {
   const numericSuffixes = paths
@@ -28,7 +29,7 @@ export function buildNextCanvasId(existingIds: string[], prefix: "c_canvas_" | "
 }
 
 export function buildNextConnectorReference(connectors: RevisionDto["snapshot"]["connectors"]): string {
-  const used = new Set(connectors.map((connector) => connector.reference.toLowerCase()));
+  const used = usedConnectorReferences(connectors);
   let next = connectors.length + 1;
   while (used.has(`j${next}`)) {
     next += 1;

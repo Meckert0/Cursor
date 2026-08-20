@@ -223,3 +223,51 @@ export async function ingestFullCableCatalog(request: APIRequestContext) {
   }
 }
 
+export async function ingestReviewedLibraryItems(
+  request: APIRequestContext,
+  items: Array<Record<string, unknown> & { id: string }>
+) {
+  const ingest = await request.post(`${API_BASE_URL}/v1/library/components/ingest`, {
+    headers: {
+      "content-type": "application/json",
+      "x-role": "editor",
+      "x-user-id": "e2e-catalog-seed"
+    },
+    data: { items }
+  });
+  expect(ingest.ok()).toBeTruthy();
+  for (const item of items) {
+    const review = await request.post(`${API_BASE_URL}/v1/library/components/${item.id}/review`, {
+      headers: {
+        "content-type": "application/json",
+        "x-role": "owner",
+        "x-user-id": "e2e-catalog-reviewer"
+      },
+      data: {}
+    });
+    expect(review.ok()).toBeTruthy();
+  }
+}
+
+export async function putPartRelationship(
+  request: APIRequestContext,
+  row: {
+    parentPartId: string;
+    compatibleParts: string[];
+    relationshipType: string;
+    positionType?: string;
+    parentPositions: string[];
+    status: "allowed" | "forbidden" | "review";
+  }
+) {
+  const adminCookie = await getAdminSessionCookie(request);
+  const response = await request.put(`${API_BASE_URL}/v1/library/relationships`, {
+    headers: {
+      cookie: adminCookie,
+      "content-type": "application/json"
+    },
+    data: row
+  });
+  expect(response.ok()).toBeTruthy();
+}
+

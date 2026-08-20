@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  displayPartType,
   emptyAttributesForCategory,
   isCanvasConnectorPart,
+  isCanvasDefinablePart,
+  isCanvasFramePart,
   normalizePartRelationship,
   partRelationshipNaturalKey,
   type ContactAttributes,
@@ -24,6 +27,17 @@ test("isCanvasConnectorPart hides frames and SIM inserts", () => {
   assert.equal(isCanvasConnectorPart({ category: "module", partType: "SIM_INSERT" }), false);
   assert.equal(isCanvasConnectorPart({ category: "frame", partType: "ITA" }), false);
   assert.equal(isCanvasConnectorPart({ category: "contact", partType: "CONTACT" }), false);
+});
+
+test("isCanvasDefinablePart includes ITA and Receiver frames", () => {
+  assert.equal(isCanvasFramePart({ category: "frame", partType: "ITA" }), true);
+  assert.equal(isCanvasFramePart({ category: "frame", partType: "RECEIVER" }), true);
+  assert.equal(isCanvasFramePart({ category: "frame", partType: "RCV" }), true);
+  assert.equal(isCanvasDefinablePart({ category: "module", partType: "MODULE" }), true);
+  assert.equal(isCanvasDefinablePart({ category: "frame", partType: "ITA" }), true);
+  assert.equal(isCanvasDefinablePart({ category: "module", partType: "SIM_INSERT" }), false);
+  assert.equal(displayPartType("RECEIVER"), "RCV");
+  assert.equal(displayPartType("ITA"), "ITA");
 });
 
 test("normalizePartRelationship trims identity and parses compatible parts", () => {

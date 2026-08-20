@@ -1,4 +1,5 @@
 import type { RevisionDto } from "./api";
+import { parseNamespacedPinId } from "./connector-frames";
 
 export type ConnectorRow = {
   id: string;
@@ -186,12 +187,16 @@ export function convertSnapshotToRows(snapshot: RevisionTemplateSnapshot): Snaps
       notices.push(`Connector ${connector.id} has no pins; editor injected a placeholder pin.`);
       return [{ id: connector.id, reference: connector.reference, pinId: "1", pinNumber: "1" }];
     }
-    return connector.pins.map((pin) => ({
-      id: connector.id,
-      reference: connector.reference,
-      pinId: pin.id,
-      pinNumber: pin.number
-    }));
+    return connector.pins.map((pin) => {
+      const parsed = parseNamespacedPinId(pin.id);
+      const slot = parsed ? connector.slots?.find((entry) => entry.slotId === parsed.slotId) : undefined;
+      return {
+        id: connector.id,
+        reference: slot?.reference ?? connector.reference,
+        pinId: pin.id,
+        pinNumber: pin.number
+      };
+    });
   });
   return {
     connectors: connectors.length > 0 ? connectors : INITIAL_CONNECTORS,

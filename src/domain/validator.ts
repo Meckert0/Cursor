@@ -1,5 +1,12 @@
 import type { LibraryLookup } from "./bom.js";
 import type { CompatLookup } from "./compat-lookup.js";
+import {
+  isFrameHousingConnector,
+  isSlotPopulated,
+  modulesAllowedForFrameSlot,
+  slotForPinId,
+  type FrameModuleRelationship
+} from "./connector-frames.js";
 import { isWirePart, type CompatStatus, type LibraryComponentRecord } from "./library.js";
 import {
   awgInAcceptedRange,
@@ -16,11 +23,12 @@ import {
   type ValidationMode,
   type ValidationPolicyOverrides
 } from "./ruleset-definitions.js";
-import type { DesignSnapshot, ValidationIssue, ValidationReport } from "./types.js";
+import type { ConnectorPin, DesignSnapshot, ValidationIssue, ValidationReport } from "./types.js";
 
 export interface ValidateSnapshotOptions {
   libraryLookup?: LibraryLookup;
   compatLookup?: CompatLookup;
+  partRelationships?: FrameModuleRelationship[];
   rulesetVersion?: string;
   mode?: ValidationMode;
   policy?: ValidationPolicyOverrides;
@@ -39,6 +47,38 @@ function resolveComponent(
     component = lookup.byPartNumber(input.partNumber, input.categories);
   }
   return component;
+}
+
+function emitModulePinIssues(
+  emit: (
+    code: RuleCode,
+    issue: Omit<ValidationIssue, "code" | "severity"> & { severity?: ValidationIssue["severity"] }
+  ) => void,
+  connectorId: string,
+  pins: ConnectorPin[],
+  component: LibraryComponentRecord
+) {
+  const compatibility = resolveLibraryCompatibility(component);
+  if (compatibility.pinCount !== undefined && pins.length !== compatibility.pinCount) {
+    emit("RULE_CONNECTOR_PIN_COUNT_MISMATCH", {
+      entityType: "connector",
+      entityId: connectorId,
+      message: `Connector pin count ${pins.length} does not match library definition pin count ${compatibility.pinCount}.`
+    });
+  }
+
+  if (compatibility.pinIds && compatibility.pinIds.length > 0) {
+    const allowed = new Set(compatibility.pinIds.map((id) => id.trim()));
+    for (const pin of pins) {
+      if (!allowed.has(pin.id) && !allowed.has(pin.number)) {
+        emit("RULE_CONNECTOR_PIN_ID_UNKNOWN", {
+          entityType: "connector",
+          entityId: connectorId,
+          message: `Connector pin "${pin.number}" is not defined on library part "${component.partNumber}".`
+        });
+      }
+    }
+  }
 }
 
 export function validateSnapshot(snapshot: DesignSnapshot, options: ValidateSnapshotOptions = {}): ValidationReport {
@@ -290,10 +330,11 @@ export function validateSnapshot(snapshot: DesignSnapshot, options: ValidateSnap
     const lookup = options.libraryLookup;
 
     for (const connector of snapshot.connectors) {
+      const isFrame = isFrameHousingConnector(connector);
       const component = resolveComponent(lookup, {
         libraryComponentId: connector.libraryComponentId,
         partNumber: connector.partNumber,
-        categories: ["module", "contact"]
+        categories: isFrame ? ["frame", "module", "contact"] : ["module", "contact"]
       });
 
       if (connector.libraryComponentId || connector.partNumber?.trim()) {
@@ -307,29 +348,55 @@ export function validateSnapshot(snapshot: DesignSnapshot, options: ValidateSnap
           emitLibraryStatusIssues(emit, {
             entityType: "connector",
             entityId: connector.id,
-            partLabel: "Connector part",
+            partLabel: isFrame ? "Frame part" : "Connector part",
             component
           });
 
-          const compatibility = resolveLibraryCompatibility(component);
-          if (compatibility.pinCount !== undefined && connector.pins.length !== compatibility.pinCount) {
-            emit("RULE_CONNECTOR_PIN_COUNT_MISMATCH", {
+          if (!isFrame) {
+            emitModulePinIssues(emit, connector.id, connector.pins, component);
+          }
+        }
+      }
+
+      if (isFrame) {
+        for (const slot of connector.slots ?? []) {
+          if (!isSlotPopulated(slot)) {
+            continue;
+          }
+          const slotModule = resolveComponent(lookup, {
+            libraryComponentId: slot.libraryComponentId,
+            partNumber: slot.partNumber,
+            categories: "module"
+          });
+          if (!slotModule) {
+            emit("RULE_LIBRARY_PART_NOT_FOUND", {
               entityType: "connector",
               entityId: connector.id,
-              message: `Connector pin count ${connector.pins.length} does not match library definition pin count ${compatibility.pinCount}.`
+              message: `Slot ${slot.slotId} module "${slot.partNumber ?? slot.libraryComponentId}" was not found in the component library.`
             });
+            continue;
           }
+          emitLibraryStatusIssues(emit, {
+            entityType: "connector",
+            entityId: connector.id,
+            partLabel: `Slot ${slot.slotId} module`,
+            component: slotModule
+          });
+          emitModulePinIssues(emit, connector.id, slot.pins, slotModule);
 
-          if (compatibility.pinIds && compatibility.pinIds.length > 0) {
-            const allowed = new Set(compatibility.pinIds.map((id) => id.trim()));
-            for (const pin of connector.pins) {
-              if (!allowed.has(pin.id) && !allowed.has(pin.number)) {
-                emit("RULE_CONNECTOR_PIN_ID_UNKNOWN", {
-                  entityType: "connector",
-                  entityId: connector.id,
-                  message: `Connector pin "${pin.number}" is not defined on library part "${component.partNumber}".`
-                });
-              }
+          if (component?.category === "frame" && options.partRelationships) {
+            const allowed = modulesAllowedForFrameSlot(
+              component.id,
+              slot.slotId,
+              options.partRelationships,
+              [slotModule]
+            );
+            if (allowed.length === 0) {
+              emit("RULE_COMPAT_FRAME_MODULE", {
+                entityType: "connector",
+                entityId: connector.id,
+                message: `Module "${slotModule.partNumber}" is not allowed in slot ${slot.slotId} of frame "${component.partNumber}".`
+              });
             }
           }
         }
@@ -407,7 +474,7 @@ export function validateSnapshot(snapshot: DesignSnapshot, options: ValidateSnap
         const connectorComponent = resolveComponent(lookup, {
           libraryComponentId: connector.libraryComponentId,
           partNumber: connector.partNumber,
-          categories: ["module", "contact"]
+          categories: ["frame", "module", "contact"]
         });
         if (!connectorComponent) {
           continue;
@@ -485,9 +552,17 @@ export function validateSnapshot(snapshot: DesignSnapshot, options: ValidateSnap
         if (!connector || !options.compatLookup) {
           continue;
         }
+        const mapping = snapshot.pinMappings.find((entry) => entry.pathId === path.id);
+        const mappingPinId =
+          mapping?.fromConnectorId === connectorId
+            ? mapping.fromPinId
+            : mapping?.toConnectorId === connectorId
+              ? mapping.toPinId
+              : "";
+        const slot = mappingPinId ? slotForPinId(connector, mappingPinId) : undefined;
         const moduleComponent = resolveComponent(lookup, {
-          libraryComponentId: connector.libraryComponentId,
-          partNumber: connector.partNumber,
+          libraryComponentId: slot?.libraryComponentId ?? connector.libraryComponentId,
+          partNumber: slot?.partNumber ?? connector.partNumber,
           categories: "module"
         });
         if (!moduleComponent || moduleComponent.category !== "module") {
@@ -516,51 +591,73 @@ export function validateSnapshot(snapshot: DesignSnapshot, options: ValidateSnap
       }
     }
 
-    // Module ↔ accessory (backshell / strain-relief) pairs on connectors.
+    // Module ↔ accessory (backshell / strain-relief) pairs on connectors or frame slots.
     if (options.compatLookup) {
       for (const connector of snapshot.connectors) {
-        const moduleComponent = resolveComponent(lookup, {
-          libraryComponentId: connector.libraryComponentId,
-          partNumber: connector.partNumber,
-          categories: "module"
-        });
-        if (!moduleComponent || moduleComponent.category !== "module") {
-          continue;
-        }
+        const accessoryUnits = isFrameHousingConnector(connector)
+          ? (connector.slots ?? []).filter(isSlotPopulated).map((slot) => ({
+              libraryComponentId: slot.libraryComponentId,
+              partNumber: slot.partNumber,
+              backshellLibraryComponentId: slot.backshellLibraryComponentId,
+              backshellPartNumber: slot.backshellPartNumber,
+              strainReliefLibraryComponentId: slot.strainReliefLibraryComponentId,
+              strainReliefPartNumber: slot.strainReliefPartNumber
+            }))
+          : [
+              {
+                libraryComponentId: connector.libraryComponentId,
+                partNumber: connector.partNumber,
+                backshellLibraryComponentId: connector.backshellLibraryComponentId,
+                backshellPartNumber: connector.backshellPartNumber,
+                strainReliefLibraryComponentId: connector.strainReliefLibraryComponentId,
+                strainReliefPartNumber: connector.strainReliefPartNumber
+              }
+            ];
 
-        if (connector.backshellLibraryComponentId || connector.backshellPartNumber?.trim()) {
-          const backshell = resolveComponent(lookup, {
-            libraryComponentId: connector.backshellLibraryComponentId,
-            partNumber: connector.backshellPartNumber,
-            categories: "backshell"
+        for (const unit of accessoryUnits) {
+          const moduleComponent = resolveComponent(lookup, {
+            libraryComponentId: unit.libraryComponentId,
+            partNumber: unit.partNumber,
+            categories: "module"
           });
-          if (backshell) {
-            emitCompatFinding(emit, {
-              code: "RULE_COMPAT_MODULE_BACKSHELL",
-              status: options.compatLookup.moduleBackshell(moduleComponent.id, backshell.id),
-              entityType: "connector",
-              entityId: connector.id,
-              leftLabel: `Module "${moduleComponent.partNumber}"`,
-              rightLabel: `backshell "${backshell.partNumber}"`
-            });
+          if (!moduleComponent || moduleComponent.category !== "module") {
+            continue;
           }
-        }
 
-        if (connector.strainReliefLibraryComponentId || connector.strainReliefPartNumber?.trim()) {
-          const strainRelief = resolveComponent(lookup, {
-            libraryComponentId: connector.strainReliefLibraryComponentId,
-            partNumber: connector.strainReliefPartNumber,
-            categories: "strain-relief"
-          });
-          if (strainRelief) {
-            emitCompatFinding(emit, {
-              code: "RULE_COMPAT_MODULE_STRAIN_RELIEF",
-              status: options.compatLookup.moduleStrainRelief(moduleComponent.id, strainRelief.id),
-              entityType: "connector",
-              entityId: connector.id,
-              leftLabel: `Module "${moduleComponent.partNumber}"`,
-              rightLabel: `strain relief "${strainRelief.partNumber}"`
+          if (unit.backshellLibraryComponentId || unit.backshellPartNumber?.trim()) {
+            const backshell = resolveComponent(lookup, {
+              libraryComponentId: unit.backshellLibraryComponentId,
+              partNumber: unit.backshellPartNumber,
+              categories: "backshell"
             });
+            if (backshell) {
+              emitCompatFinding(emit, {
+                code: "RULE_COMPAT_MODULE_BACKSHELL",
+                status: options.compatLookup.moduleBackshell(moduleComponent.id, backshell.id),
+                entityType: "connector",
+                entityId: connector.id,
+                leftLabel: `Module "${moduleComponent.partNumber}"`,
+                rightLabel: `backshell "${backshell.partNumber}"`
+              });
+            }
+          }
+
+          if (unit.strainReliefLibraryComponentId || unit.strainReliefPartNumber?.trim()) {
+            const strainRelief = resolveComponent(lookup, {
+              libraryComponentId: unit.strainReliefLibraryComponentId,
+              partNumber: unit.strainReliefPartNumber,
+              categories: "strain-relief"
+            });
+            if (strainRelief) {
+              emitCompatFinding(emit, {
+                code: "RULE_COMPAT_MODULE_STRAIN_RELIEF",
+                status: options.compatLookup.moduleStrainRelief(moduleComponent.id, strainRelief.id),
+                entityType: "connector",
+                entityId: connector.id,
+                leftLabel: `Module "${moduleComponent.partNumber}"`,
+                rightLabel: `strain relief "${strainRelief.partNumber}"`
+              });
+            }
           }
         }
       }
@@ -590,7 +687,8 @@ function emitCompatFinding(
       | "RULE_COMPAT_CONTACT_WIRE"
       | "RULE_COMPAT_MODULE_CONTACT"
       | "RULE_COMPAT_MODULE_BACKSHELL"
-      | "RULE_COMPAT_MODULE_STRAIN_RELIEF";
+      | "RULE_COMPAT_MODULE_STRAIN_RELIEF"
+      | "RULE_COMPAT_FRAME_MODULE";
     status: CompatStatus | undefined;
     entityType: string;
     entityId: string;

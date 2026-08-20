@@ -12,7 +12,8 @@ import {
   verifyWirelistContact,
   verifyWirelistLocation,
   wirelistRowsToTemplateRecords,
-  wirelistRowsToSnapshot
+  wirelistRowsToSnapshot,
+  resolveWirelistEndpoint
 } from "./wirelist-utils";
 import type { WirelistRow } from "./wirelist-utils";
 
@@ -299,6 +300,95 @@ describe("parseWirelistLocation / formatWirelistLocation", () => {
     expect(formatWirelistLocation("J1", "3")).toBe("J1 - 3");
     expect(formatWirelistLocation("J2", "A1")).toBe("J2 - A1");
     expect(formatWirelistLocation("J1", "")).toBe("J1");
+  });
+});
+
+describe("frame slot wirelist names", () => {
+  const frameSnapshot: RevisionDto["snapshot"] = {
+    connectors: [
+      {
+        id: "c1",
+        reference: "J1",
+        partNumber: "ITA-2",
+        libraryComponentId: "frame-1",
+        pins: [
+          { id: "A:1", number: "1" },
+          { id: "B:1", number: "1" }
+        ],
+        slots: [
+          {
+            slotId: "A",
+            reference: "J1A",
+            partNumber: "MOD-A",
+            libraryComponentId: "mod-a",
+            pins: [{ id: "1", number: "1" }]
+          },
+          {
+            slotId: "B",
+            reference: "J1B",
+            partNumber: "MOD-B",
+            libraryComponentId: "mod-b",
+            pins: [{ id: "1", number: "1" }]
+          }
+        ]
+      },
+      {
+        id: "c2",
+        reference: "J2",
+        partNumber: "MDM-15P",
+        pins: [{ id: "1", number: "1" }]
+      }
+    ],
+    paths: [
+      {
+        id: "p1",
+        runNumber: 1,
+        fromConnectorId: "c1",
+        toConnectorId: "c2",
+        pathType: "wire"
+      }
+    ],
+    pinMappings: [
+      {
+        id: "m1",
+        pathId: "p1",
+        fromConnectorId: "c1",
+        fromPinId: "A:1",
+        toConnectorId: "c2",
+        toPinId: "1",
+        mappingType: "one_to_one"
+      }
+    ],
+    bundles: [],
+    annotations: []
+  };
+
+  it("formats and resolves slot module names as distinct connectors", () => {
+    const rows = snapshotToWirelistRows(frameSnapshot);
+    expect(rows[0]?.fromLocation).toBe("J1A - 1");
+    expect(resolveWirelistEndpoint("J1A - 1", frameSnapshot)).toEqual({
+      nodeId: "c1",
+      pinId: "A:1",
+      kind: "connector"
+    });
+    expect(resolveWirelistEndpoint("J1B - 1", frameSnapshot).pinId).toBe("B:1");
+    expect(buildWirelistNodeIds(frameSnapshot)).toEqual(expect.arrayContaining(["J1A", "J1B", "J2", "c1"]));
+    expect(buildWirelistNodeIds(frameSnapshot)).not.toContain("J1");
+  });
+
+  it("round-trips a slot location into a namespaced pin mapping", () => {
+    const next = wirelistRowsToSnapshot(frameSnapshot, [
+      blankRow({
+        fromLocation: "J1B - 1",
+        toLocation: "J2 - 1"
+      })
+    ]);
+    expect(next.pinMappings[0]).toMatchObject({
+      fromConnectorId: "c1",
+      fromPinId: "B:1",
+      toConnectorId: "c2",
+      toPinId: "1"
+    });
   });
 });
 

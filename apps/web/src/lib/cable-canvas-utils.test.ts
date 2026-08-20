@@ -253,7 +253,7 @@ describe("cable-canvas-utils", () => {
 
     const next = buildSnapshotFromCanvas(baseline, {
       connectors: baseline.connectors,
-      junctions: baseline.junctions,
+      junctions: baseline.junctions ?? [],
       paths: [
         {
           id: "p-cable",

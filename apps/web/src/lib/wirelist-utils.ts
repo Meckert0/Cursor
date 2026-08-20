@@ -1,5 +1,12 @@
 import type { LibraryComponentDto, RevisionDto } from "./api";
 import {
+  expandConnectorsForDetails,
+  findSlotByReference,
+  namespacedPinId,
+  parseNamespacedPinId,
+  slotForPinId
+} from "./connector-frames";
+import {
   mergeSnapshotPaths,
   partitionSnapshotPaths
 } from "./path-roles";
@@ -195,15 +202,36 @@ function buildCatalogPinsByPartNumber(
   return catalogPinsByPartNumber;
 }
 
-function catalogPinsForConnector(
-  connector: SnapshotConnector,
+function catalogPinsForPartNumber(
+  partNumber: string | undefined,
   catalogPinsByPartNumber: Map<string, string[]>
 ): string[] {
-  const partKey = connector.partNumber?.trim().toLowerCase();
+  const partKey = partNumber?.trim().toLowerCase();
   if (!partKey) {
     return [];
   }
   return catalogPinsByPartNumber.get(partKey) ?? [];
+}
+
+function resolvePinOnList(
+  pins: Array<{ id: string; number: string }>,
+  pinNumber: string,
+  catalogPins: string[]
+): string {
+  const needle = pinNumber.trim().toLowerCase();
+  if (!needle) {
+    return "";
+  }
+  const byNumber = pins.find((pin) => pin.number.trim().toLowerCase() === needle);
+  if (byNumber) {
+    return byNumber.id;
+  }
+  const byId = pins.find((pin) => pin.id.trim().toLowerCase() === needle);
+  if (byId) {
+    return byId.id;
+  }
+  const catalogMatch = catalogPins.find((pin) => pin.toLowerCase() === needle);
+  return catalogMatch ?? "";
 }
 
 function resolvePinId(
@@ -211,21 +239,11 @@ function resolvePinId(
   pinNumber: string,
   catalogPinsByPartNumber: Map<string, string[]> = new Map()
 ): string {
-  const needle = pinNumber.trim().toLowerCase();
-  if (!needle) {
-    return "";
-  }
-  const byNumber = connector.pins.find((pin) => pin.number.trim().toLowerCase() === needle);
-  if (byNumber) {
-    return byNumber.id;
-  }
-  const byId = connector.pins.find((pin) => pin.id.trim().toLowerCase() === needle);
-  if (byId) {
-    return byId.id;
-  }
-  const catalogPins = catalogPinsForConnector(connector, catalogPinsByPartNumber);
-  const catalogMatch = catalogPins.find((pin) => pin.toLowerCase() === needle);
-  return catalogMatch ?? "";
+  return resolvePinOnList(
+    connector.pins,
+    pinNumber,
+    catalogPinsForPartNumber(connector.partNumber, catalogPinsByPartNumber)
+  );
 }
 
 export function resolveWirelistEndpoint(
@@ -241,6 +259,20 @@ export function resolveWirelistEndpoint(
   const { connectorByReference, connectorById, junctionById } = buildEndpointLookups(snapshot);
   const catalogPinsByPartNumber = buildCatalogPinsByPartNumber(connectorCatalog);
   const key = connectorRef.toLowerCase();
+
+  const slotMatch = findSlotByReference(snapshot.connectors, connectorRef);
+  if (slotMatch) {
+    const localPinId = resolvePinOnList(
+      slotMatch.slot.pins,
+      pinNumber,
+      catalogPinsForPartNumber(slotMatch.slot.partNumber, catalogPinsByPartNumber)
+    );
+    return {
+      nodeId: slotMatch.connector.id,
+      pinId: localPinId ? namespacedPinId(slotMatch.slot.slotId, localPinId) : "",
+      kind: "connector"
+    };
+  }
 
   // Prefer an exact connector reference match so "J1" stays a connector even when a
   // junction id lowercases to the same key (e.g. junction "j1").
@@ -281,6 +313,14 @@ function formatEndpointFromMapping(
 ): string {
   const connector = connectorById.get(connectorId);
   if (connector) {
+    const slot = slotForPinId(connector, pinId);
+    if (slot) {
+      const parsed = parseNamespacedPinId(pinId);
+      const pin =
+        slot.pins.find((entry) => entry.id === parsed?.pinId) ??
+        connector.pins.find((entry) => entry.id === pinId);
+      return formatWirelistLocation(slot.reference, pin?.number ?? parsed?.pinId ?? pinId);
+    }
     const pin = connector.pins.find((entry) => entry.id === pinId);
     return formatWirelistLocation(connector.reference, pin?.number ?? pinId);
   }
@@ -473,9 +513,10 @@ export function wirelistRowsToSnapshot(
 }
 
 export function buildWirelistNodeIds(snapshot: RevisionDto["snapshot"]): string[] {
+  const logical = expandConnectorsForDetails(snapshot.connectors);
   return [
     ...snapshot.connectors.map((connector) => connector.id),
-    ...snapshot.connectors.map((connector) => connector.reference),
+    ...logical.map((connector) => connector.reference),
     ...(snapshot.junctions ?? []).map((junction) => junction.id)
   ];
 }
@@ -623,21 +664,44 @@ export function parseConnectorPinsField(value: string | null | undefined): strin
 }
 
 export function buildConnectorPositionLookup(
-  connectors: Array<{ reference: string; partNumber?: string; pins: Array<{ number: string }> }>,
+  connectors: Array<{
+    id?: string;
+    reference: string;
+    partNumber?: string;
+    pins: Array<{ id?: string; number: string }>;
+    slots?: Array<{
+      slotId: string;
+      reference: string;
+      partNumber?: string;
+      libraryComponentId?: string;
+      pins: Array<{ id: string; number: string }>;
+    }>;
+  }>,
   connectorCatalog: ConnectorCatalogEntry[] = []
 ): Map<string, Set<string>> {
   const catalogPinsByPartNumber = buildCatalogPinsByPartNumber(connectorCatalog);
 
   const lookup = new Map<string, Set<string>>();
-  for (const connector of connectors) {
+  const logical = expandConnectorsForDetails(
+    connectors.map((connector, index) => ({
+      id: connector.id ?? `logical-${index}`,
+      reference: connector.reference,
+      partNumber: connector.partNumber,
+      pins: connector.pins.map((pin, pinIndex) => ({
+        id: pin.id ?? String(pinIndex + 1),
+        number: pin.number
+      })),
+      slots: connector.slots
+    }))
+  );
+  for (const connector of logical) {
     const key = connector.reference.trim().toLowerCase();
     if (!key) {
       continue;
     }
-    const partKey = connector.partNumber?.trim().toLowerCase();
-    const catalogPins = partKey ? catalogPinsByPartNumber.get(partKey) : undefined;
+    const catalogPins = catalogPinsForPartNumber(connector.partNumber, catalogPinsByPartNumber);
     const positions =
-      catalogPins && catalogPins.length > 0
+      catalogPins.length > 0
         ? new Set(catalogPins)
         : new Set(connector.pins.map((pin) => pin.number.trim()).filter((number) => number.length > 0));
     lookup.set(key, positions);
@@ -670,13 +734,22 @@ export type WirelistContactCompatRow = {
   status: "allowed" | "forbidden" | "review";
 };
 
-function findConnectorForLocation(
+function findModuleForLocation(
   location: string,
-  connectors: Array<{ id: string; reference: string; libraryComponentId?: string }>
-): { id: string; reference: string; libraryComponentId?: string } | undefined {
+  connectors: Array<{
+    id: string;
+    reference: string;
+    libraryComponentId?: string;
+    slots?: Array<{ slotId: string; reference: string; libraryComponentId?: string }>;
+  }>
+): { libraryComponentId?: string } | undefined {
   const { connectorRef } = parseWirelistLocation(location);
   if (!connectorRef) {
     return undefined;
+  }
+  const slotMatch = findSlotByReference(connectors, connectorRef);
+  if (slotMatch) {
+    return slotMatch.slot;
   }
   const exact = connectors.find(
     (connector) => connector.reference.trim() === connectorRef || connector.id.trim() === connectorRef
@@ -693,7 +766,12 @@ function findConnectorForLocation(
 export function verifyWirelistContact(
   contactValue: string,
   locationValue: string,
-  connectors: Array<{ id: string; reference: string; libraryComponentId?: string }>,
+  connectors: Array<{
+    id: string;
+    reference: string;
+    libraryComponentId?: string;
+    slots?: Array<{ slotId: string; reference: string; libraryComponentId?: string }>;
+  }>,
   contactCatalog: Array<{ id: string; partNumber: string }>,
   moduleContactCompat: WirelistContactCompatRow[]
 ): WirelistLocationVerification {
@@ -707,7 +785,7 @@ export function verifyWirelistContact(
   if (!contact) {
     return { state: "invalid", message: "Contact part number not found" };
   }
-  const connector = findConnectorForLocation(locationValue, connectors);
+  const connector = findModuleForLocation(locationValue, connectors);
   const modulePartId = connector?.libraryComponentId?.trim();
   if (!modulePartId) {
     return { state: "partial", message: "Connector module is not defined" };

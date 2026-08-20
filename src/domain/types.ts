@@ -51,19 +51,40 @@ export interface Revision {
   snapshot: DesignSnapshot;
 }
 
+export interface ConnectorPin {
+  id: string;
+  number: string;
+}
+
+export interface ConnectorSlot {
+  slotId: string;
+  reference: string;
+  partNumber?: string;
+  libraryComponentId?: string;
+  pins: ConnectorPin[];
+  backshellPartNumber?: string;
+  backshellLibraryComponentId?: string;
+  strainReliefPartNumber?: string;
+  strainReliefLibraryComponentId?: string;
+}
+
+export interface SnapshotConnector {
+  id: string;
+  reference: string;
+  partNumber?: string;
+  libraryComponentId?: string;
+  backshellPartNumber?: string;
+  backshellLibraryComponentId?: string;
+  strainReliefPartNumber?: string;
+  strainReliefLibraryComponentId?: string;
+  pins: ConnectorPin[];
+  location?: { x: number; y: number };
+  /** Present when the canvas node is an ITA/Receiver frame; each slot is a wirelist connector. */
+  slots?: ConnectorSlot[];
+}
+
 export interface DesignSnapshot {
-  connectors: Array<{
-    id: string;
-    reference: string;
-    partNumber?: string;
-    libraryComponentId?: string;
-    backshellPartNumber?: string;
-    backshellLibraryComponentId?: string;
-    strainReliefPartNumber?: string;
-    strainReliefLibraryComponentId?: string;
-    pins: Array<{ id: string; number: string }>;
-    location?: { x: number; y: number };
-  }>;
+  connectors: SnapshotConnector[];
   junctions?: Array<{
     id: string;
     location: { x: number; y: number };

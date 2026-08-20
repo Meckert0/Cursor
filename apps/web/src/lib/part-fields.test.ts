@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { getPartFieldsForCategory, isCanvasConnectorPart, PART_FIELDS_BY_CATEGORY } from "./part-fields";
+import {
+  displayPartType,
+  getPartFieldsForCategory,
+  isCanvasConnectorPart,
+  isCanvasDefinablePart,
+  isCanvasFramePart,
+  PART_FIELDS_BY_CATEGORY
+} from "./part-fields";
 
 describe("part fields", () => {
   it("exposes fields for every library category", () => {
@@ -51,9 +58,16 @@ describe("part fields", () => {
     expect(keys).toEqual(expect.arrayContaining(["partType", "side", "moduleCapacity", "slotIds"]));
   });
 
-  it("treats only MODULE parts as canvas connectors", () => {
+  it("treats only MODULE parts as canvas slot modules", () => {
     expect(isCanvasConnectorPart({ category: "module" })).toBe(true);
     expect(isCanvasConnectorPart({ category: "module", partType: "SIM_INSERT" })).toBe(false);
     expect(isCanvasConnectorPart({ category: "frame", partType: "ITA" })).toBe(false);
+  });
+
+  it("lets Define Connector pick modules and ITA/RCV frames", () => {
+    expect(isCanvasFramePart({ category: "frame", partType: "RECEIVER" })).toBe(true);
+    expect(isCanvasDefinablePart({ category: "frame", partType: "ITA" })).toBe(true);
+    expect(isCanvasDefinablePart({ category: "module", partType: "SIM_INSERT" })).toBe(false);
+    expect(displayPartType("RECEIVER")).toBe("RCV");
   });
 });

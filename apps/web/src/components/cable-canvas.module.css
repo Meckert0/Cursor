@@ -200,6 +200,30 @@
   text-decoration: none;
 }
 
+.slotBlocks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+}
+
+.slotBlock {
+  display: grid;
+  gap: 8px;
+  min-width: 220px;
+  flex: 1 1 220px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 8px;
+  background: #f8fafc;
+}
+
+.slotBlockTitle {
+  font-size: 12px;
+  font-weight: 600;
+  color: #334155;
+}
+
 .connectorSearchDialog {
   display: grid;
   gap: 12px;

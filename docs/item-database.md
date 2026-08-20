@@ -108,7 +108,7 @@ Four kinds of relationships exist:
 1. **Extension (1:1)** — every part has exactly one extension row in the table matching its category. `ON DELETE CASCADE` from `parts`, so deleting a part removes its extension row (and, transitively, its compat rows).
 2. **Cross-part reference columns (soft pointers)** — a few extension columns point at other parts (`default_protective_cover_part_id`, `keying_part_id`, `related_module_hint_part_id`), while `sleeve_size_ranges.related_part_id` points to an optional paired part. All are nullable with `ON DELETE SET NULL`, so removing the referenced part just clears the pointer.
 3. **Compatibility junctions (many-to-many)** — pairwise rules between two specific parts with a status of `allowed`, `forbidden`, or `review`. Managed in the admin compatibility manager, consumed by the validator via `createCompatLookup` (`src/domain/compat-lookup.ts`).
-4. **Generic relationships** — `part_relationships` rows scoped by `relationship_type`, optional child part, and `parent_positions_json` (slots, pin groups, SIM sections, gauges). New relationship types do not need a new SQL table. Canvas connector picking uses `category === "module"` and `partType === "MODULE"` so frames and SIM inserts stay out of the top-level picker.
+4. **Generic relationships** — `part_relationships` rows scoped by `relationship_type`, optional child part, and `parent_positions_json` (slots, pin groups, SIM sections, gauges). New relationship types do not need a new SQL table. Define Connector can pick a standalone `MODULE` or an ITA/Receiver `frame`; slot pickers still use `MODULE` parts filtered by `MODULE_ALLOWED`. SIM inserts stay out of both pickers.
 
 Alias rows form a fourth, simpler relationship: many aliases per part, with `(code_system, code)` globally unique — a given code within a code system resolves to exactly one part. The BOM builder (`src/domain/bom.ts`) uses aliases to resolve legacy part numbers found in design snapshots.
 
@@ -430,7 +430,8 @@ Workbook status mapping used by the later import: `CONFIRMED` / `CONFIRMED_FAMIL
 - `ModuleAttributes`, `ContactAttributes`, `WireAttributes`, `LabelAttributes`, `SleeveTubeBraidAttributes`, `BackshellAttributes`, `StrainReliefAttributes`, `SpliceAttributes`, `FrameAttributes` — mirror the extension tables.
 - `PartWithAttributes` — a discriminated union of `PartRecord & { category, attributes }`; this is the shape the API returns and the stores accept. (`LibraryComponentRecord` is a deprecated alias for it.)
 - `PartAlias`, `ContactWireCompat`, `ModuleContactCompat`, `ModuleBackshellCompat`, `ModuleStrainReliefCompat`, `PartRelationship`, `CompatStatus` — mirror the alias, junction, and generic relationship tables.
-- `isCanvasConnectorPart` — true only for `category === "module"` with `partType` `MODULE` or empty.
+- `isCanvasConnectorPart` — true only for `category === "module"` with `partType` `MODULE` or empty (slot modules).
+- `isCanvasFramePart` / `isCanvasDefinablePart` — ITA/Receiver frames plus modules; used by Define Connector.
 
 The Postgres store (`src/infra/store/postgres-store.ts`) reads `parts` rows, batch-loads the matching extension rows, and assembles `PartWithAttributes` objects; writes insert/upsert the `parts` row and extension row in one transaction.
 

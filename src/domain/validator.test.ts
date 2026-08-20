@@ -383,6 +383,89 @@ test("validateSnapshot checks connector pin count and pin ids against library co
   assert.ok(report.results.some((r) => r.code === "RULE_CONNECTOR_PIN_COUNT_MISMATCH"));
 });
 
+test("validateSnapshot checks slot module pins not frame housing pin count", () => {
+  const snapshot = baseSnapshot();
+  snapshot.connectors[0] = {
+    id: "c1",
+    reference: "J1",
+    partNumber: "ITA-2SLOT",
+    libraryComponentId: "cmp-frame",
+    pins: [
+      { id: "A:1", number: "1" },
+      { id: "B:1", number: "1" }
+    ],
+    slots: [
+      {
+        slotId: "A",
+        reference: "J1A",
+        partNumber: "MOD-A",
+        libraryComponentId: "cmp-mod-a",
+        pins: [{ id: "1", number: "1" }]
+      },
+      {
+        slotId: "B",
+        reference: "J1B",
+        partNumber: "FORBIDDEN",
+        libraryComponentId: "cmp-mod-b",
+        pins: [
+          { id: "1", number: "1" },
+          { id: "2", number: "2" }
+        ]
+      }
+    ]
+  };
+
+  const lookupParts = {
+    "cmp-frame": makePart({
+      id: "cmp-frame",
+      category: "frame",
+      family: "iCon",
+      partNumber: "ITA-2SLOT",
+      description: "frame",
+      partType: "ITA",
+      attributes: { moduleCapacity: 2, slotIds: ["A", "B"] }
+    }),
+    "cmp-mod-a": makePart({
+      id: "cmp-mod-a",
+      category: "module",
+      family: "iCon",
+      partNumber: "MOD-A",
+      description: "slot a",
+      attributes: { pinCount: 1, pinIds: ["1"] }
+    }),
+    "cmp-mod-b": makePart({
+      id: "cmp-mod-b",
+      category: "module",
+      family: "iCon",
+      partNumber: "FORBIDDEN",
+      description: "slot b",
+      attributes: { pinCount: 1, pinIds: ["1"] }
+    })
+  };
+
+  const report = validateSnapshot(snapshot, {
+    rulesetVersion: "rules-2026.04",
+    libraryLookup: {
+      byId(id) {
+        return lookupParts[id as keyof typeof lookupParts];
+      },
+      byPartNumber: () => undefined
+    },
+    partRelationships: [
+      {
+        parentPartId: "cmp-frame",
+        compatibleParts: ["MOD-A"],
+        relationshipType: "MODULE_ALLOWED",
+        parentPositions: ["A", "B"],
+        status: "allowed"
+      }
+    ]
+  });
+  assert.ok(!report.results.some((r) => r.message.includes("does not match library definition pin count 2")));
+  assert.ok(report.results.some((r) => r.code === "RULE_CONNECTOR_PIN_COUNT_MISMATCH" && r.message.includes("2")));
+  assert.ok(report.results.some((r) => r.code === "RULE_COMPAT_FRAME_MODULE" && r.message.includes("FORBIDDEN")));
+});
+
 test("validateSnapshot checks wire AWG against contact acceptance (modules no longer restrict AWG/family)", () => {
   const snapshot = baseSnapshot();
   snapshot.connectors[0] = { ...snapshot.connectors[0], partNumber: "MDM-15P", libraryComponentId: "cmp-mod" };

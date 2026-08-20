@@ -88,6 +88,9 @@ export function buildSnapshotFromCanvas(
   const mergedPaths = mergeSnapshotPaths(cablePaths, wireRunPaths);
   const pathIds = new Set(mergedPaths.map((path) => path.id));
   const connectorIds = new Set(input.connectors.map((connector) => connector.id));
+  const pinsByConnector = new Map(
+    input.connectors.map((connector) => [connector.id, new Set(connector.pins.map((pin) => pin.id))])
+  );
 
   return {
     ...baseline,
@@ -100,12 +103,17 @@ export function buildSnapshotFromCanvas(
       location: input.positions[junction.id] ?? junction.location
     })),
     paths: mergedPaths,
-    pinMappings: baseline.pinMappings.filter(
-      (mapping) =>
-        pathIds.has(mapping.pathId) &&
-        connectorIds.has(mapping.fromConnectorId) &&
-        connectorIds.has(mapping.toConnectorId)
-    ),
+    pinMappings: baseline.pinMappings.filter((mapping) => {
+      if (!pathIds.has(mapping.pathId)) {
+        return false;
+      }
+      if (!connectorIds.has(mapping.fromConnectorId) || !connectorIds.has(mapping.toConnectorId)) {
+        return false;
+      }
+      const fromPins = pinsByConnector.get(mapping.fromConnectorId);
+      const toPins = pinsByConnector.get(mapping.toConnectorId);
+      return Boolean(fromPins?.has(mapping.fromPinId) && toPins?.has(mapping.toPinId));
+    }),
     bundles: baseline.bundles.map((bundle) => ({
       ...bundle,
       pathIds: bundle.pathIds.filter((pathId) => pathIds.has(pathId))
@@ -326,7 +334,12 @@ export function filterAllowedAccessoryOptionsForModule(
     .sort((left, right) => left.component.partNumber.localeCompare(right.component.partNumber));
 }
 
-export function formatConnectorPinsLabel(connector: Connector): string {
+export function formatConnectorPinsLabel(connector: {
+  id?: string;
+  reference?: string;
+  partNumber?: string;
+  pins: Array<{ id: string; number: string }>;
+}): string {
   if (!connector.partNumber || connector.pins.length === 0) {
     return "none";
   }

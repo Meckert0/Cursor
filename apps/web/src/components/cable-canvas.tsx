@@ -17,7 +17,26 @@ import {
   normalizeSelectedPathId,
   SLEEVING_OPTIONS
 } from "@/lib/cable-canvas-utils";
-import { getPartFieldsForCategory, readPartFieldRawValue, formatPartFieldDisplayValue, isCanvasConnectorPart } from "@/lib/part-fields";
+import {
+  getPartFieldsForCategory,
+  readPartFieldRawValue,
+  formatPartFieldDisplayValue,
+  isCanvasConnectorPart,
+  isCanvasDefinablePart,
+  isCanvasFramePart,
+  displayPartType
+} from "@/lib/part-fields";
+import {
+  buildSlotsForFrame,
+  flattenFramePins,
+  frameAttributesFromComponent,
+  isFrameHousingConnector,
+  modulesAllowedForFrameSlot,
+  retargetSlotReferences,
+  slotIdsForFrame,
+  usedConnectorReferences,
+  type FrameModuleRelationship
+} from "@/lib/connector-frames";
 import {
   useCanvasHistory,
   type CanvasNodePosition as NodePosition,
@@ -59,6 +78,7 @@ export function CableCanvas({
   strainReliefCatalog = [],
   moduleBackshellCompat = [],
   moduleStrainReliefCompat = [],
+  moduleAllowedRelationships = [],
   quickAddConnectorAction,
   saveCanvasAction,
   readOnly = false
@@ -75,6 +95,7 @@ export function CableCanvas({
     strainReliefPartId: string;
     status: "allowed" | "forbidden" | "review";
   }>;
+  moduleAllowedRelationships?: FrameModuleRelationship[];
   quickAddConnectorAction: (formData: FormData) => Promise<{
     ok: boolean;
     notice?: string;
@@ -111,10 +132,14 @@ export function CableCanvas({
   const [connectorQuickAddPending, setConnectorQuickAddPending] = useState(false);
   const [showAddConnectorDialog, setShowAddConnectorDialog] = useState(false);
   const [showConnectorSearchDialog, setShowConnectorSearchDialog] = useState(false);
+  const [connectorSearchTarget, setConnectorSearchTarget] = useState<"housing" | { slotId: string }>("housing");
   const [connectorSearchQuery, setConnectorSearchQuery] = useState("");
   const [connectorNameDraft, setConnectorNameDraft] = useState("");
   const [connectorNameError, setConnectorNameError] = useState<string | null>(null);
   const [connectorNameSyncKey, setConnectorNameSyncKey] = useState("");
+  const [slotNameDrafts, setSlotNameDrafts] = useState<Record<string, string>>({});
+  const [slotNameErrors, setSlotNameErrors] = useState<Record<string, string>>({});
+  const [slotNameSyncKey, setSlotNameSyncKey] = useState("");
   const [junctionLabelDraft, setJunctionLabelDraft] = useState("");
   const [junctionLabelSyncKey, setJunctionLabelSyncKey] = useState("");
   const [inlineLengthEdit, setInlineLengthEdit] = useState<{ pathId: string; draft: string } | null>(null);
@@ -290,6 +315,10 @@ export function CableCanvas({
     return junction ? `junction ${junction.label ?? junction.id}` : "junction";
   }, [connectors, junctions, pathsState, selectedEntity]);
   const connectorOptions = useMemo(
+    () => connectorCatalogState.filter((component) => isCanvasDefinablePart(component)),
+    [connectorCatalogState]
+  );
+  const moduleCatalog = useMemo(
     () => connectorCatalogState.filter((component) => isCanvasConnectorPart(component)),
     [connectorCatalogState]
   );
@@ -299,8 +328,12 @@ export function CableCanvas({
     }
     return connectors.find((connector) => connector.id === selectedEntity.id) ?? null;
   }, [connectors, selectedEntity]);
+  const selectedIsFrame = selectedConnector ? isFrameHousingConnector(selectedConnector) : false;
   const moduleDefined = Boolean(selectedConnector?.libraryComponentId);
   const allowedBackshellOptions = useMemo(() => {
+    if (selectedIsFrame) {
+      return [];
+    }
     const moduleId = selectedConnector?.libraryComponentId;
     const statusByAccessoryId = new Map(
       moduleBackshellCompat
@@ -308,8 +341,11 @@ export function CableCanvas({
         .map((row) => [row.backshellPartId, row.status] as const)
     );
     return filterAllowedAccessoryOptionsForModule(backshellCatalogState, moduleId, statusByAccessoryId);
-  }, [backshellCatalogState, moduleBackshellCompat, selectedConnector?.libraryComponentId]);
+  }, [backshellCatalogState, moduleBackshellCompat, selectedConnector?.libraryComponentId, selectedIsFrame]);
   const allowedStrainReliefOptions = useMemo(() => {
+    if (selectedIsFrame) {
+      return [];
+    }
     const moduleId = selectedConnector?.libraryComponentId;
     const statusByAccessoryId = new Map(
       moduleStrainReliefCompat
@@ -317,7 +353,7 @@ export function CableCanvas({
         .map((row) => [row.strainReliefPartId, row.status] as const)
     );
     return filterAllowedAccessoryOptionsForModule(strainReliefCatalogState, moduleId, statusByAccessoryId);
-  }, [moduleStrainReliefCompat, selectedConnector?.libraryComponentId, strainReliefCatalogState]);
+  }, [moduleStrainReliefCompat, selectedConnector?.libraryComponentId, selectedIsFrame, strainReliefCatalogState]);
   const selectedJunction = useMemo(() => {
     if (!selectedEntity || selectedEntity.type !== "junction") {
       return null;
@@ -325,36 +361,55 @@ export function CableCanvas({
     return junctions.find((junction) => junction.id === selectedEntity.id) ?? null;
   }, [junctions, selectedEntity]);
   const modulePartFields = useMemo(() => getPartFieldsForCategory("module"), []);
-  const connectorSearchFields = useMemo(
-    () => modulePartFields.filter((field) => field.showInSearch),
-    [modulePartFields]
-  );
   const connectorAddFormFields = useMemo(
     () => modulePartFields.filter((field) => field.showOnAddForm),
     [modulePartFields]
   );
-  const connectorSearchColumns = useMemo(() => {
-    if (connectorSearchFields.length > 0) {
-      return connectorSearchFields.map((field) => ({ key: field.key, label: field.label }));
-    }
-    return [
+  const connectorSearchColumns = useMemo(
+    () => [
       { key: "partNumber", label: "Part number" },
+      { key: "partType", label: "Type" },
       { key: "family", label: "Family" },
       { key: "description", label: "Description" }
-    ];
-  }, [connectorSearchFields]);
+    ],
+    []
+  );
+  const searchPool = useMemo(() => {
+    if (connectorSearchTarget === "housing") {
+      return connectorOptions;
+    }
+    if (!selectedConnector?.libraryComponentId) {
+      return [];
+    }
+    return modulesAllowedForFrameSlot(
+      selectedConnector.libraryComponentId,
+      connectorSearchTarget.slotId,
+      moduleAllowedRelationships,
+      moduleCatalog
+    );
+  }, [
+    connectorOptions,
+    connectorSearchTarget,
+    moduleAllowedRelationships,
+    moduleCatalog,
+    selectedConnector?.libraryComponentId
+  ]);
   const filteredConnectorSearchResults = useMemo(() => {
     const query = connectorSearchQuery.trim().toLowerCase();
     if (!query) {
-      return connectorOptions;
+      return searchPool;
     }
-    const searchKeys = connectorSearchFields.length > 0
-      ? connectorSearchFields.map((field) => field.key)
-      : ["partNumber", "family", "description"];
-    return connectorOptions.filter((component) =>
-      searchKeys.some((key) => readComponentFieldValue(component, key).toLowerCase().includes(query))
-    );
-  }, [connectorOptions, connectorSearchFields, connectorSearchQuery]);
+    return searchPool.filter((component) => {
+      const typeLabel = displayPartType(component.partType).toLowerCase();
+      return (
+        component.partNumber.toLowerCase().includes(query) ||
+        (component.family ?? "").toLowerCase().includes(query) ||
+        (component.description ?? "").toLowerCase().includes(query) ||
+        typeLabel.includes(query) ||
+        (component.partType ?? "").toLowerCase().includes(query)
+      );
+    });
+  }, [connectorSearchQuery, searchPool]);
 
   const connectorNameKey = selectedConnector
     ? `${selectedConnector.id}:${selectedConnector.reference}`
@@ -363,6 +418,20 @@ export function CableCanvas({
     setConnectorNameSyncKey(connectorNameKey);
     setConnectorNameDraft(selectedConnector?.reference ?? "");
     setConnectorNameError(null);
+  }
+  const nextSlotNameSyncKey = selectedConnector
+    ? `${selectedConnector.id}:${(selectedConnector.slots ?? [])
+        .map((slot) => `${slot.slotId}:${slot.reference}`)
+        .join("|")}`
+    : "";
+  if (nextSlotNameSyncKey !== slotNameSyncKey) {
+    setSlotNameSyncKey(nextSlotNameSyncKey);
+    const drafts: Record<string, string> = {};
+    for (const slot of selectedConnector?.slots ?? []) {
+      drafts[slot.slotId] = slot.reference;
+    }
+    setSlotNameDrafts(drafts);
+    setSlotNameErrors({});
   }
   const junctionLabelKey = selectedJunction ? `${selectedJunction.id}:${selectedJunction.label ?? ""}` : "";
   if (junctionLabelKey !== junctionLabelSyncKey) {
@@ -615,11 +684,20 @@ export function CableCanvas({
       setConnectorNameError(null);
       return;
     }
-    const isTaken = connectors.some(
-      (connector) =>
-        connector.id !== activeConnector.id && connector.reference.toLowerCase() === normalized.toLowerCase()
+    const takenByOthers = usedConnectorReferences(
+      connectors.filter((connector) => connector.id !== activeConnector.id)
     );
-    if (isTaken) {
+    if (takenByOthers.has(normalized.toLowerCase())) {
+      setConnectorNameError("That name is already used by another connector.");
+      return;
+    }
+    const retargetedSlots = retargetSlotReferences(
+      activeConnector.slots ?? [],
+      activeConnector.reference,
+      normalized
+    );
+    const slotNameClash = retargetedSlots.some((slot) => takenByOthers.has(slot.reference.toLowerCase()));
+    if (slotNameClash) {
       setConnectorNameError("That name is already used by another connector.");
       return;
     }
@@ -627,7 +705,9 @@ export function CableCanvas({
     pushUndoCheckpoint();
     setConnectors((previous) =>
       previous.map((connector) =>
-        connector.id === activeConnector.id ? { ...connector, reference: normalized } : connector
+        connector.id === activeConnector.id
+          ? { ...connector, reference: normalized, slots: connector.slots ? retargetedSlots : connector.slots }
+          : connector
       )
     );
   };
@@ -663,6 +743,39 @@ export function CableCanvas({
       return;
     }
     const normalizedPartNumber = component.partNumber.trim();
+    if (isCanvasFramePart(component)) {
+      const slotIds = slotIdsForFrame(frameAttributesFromComponent(component));
+      const nextSlots = buildSlotsForFrame(activeConnector.reference, slotIds, activeConnector.slots);
+      const nextPins = flattenFramePins(nextSlots);
+      const unchanged =
+        normalizedPartNumber === (activeConnector.partNumber ?? "") &&
+        component.id === (activeConnector.libraryComponentId ?? "") &&
+        JSON.stringify(nextSlots) === JSON.stringify(activeConnector.slots ?? []) &&
+        JSON.stringify(nextPins) === JSON.stringify(activeConnector.pins);
+      if (unchanged) {
+        return;
+      }
+      pushUndoCheckpoint();
+      setConnectors((previous) =>
+        previous.map((connector) =>
+          connector.id === activeConnector.id
+            ? {
+                ...connector,
+                partNumber: normalizedPartNumber || undefined,
+                libraryComponentId: component.id || undefined,
+                pins: nextPins,
+                slots: nextSlots,
+                backshellPartNumber: undefined,
+                backshellLibraryComponentId: undefined,
+                strainReliefPartNumber: undefined,
+                strainReliefLibraryComponentId: undefined
+              }
+            : connector
+        )
+      );
+      return;
+    }
+
     const nextPins = buildConnectorPinsFromComponent(component);
     const allowedBackshellIds = new Set(
       moduleBackshellCompat
@@ -693,7 +806,7 @@ export function CableCanvas({
     const accessoriesUnchanged =
       nextBackshellId === activeConnector.backshellLibraryComponentId &&
       nextStrainReliefId === activeConnector.strainReliefLibraryComponentId;
-    if (partNumberUnchanged && libraryIdUnchanged && pinsUnchanged && accessoriesUnchanged) {
+    if (partNumberUnchanged && libraryIdUnchanged && pinsUnchanged && accessoriesUnchanged && !activeConnector.slots) {
       return;
     }
     pushUndoCheckpoint();
@@ -705,6 +818,7 @@ export function CableCanvas({
               partNumber: normalizedPartNumber || undefined,
               libraryComponentId: component.id || undefined,
               pins: nextPins,
+              slots: undefined,
               backshellPartNumber: keepBackshell ? connector.backshellPartNumber : undefined,
               backshellLibraryComponentId: nextBackshellId,
               strainReliefPartNumber: keepStrainRelief ? connector.strainReliefPartNumber : undefined,
@@ -712,6 +826,149 @@ export function CableCanvas({
             }
           : connector
       )
+    );
+  };
+
+  const applySlotModuleSelection = (slotId: string, component: LibraryComponentDto) => {
+    if (readOnly || !selectedEntity || selectedEntity.type !== "connector") {
+      return;
+    }
+    const activeConnector = connectors.find((connector) => connector.id === selectedEntity.id);
+    if (!activeConnector?.slots) {
+      return;
+    }
+    const nextPinsForSlot = buildConnectorPinsFromComponent(component);
+    const allowedBackshellIds = new Set(
+      moduleBackshellCompat
+        .filter((row) => row.modulePartId === component.id && row.status === "allowed")
+        .map((row) => row.backshellPartId)
+    );
+    const allowedStrainReliefIds = new Set(
+      moduleStrainReliefCompat
+        .filter((row) => row.modulePartId === component.id && row.status === "allowed")
+        .map((row) => row.strainReliefPartId)
+    );
+    const nextSlots = activeConnector.slots.map((slot) => {
+      if (slot.slotId !== slotId) {
+        return slot;
+      }
+      const keepBackshell =
+        Boolean(slot.backshellLibraryComponentId) && allowedBackshellIds.has(slot.backshellLibraryComponentId!);
+      const keepStrainRelief =
+        Boolean(slot.strainReliefLibraryComponentId) &&
+        allowedStrainReliefIds.has(slot.strainReliefLibraryComponentId!);
+      return {
+        ...slot,
+        partNumber: component.partNumber.trim() || undefined,
+        libraryComponentId: component.id || undefined,
+        pins: nextPinsForSlot,
+        backshellPartNumber: keepBackshell ? slot.backshellPartNumber : undefined,
+        backshellLibraryComponentId: keepBackshell ? slot.backshellLibraryComponentId : undefined,
+        strainReliefPartNumber: keepStrainRelief ? slot.strainReliefPartNumber : undefined,
+        strainReliefLibraryComponentId: keepStrainRelief ? slot.strainReliefLibraryComponentId : undefined
+      };
+    });
+    pushUndoCheckpoint();
+    setConnectors((previous) =>
+      previous.map((connector) =>
+        connector.id === activeConnector.id
+          ? { ...connector, slots: nextSlots, pins: flattenFramePins(nextSlots) }
+          : connector
+      )
+    );
+  };
+
+  const commitSlotName = (slotId: string, rawValue: string) => {
+    if (readOnly || !selectedEntity || selectedEntity.type !== "connector") {
+      return;
+    }
+    const activeConnector = connectors.find((connector) => connector.id === selectedEntity.id);
+    const activeSlot = activeConnector?.slots?.find((slot) => slot.slotId === slotId);
+    if (!activeConnector || !activeSlot) {
+      return;
+    }
+    const normalized = rawValue.trim();
+    if (!normalized) {
+      setSlotNameErrors((previous) => ({ ...previous, [slotId]: "Module name is required." }));
+      return;
+    }
+    if (normalized === activeSlot.reference) {
+      setSlotNameErrors((previous) => ({ ...previous, [slotId]: "" }));
+      return;
+    }
+    const taken = usedConnectorReferences(
+      connectors.map((connector) =>
+        connector.id === activeConnector.id
+          ? {
+              ...connector,
+              slots: (connector.slots ?? []).filter((slot) => slot.slotId !== slotId)
+            }
+          : connector
+      )
+    ).has(normalized.toLowerCase());
+    if (taken) {
+      setSlotNameErrors((previous) => ({ ...previous, [slotId]: "That name is already used by another connector." }));
+      return;
+    }
+    setSlotNameErrors((previous) => ({ ...previous, [slotId]: "" }));
+    pushUndoCheckpoint();
+    setConnectors((previous) =>
+      previous.map((connector) =>
+        connector.id === activeConnector.id
+          ? {
+              ...connector,
+              slots: (connector.slots ?? []).map((slot) =>
+                slot.slotId === slotId ? { ...slot, reference: normalized } : slot
+              )
+            }
+          : connector
+      )
+    );
+  };
+
+  const applySlotAccessorySelection = (
+    slotId: string,
+    kind: "backshell" | "strainRelief",
+    componentId: string
+  ) => {
+    if (readOnly || !selectedEntity || selectedEntity.type !== "connector") {
+      return;
+    }
+    const activeConnector = connectors.find((connector) => connector.id === selectedEntity.id);
+    if (!activeConnector?.slots) {
+      return;
+    }
+    const catalog = kind === "backshell" ? backshellCatalogState : strainReliefCatalogState;
+    const component = catalog.find((entry) => entry.id === componentId);
+    const nextPartNumber = component?.partNumber.trim() || undefined;
+    const nextLibraryId = component?.id || undefined;
+    pushUndoCheckpoint();
+    setConnectors((previous) =>
+      previous.map((connector) => {
+        if (connector.id !== activeConnector.id) {
+          return connector;
+        }
+        return {
+          ...connector,
+          slots: (connector.slots ?? []).map((slot) => {
+            if (slot.slotId !== slotId) {
+              return slot;
+            }
+            if (kind === "backshell") {
+              return {
+                ...slot,
+                backshellPartNumber: nextPartNumber,
+                backshellLibraryComponentId: nextLibraryId
+              };
+            }
+            return {
+              ...slot,
+              strainReliefPartNumber: nextPartNumber,
+              strainReliefLibraryComponentId: nextLibraryId
+            };
+          })
+        };
+      })
     );
   };
 
@@ -954,7 +1211,10 @@ export function CableCanvas({
                 <button
                   type="button"
                   className={styles.changeConnectorButton}
-                  onClick={() => setShowConnectorSearchDialog(true)}
+                  onClick={() => {
+                    setConnectorSearchTarget("housing");
+                    setShowConnectorSearchDialog(true);
+                  }}
                   disabled={readOnly}
                   aria-label="Change connector"
                 >
@@ -963,66 +1223,189 @@ export function CableCanvas({
                     : "Change connector"}
                 </button>
               ) : (
-                <button type="button" onClick={() => setShowConnectorSearchDialog(true)} disabled={readOnly}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConnectorSearchTarget("housing");
+                    setShowConnectorSearchDialog(true);
+                  }}
+                  disabled={readOnly}
+                >
                   Define Connector
                 </button>
               )}
-              <label>
-                Backshell
-                <select
-                  value={selectedConnector.backshellLibraryComponentId ?? ""}
-                  disabled={readOnly || !moduleDefined}
-                  onChange={(event) => applyConnectorAccessorySelection("backshell", event.target.value)}
-                >
-                  <option value="">No backshell</option>
-                  {selectedConnector.backshellLibraryComponentId &&
-                  !allowedBackshellOptions.some(
-                    (option) => option.component.id === selectedConnector.backshellLibraryComponentId
-                  ) ? (
-                    <option value={selectedConnector.backshellLibraryComponentId} disabled>
-                      {selectedConnector.backshellPartNumber ?? selectedConnector.backshellLibraryComponentId}{" "}
-                      (incompatible — reselect)
-                    </option>
+              {selectedIsFrame ? (
+                <div className={styles.slotBlocks}>
+                  {(selectedConnector.slots ?? []).map((slot) => {
+                    const slotModuleDefined = Boolean(slot.libraryComponentId);
+                    const backshellStatus = new Map(
+                      moduleBackshellCompat
+                        .filter((row) => row.modulePartId === slot.libraryComponentId)
+                        .map((row) => [row.backshellPartId, row.status] as const)
+                    );
+                    const strainStatus = new Map(
+                      moduleStrainReliefCompat
+                        .filter((row) => row.modulePartId === slot.libraryComponentId)
+                        .map((row) => [row.strainReliefPartId, row.status] as const)
+                    );
+                    const slotBackshells = filterAllowedAccessoryOptionsForModule(
+                      backshellCatalogState,
+                      slot.libraryComponentId,
+                      backshellStatus
+                    );
+                    const slotStrainReliefs = filterAllowedAccessoryOptionsForModule(
+                      strainReliefCatalogState,
+                      slot.libraryComponentId,
+                      strainStatus
+                    );
+                    return (
+                      <div key={slot.slotId} className={styles.slotBlock}>
+                        <span className={styles.slotBlockTitle}>Slot {slot.slotId}</span>
+                        <label>
+                          Module name
+                          <input
+                            value={slotNameDrafts[slot.slotId] ?? slot.reference}
+                            disabled={readOnly}
+                            onChange={(event) =>
+                              setSlotNameDrafts((previous) => ({
+                                ...previous,
+                                [slot.slotId]: event.target.value
+                              }))
+                            }
+                            onBlur={(event) => commitSlotName(slot.slotId, event.target.value)}
+                            placeholder={`e.g. ${selectedConnector.reference}${slot.slotId}`}
+                            aria-label={`Slot ${slot.slotId} module name`}
+                          />
+                        </label>
+                        {slotNameErrors[slot.slotId] ? (
+                          <span className={styles.quickAddError}>{slotNameErrors[slot.slotId]}</span>
+                        ) : null}
+                        {slotModuleDefined ? (
+                          <button
+                            type="button"
+                            className={styles.changeConnectorButton}
+                            onClick={() => {
+                              setConnectorSearchTarget({ slotId: slot.slotId });
+                              setShowConnectorSearchDialog(true);
+                            }}
+                            disabled={readOnly}
+                            aria-label={`Change slot ${slot.slotId} module`}
+                          >
+                            {slot.partNumber ? `Part number: ${slot.partNumber}` : "Change module"}
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setConnectorSearchTarget({ slotId: slot.slotId });
+                              setShowConnectorSearchDialog(true);
+                            }}
+                            disabled={readOnly}
+                            aria-label={`Define slot ${slot.slotId} module`}
+                          >
+                            Select module
+                          </button>
+                        )}
+                        <label>
+                          Backshell
+                          <select
+                            value={slot.backshellLibraryComponentId ?? ""}
+                            disabled={readOnly || !slotModuleDefined}
+                            aria-label={`Slot ${slot.slotId} backshell`}
+                            onChange={(event) =>
+                              applySlotAccessorySelection(slot.slotId, "backshell", event.target.value)
+                            }
+                          >
+                            <option value="">No backshell</option>
+                            {slotBackshells.map((option) => (
+                              <option key={option.component.id} value={option.component.id}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label>
+                          Strain relief
+                          <select
+                            value={slot.strainReliefLibraryComponentId ?? ""}
+                            disabled={readOnly || !slotModuleDefined}
+                            aria-label={`Slot ${slot.slotId} strain relief`}
+                            onChange={(event) =>
+                              applySlotAccessorySelection(slot.slotId, "strainRelief", event.target.value)
+                            }
+                          >
+                            <option value="">No strain relief</option>
+                            {slotStrainReliefs.map((option) => (
+                              <option key={option.component.id} value={option.component.id}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <>
+                  <label>
+                    Backshell
+                    <select
+                      value={selectedConnector.backshellLibraryComponentId ?? ""}
+                      disabled={readOnly || !moduleDefined}
+                      onChange={(event) => applyConnectorAccessorySelection("backshell", event.target.value)}
+                    >
+                      <option value="">No backshell</option>
+                      {selectedConnector.backshellLibraryComponentId &&
+                      !allowedBackshellOptions.some(
+                        (option) => option.component.id === selectedConnector.backshellLibraryComponentId
+                      ) ? (
+                        <option value={selectedConnector.backshellLibraryComponentId} disabled>
+                          {selectedConnector.backshellPartNumber ?? selectedConnector.backshellLibraryComponentId}{" "}
+                          (incompatible — reselect)
+                        </option>
+                      ) : null}
+                      {allowedBackshellOptions.map((option) => (
+                        <option key={option.component.id} value={option.component.id}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Strain relief
+                    <select
+                      value={selectedConnector.strainReliefLibraryComponentId ?? ""}
+                      disabled={readOnly || !moduleDefined}
+                      onChange={(event) => applyConnectorAccessorySelection("strainRelief", event.target.value)}
+                    >
+                      <option value="">No strain relief</option>
+                      {selectedConnector.strainReliefLibraryComponentId &&
+                      !allowedStrainReliefOptions.some(
+                        (option) => option.component.id === selectedConnector.strainReliefLibraryComponentId
+                      ) ? (
+                        <option value={selectedConnector.strainReliefLibraryComponentId} disabled>
+                          {selectedConnector.strainReliefPartNumber ??
+                            selectedConnector.strainReliefLibraryComponentId}{" "}
+                          (incompatible — reselect)
+                        </option>
+                      ) : null}
+                      {allowedStrainReliefOptions.map((option) => (
+                        <option key={option.component.id} value={option.component.id}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {!moduleDefined ? (
+                    <span className={styles.connectorPartNumber}>Define connector first</span>
+                  ) : allowedBackshellOptions.length === 0 || allowedStrainReliefOptions.length === 0 ? (
+                    <span className={styles.connectorPartNumber}>
+                      No compatible options — add rows in Compatibility Manager
+                    </span>
                   ) : null}
-                  {allowedBackshellOptions.map((option) => (
-                    <option key={option.component.id} value={option.component.id}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Strain relief
-                <select
-                  value={selectedConnector.strainReliefLibraryComponentId ?? ""}
-                  disabled={readOnly || !moduleDefined}
-                  onChange={(event) => applyConnectorAccessorySelection("strainRelief", event.target.value)}
-                >
-                  <option value="">No strain relief</option>
-                  {selectedConnector.strainReliefLibraryComponentId &&
-                  !allowedStrainReliefOptions.some(
-                    (option) => option.component.id === selectedConnector.strainReliefLibraryComponentId
-                  ) ? (
-                    <option value={selectedConnector.strainReliefLibraryComponentId} disabled>
-                      {selectedConnector.strainReliefPartNumber ??
-                        selectedConnector.strainReliefLibraryComponentId}{" "}
-                      (incompatible — reselect)
-                    </option>
-                  ) : null}
-                  {allowedStrainReliefOptions.map((option) => (
-                    <option key={option.component.id} value={option.component.id}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {!moduleDefined ? (
-                <span className={styles.connectorPartNumber}>Define connector first</span>
-              ) : allowedBackshellOptions.length === 0 || allowedStrainReliefOptions.length === 0 ? (
-                <span className={styles.connectorPartNumber}>
-                  No compatible options — add rows in Compatibility Manager
-                </span>
-              ) : null}
+                </>
+              )}
               {connectorQuickAddNotice ? <span className={styles.quickAddNotice}>{connectorQuickAddNotice}</span> : null}
               {connectorQuickAddError ? <span className={styles.quickAddError}>{connectorQuickAddError}</span> : null}
             </div>
@@ -1081,20 +1464,31 @@ export function CableCanvas({
         </div>
       ) : null}
       {showConnectorSearchDialog ? (
-        <div className={styles.quickAddOverlay} role="dialog" aria-modal="true" aria-label="Define Connector">
+        <div
+          className={styles.quickAddOverlay}
+          role="dialog"
+          aria-modal="true"
+          aria-label={connectorSearchTarget === "housing" ? "Define Connector" : `Select slot ${connectorSearchTarget.slotId} module`}
+        >
           <div className={styles.connectorSearchDialog}>
-            <h3>Define Connector</h3>
+            <h3>
+              {connectorSearchTarget === "housing"
+                ? "Define Connector"
+                : `Select slot ${connectorSearchTarget.slotId} module`}
+            </h3>
             <div className={styles.connectorSearchControls}>
               <input
                 className={styles.connectorSearchInput}
                 value={connectorSearchQuery}
                 onChange={(event) => setConnectorSearchQuery(event.target.value)}
-                placeholder="Search connectors..."
+                placeholder={connectorSearchTarget === "housing" ? "Search connectors..." : "Search modules..."}
                 autoFocus
               />
-              <button type="button" onClick={() => setShowAddConnectorDialog(true)} disabled={readOnly}>
-                Add new connector
-              </button>
+              {connectorSearchTarget === "housing" ? (
+                <button type="button" onClick={() => setShowAddConnectorDialog(true)} disabled={readOnly}>
+                  Add new connector
+                </button>
+              ) : null}
             </div>
             <div className={styles.connectorSearchTableWrap}>
               <table className={styles.connectorSearchTable}>
@@ -1109,20 +1503,32 @@ export function CableCanvas({
                 <tbody>
                   {filteredConnectorSearchResults.length === 0 ? (
                     <tr>
-                      <td colSpan={connectorSearchColumns.length + 1}>No connectors found.</td>
+                      <td colSpan={connectorSearchColumns.length + 1}>
+                        {connectorSearchTarget === "housing"
+                          ? "No connectors found."
+                          : "No compatible modules for this slot."}
+                      </td>
                     </tr>
                   ) : (
                     filteredConnectorSearchResults.map((component) => (
                       <tr key={component.id}>
                         {connectorSearchColumns.map((column) => (
-                          <td key={column.key}>{readComponentFieldValue(component, column.key)}</td>
+                          <td key={column.key}>
+                            {column.key === "partType"
+                              ? displayPartType(component.partType) || "-"
+                              : readComponentFieldValue(component, column.key)}
+                          </td>
                         ))}
                         <td>
                           <button
                             type="button"
                             disabled={readOnly}
                             onClick={() => {
-                              applyConnectorLibrarySelection(component);
+                              if (connectorSearchTarget === "housing") {
+                                applyConnectorLibrarySelection(component);
+                              } else {
+                                applySlotModuleSelection(connectorSearchTarget.slotId, component);
+                              }
                               setShowConnectorSearchDialog(false);
                               setConnectorSearchQuery("");
                             }}

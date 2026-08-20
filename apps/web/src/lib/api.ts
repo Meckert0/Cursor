@@ -258,6 +258,17 @@ export interface RevisionDto {
       strainReliefLibraryComponentId?: string;
       pins: Array<{ id: string; number: string }>;
       location?: { x: number; y: number };
+      slots?: Array<{
+        slotId: string;
+        reference: string;
+        partNumber?: string;
+        libraryComponentId?: string;
+        pins: Array<{ id: string; number: string }>;
+        backshellPartNumber?: string;
+        backshellLibraryComponentId?: string;
+        strainReliefPartNumber?: string;
+        strainReliefLibraryComponentId?: string;
+      }>;
     }>;
     junctions?: Array<{
       id: string;

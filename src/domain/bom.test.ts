@@ -361,3 +361,94 @@ test("buildBom falls back to enum sleeving label when no library mapping exists"
   assert.equal(sleevingLine?.partNumber, "expandable_sleeving");
   assert.equal(sleevingLine?.resolution, "not_found");
 });
+
+test("buildBom emits a frame housing plus each populated slot module", () => {
+  const revision = fullyAccessorizedRevision();
+  revision.snapshot.connectors = [
+    {
+      id: "c1",
+      reference: "J1",
+      partNumber: "ITA-2SLOT",
+      libraryComponentId: "cmp-frame-001",
+      pins: [
+        { id: "A:1", number: "1" },
+        { id: "B:1", number: "1" }
+      ],
+      slots: [
+        {
+          slotId: "A",
+          reference: "J1A",
+          partNumber: "MOD-A",
+          libraryComponentId: "cmp-mod-a",
+          pins: [{ id: "1", number: "1" }],
+          backshellPartNumber: "BS-EMI-15",
+          backshellLibraryComponentId: "cmp-backshell-15"
+        },
+        {
+          slotId: "B",
+          reference: "J1B",
+          partNumber: "MOD-B",
+          libraryComponentId: "cmp-mod-b",
+          pins: [{ id: "1", number: "1" }]
+        }
+      ]
+    },
+    {
+      id: "c2",
+      reference: "J2",
+      partNumber: "MDM-15P",
+      libraryComponentId: "cmp-module-001",
+      pins: [{ id: "1", number: "1" }]
+    }
+  ];
+  revision.snapshot.paths = [];
+  const lookup = createLibraryLookup([
+    makePart({
+      id: "cmp-frame-001",
+      category: "frame",
+      family: "iCon",
+      partNumber: "ITA-2SLOT",
+      description: "Two-slot ITA",
+      partType: "ITA",
+      attributes: { moduleCapacity: 2, slotIds: ["A", "B"] }
+    }),
+    makePart({
+      id: "cmp-mod-a",
+      category: "module",
+      family: "iCon",
+      partNumber: "MOD-A",
+      description: "Slot A module",
+      attributes: { pinIds: ["1"] }
+    }),
+    makePart({
+      id: "cmp-mod-b",
+      category: "module",
+      family: "iCon",
+      partNumber: "MOD-B",
+      description: "Slot B module",
+      attributes: { pinIds: ["1"] }
+    }),
+    makePart({
+      id: "cmp-module-001",
+      category: "module",
+      family: "Micro-D",
+      partNumber: "MDM-15P",
+      description: "module",
+      attributes: { pinIds: [] }
+    }),
+    makePart({
+      id: "cmp-backshell-15",
+      category: "backshell",
+      family: "EMI",
+      partNumber: "BS-EMI-15",
+      description: "backshell"
+    })
+  ]);
+  const bom = buildBom(revision, lookup);
+  assert.ok(bom.lines.some((line) => line.category === "frame" && line.partNumber === "ITA-2SLOT"));
+  assert.ok(bom.lines.some((line) => line.category === "module" && line.partNumber === "MOD-A" && line.designRefs.includes("J1A")));
+  assert.ok(bom.lines.some((line) => line.category === "module" && line.partNumber === "MOD-B" && line.designRefs.includes("J1B")));
+  assert.ok(bom.lines.some((line) => line.category === "module" && line.partNumber === "MDM-15P"));
+  assert.ok(bom.lines.some((line) => line.category === "backshell" && line.designRefs.includes("J1A")));
+});
+

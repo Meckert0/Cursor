@@ -331,11 +331,34 @@ export function emptyAttributesForCategory(category: LibraryItemCategory): Recor
   return {};
 }
 
-/** Canvas connectors are modules that mount in a frame, not SIM inserts or frames. */
+/** Canvas slot modules: mount in a frame, not SIM inserts or frames. */
 export function isCanvasConnectorPart(part: { category: string; partType?: string }): boolean {
   if (part.category !== "module") {
     return false;
   }
   const partType = (part.partType ?? "MODULE").trim().toUpperCase();
   return partType === "MODULE" || partType === "";
+}
+
+/** ITA / Receiver housings selectable as a canvas connector node. */
+export function isCanvasFramePart(part: { category: string; partType?: string }): boolean {
+  if (part.category !== "frame") {
+    return false;
+  }
+  const partType = (part.partType ?? "").trim().toUpperCase();
+  return partType === "ITA" || partType === "RECEIVER" || partType === "RCV" || partType === "";
+}
+
+/** Parts that can be chosen in Define Connector (standalone modules or frames). */
+export function isCanvasDefinablePart(part: { category: string; partType?: string }): boolean {
+  return isCanvasConnectorPart(part) || isCanvasFramePart(part);
+}
+
+/** UI label for catalog partType; Receiver frames are shown as RCV. */
+export function displayPartType(partType?: string): string {
+  const normalized = (partType ?? "").trim().toUpperCase();
+  if (normalized === "RECEIVER") {
+    return "RCV";
+  }
+  return normalized;
 }

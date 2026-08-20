@@ -9,17 +9,32 @@ import {
   listLibraryComponents,
   listModuleBackshellCompat,
   listModuleStrainReliefCompat,
+  listPartRelationships,
   updateHarness,
   updateRevisionSnapshot,
   type RevisionDto
 } from "@/lib/api";
 import { requireSignedInUser } from "@/lib/auth";
-import { collectAttributesFromFormData, isCanvasConnectorPart } from "@/lib/part-fields";
+import { collectAttributesFromFormData, isCanvasDefinablePart } from "@/lib/part-fields";
 import { HarnessDescriptionField } from "./harness-description-field";
 import styles from "./page.module.css";
 
-function connectorCatalogOnly(catalog: Awaited<ReturnType<typeof listLibraryComponents>>) {
-  return catalog.filter((item) => isCanvasConnectorPart(item));
+function connectorCatalogForCanvas(catalog: Awaited<ReturnType<typeof listLibraryComponents>>) {
+  return catalog.filter((item) => isCanvasDefinablePart(item));
+}
+
+async function loadConnectorCatalog() {
+  const [modules, frames] = await Promise.all([
+    listLibraryComponents({
+      category: "module",
+      isActive: true
+    }),
+    listLibraryComponents({
+      category: "frame",
+      isActive: true
+    })
+  ]);
+  return connectorCatalogForCanvas([...modules, ...frames]);
 }
 
 export default async function HarnessCanvasPage({
@@ -37,12 +52,7 @@ export default async function HarnessCanvasPage({
   const adminIsViewingAnotherUsersCanvas = signedInUser.accountRole === "admin" && harness.createdBy !== signedInUser.id;
   const isReadOnly = adminIsViewingAnotherUsersCanvas && mode !== "edit";
   const revision = await getRevision(harness.currentRevisionId);
-  const connectorCatalog = connectorCatalogOnly(
-    await listLibraryComponents({
-      category: "module",
-      isActive: true
-    })
-  );
+  const connectorCatalog = await loadConnectorCatalog();
   const backshellCatalog = await listLibraryComponents({
     category: "backshell",
     isActive: true
@@ -51,9 +61,10 @@ export default async function HarnessCanvasPage({
     category: "strain-relief",
     isActive: true
   });
-  const [moduleBackshellCompat, moduleStrainReliefCompat] = await Promise.all([
+  const [moduleBackshellCompat, moduleStrainReliefCompat, moduleAllowedRelationships] = await Promise.all([
     listModuleBackshellCompat(),
-    listModuleStrainReliefCompat()
+    listModuleStrainReliefCompat(),
+    listPartRelationships({ relationshipType: "MODULE_ALLOWED" })
   ]);
 
   async function quickAddConnectorAction(formData: FormData) {
@@ -62,7 +73,7 @@ export default async function HarnessCanvasPage({
       return {
         ok: false,
         error: "Switch to edit mode to add connectors.",
-        connectorCatalog: connectorCatalogOnly(await listLibraryComponents({ category: "module", isActive: true }))
+        connectorCatalog: await loadConnectorCatalog()
       };
     }
     const partNumber = String(formData.get("partNumber") ?? "").trim();
@@ -73,7 +84,7 @@ export default async function HarnessCanvasPage({
       return {
         ok: false,
         error: "Part number is required.",
-        connectorCatalog: connectorCatalogOnly(await listLibraryComponents({ category: "module", isActive: true }))
+        connectorCatalog: await loadConnectorCatalog()
       };
     }
     try {
@@ -93,12 +104,7 @@ export default async function HarnessCanvasPage({
           }
         ]
       });
-      const refreshedConnectorCatalog = connectorCatalogOnly(
-        await listLibraryComponents({
-          category: "module",
-          isActive: true
-        })
-      );
+      const refreshedConnectorCatalog = await loadConnectorCatalog();
       revalidatePath(`/harnesses/${harness.id}/canvas`);
       return {
         ok: true,
@@ -110,7 +116,7 @@ export default async function HarnessCanvasPage({
       return {
         ok: false,
         error: error instanceof Error ? error.message : "Connector quick-add failed.",
-        connectorCatalog: connectorCatalogOnly(await listLibraryComponents({ category: "module", isActive: true }))
+        connectorCatalog: await loadConnectorCatalog()
       };
     }
   }
@@ -206,6 +212,7 @@ export default async function HarnessCanvasPage({
             strainReliefCatalog={strainReliefCatalog}
             moduleBackshellCompat={moduleBackshellCompat}
             moduleStrainReliefCompat={moduleStrainReliefCompat}
+            moduleAllowedRelationships={moduleAllowedRelationships}
             quickAddConnectorAction={quickAddConnectorAction}
             saveCanvasAction={saveCanvasSnapshotAction}
             readOnly={isReadOnly}

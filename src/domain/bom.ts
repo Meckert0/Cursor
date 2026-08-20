@@ -1,5 +1,6 @@
 import type { LibraryCategory, PartAlias, PartWithAttributes } from "./library.js";
 import { isSleeveTubeBraidPart, isWirePart } from "./library.js";
+import { isFrameHousingConnector, isSlotPopulated } from "./connector-frames.js";
 import { isWireRunPath, pinMappedPathIds } from "./path-roles.js";
 import type { DesignSnapshot, Revision } from "./types.js";
 
@@ -288,43 +289,104 @@ function resolveSleevingComponent(
   });
 }
 
+function emitConnectorPartLine(
+  aggregates: Map<AggregateKey, AggregateLine>,
+  input: {
+    designRef: string;
+    partNumber?: string;
+    libraryComponentId?: string;
+    categories: LibraryCategory | LibraryCategory[];
+    missingLabel: string;
+    lookup: LibraryLookup;
+  }
+) {
+  const partNumber = input.partNumber?.trim();
+  if (!partNumber && !input.libraryComponentId) {
+    upsertAggregate(aggregates, {
+      category: "connector",
+      partNumber: `(unspecified:${input.designRef})`,
+      description: `${input.missingLabel} ${input.designRef} has no part number`,
+      quantity: 1,
+      unit: "ea",
+      resolution: "not_found",
+      designRef: input.designRef,
+      notes: `Missing ${input.missingLabel.toLowerCase()} part number`
+    });
+    return;
+  }
+  const component = resolveComponent(input.lookup, {
+    libraryComponentId: input.libraryComponentId,
+    partNumber,
+    categories: input.categories
+  });
+  const resolvedPartNumber = component?.partNumber ?? partNumber ?? input.libraryComponentId ?? "UNKNOWN";
+  upsertAggregate(aggregates, {
+    category: component?.category ?? "connector",
+    partNumber: resolvedPartNumber,
+    description: component?.description ?? `${input.missingLabel} ${input.designRef}`,
+    family: component?.family,
+    quantity: 1,
+    unit: "ea",
+    resolution: resolutionFor(component),
+    libraryComponentId: component?.id ?? input.libraryComponentId,
+    designRef: input.designRef
+  });
+}
+
 export function buildBom(revision: Revision, lookup: LibraryLookup): BomResult {
   const aggregates = new Map<AggregateKey, AggregateLine>();
   const snapshot: DesignSnapshot = revision.snapshot;
 
   for (const connector of snapshot.connectors) {
-    const partNumber = connector.partNumber?.trim();
-    if (!partNumber && !connector.libraryComponentId) {
-      upsertAggregate(aggregates, {
-        category: "connector",
-        partNumber: `(unspecified:${connector.reference})`,
-        description: `Connector ${connector.reference} has no part number`,
-        quantity: 1,
-        unit: "ea",
-        resolution: "not_found",
+    if (isFrameHousingConnector(connector)) {
+      emitConnectorPartLine(aggregates, {
         designRef: connector.reference,
-        notes: "Missing connector part number"
-      });
-    } else {
-      const component = resolveComponent(lookup, {
+        partNumber: connector.partNumber,
         libraryComponentId: connector.libraryComponentId,
-        partNumber,
-        categories: ["module", "contact"]
+        categories: "frame",
+        missingLabel: "Frame",
+        lookup
       });
-      const resolvedPartNumber = component?.partNumber ?? partNumber ?? connector.libraryComponentId ?? "UNKNOWN";
-      upsertAggregate(aggregates, {
-        category: component?.category ?? "connector",
-        partNumber: resolvedPartNumber,
-        description: component?.description ?? `Connector ${connector.reference}`,
-        family: component?.family,
-        quantity: 1,
-        unit: "ea",
-        resolution: resolutionFor(component),
-        libraryComponentId: component?.id ?? connector.libraryComponentId,
-        designRef: connector.reference
-      });
+      for (const slot of connector.slots ?? []) {
+        if (!isSlotPopulated(slot)) {
+          continue;
+        }
+        emitConnectorPartLine(aggregates, {
+          designRef: slot.reference,
+          partNumber: slot.partNumber,
+          libraryComponentId: slot.libraryComponentId,
+          categories: ["module", "contact"],
+          missingLabel: "Module",
+          lookup
+        });
+        emitAccessoryLine(aggregates, {
+          connectorReference: slot.reference,
+          category: "backshell",
+          partNumber: slot.backshellPartNumber,
+          libraryComponentId: slot.backshellLibraryComponentId,
+          lookup,
+          missingLabel: "Backshell"
+        });
+        emitAccessoryLine(aggregates, {
+          connectorReference: slot.reference,
+          category: "strain-relief",
+          partNumber: slot.strainReliefPartNumber,
+          libraryComponentId: slot.strainReliefLibraryComponentId,
+          lookup,
+          missingLabel: "Strain relief"
+        });
+      }
+      continue;
     }
 
+    emitConnectorPartLine(aggregates, {
+      designRef: connector.reference,
+      partNumber: connector.partNumber,
+      libraryComponentId: connector.libraryComponentId,
+      categories: ["module", "contact"],
+      missingLabel: "Connector",
+      lookup
+    });
     emitAccessoryLine(aggregates, {
       connectorReference: connector.reference,
       category: "backshell",

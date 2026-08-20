@@ -375,12 +375,14 @@ export function registerRevisionRoutes(app: FastifyInstance) {
 
     const libraryLookup = await loadLibraryLookup(app.store);
     const compatLookup = await loadCompatLookup(app.store);
+    const partRelationships = await app.store.listPartRelationships({ relationshipType: "MODULE_ALLOWED" });
     const startedAt = Date.now();
     let report;
     try {
       report = validateSnapshot(revision.snapshot, {
         libraryLookup,
         compatLookup,
+        partRelationships,
         rulesetVersion: resolvedRulesetVersion,
         mode: body.mode,
         policy: {

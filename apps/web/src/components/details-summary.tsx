@@ -8,6 +8,7 @@ import {
   getSleevingLabel,
   readCanvasDraftSnapshot
 } from "@/lib/cable-canvas-utils";
+import { expandConnectorsForDetails } from "@/lib/connector-frames";
 import type { RevisionDto } from "@/lib/api";
 import styles from "./details-summary.module.css";
 
@@ -56,6 +57,7 @@ export function DetailsSummary({
   }, [draftSnapshot?.paths, hasLiveOverrides, pathsOverride, snapshot.paths]);
 
   const uniqueWireSections = useMemo(() => buildUniqueWireSections(paths), [paths]);
+  const logicalConnectors = useMemo(() => expandConnectorsForDetails(connectors), [connectors]);
   const connectorPairTotals = useMemo(
     () =>
       buildConnectorPairTotals({
@@ -71,10 +73,15 @@ export function DetailsSummary({
       <section className={styles.summaryPanel}>
         <h3>Connectors</h3>
         <ul>
-          {connectors.length === 0 ? <li>No connectors yet.</li> : null}
-          {connectors.map((connector) => (
-            <li key={connector.id}>
-              {connector.reference} ({connector.id}) - {formatConnectorPinsLabel(connector)}
+          {logicalConnectors.length === 0 ? <li>No connectors yet.</li> : null}
+          {logicalConnectors.map((connector) => (
+            <li key={`${connector.canvasId}:${connector.slotId ?? "node"}`}>
+              {connector.reference} ({connector.canvasId}
+              {connector.slotId ? ` slot ${connector.slotId}` : ""}) -{" "}
+              {formatConnectorPinsLabel({
+                partNumber: connector.partNumber,
+                pins: connector.pins
+              })}
             </li>
           ))}
         </ul>

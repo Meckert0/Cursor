@@ -1071,7 +1071,8 @@ export function registerLibraryRoutes(app: FastifyInstance) {
   });
 
   app.get("/v1/library/relationships", async (request, reply) => {
-    if (!requireAdmin(request, reply).ok) {
+    // Readable by designers so canvas can filter frame slot modules; writes stay admin-only.
+    if (!requireRole(request, reply, ["viewer", "editor", "owner", "supplier_reviewer"]).ok) {
       return;
     }
     const query = listRelationshipsQuerySchema.parse(request.query);

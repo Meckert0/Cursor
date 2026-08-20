@@ -31,6 +31,7 @@ import {
   flattenFramePins,
   frameAttributesFromComponent,
   isFrameHousingConnector,
+  moduleMatchesFrameSide,
   modulesAllowedForFrameSlot,
   retargetSlotReferences,
   slotIdsForFrame,
@@ -134,6 +135,7 @@ export function CableCanvas({
   const [showConnectorSearchDialog, setShowConnectorSearchDialog] = useState(false);
   const [connectorSearchTarget, setConnectorSearchTarget] = useState<"housing" | { slotId: string }>("housing");
   const [connectorSearchQuery, setConnectorSearchQuery] = useState("");
+  const [includeReverseCompat, setIncludeReverseCompat] = useState(false);
   const [connectorNameDraft, setConnectorNameDraft] = useState("");
   const [connectorNameError, setConnectorNameError] = useState<string | null>(null);
   const [connectorNameSyncKey, setConnectorNameSyncKey] = useState("");
@@ -374,25 +376,29 @@ export function CableCanvas({
     ],
     []
   );
+  const selectedConnectorLibraryId = selectedConnector?.libraryComponentId;
   const searchPool = useMemo(() => {
     if (connectorSearchTarget === "housing") {
       return connectorOptions;
     }
-    if (!selectedConnector?.libraryComponentId) {
+    if (!selectedConnectorLibraryId) {
       return [];
     }
+    const frameComponent = connectorCatalogState.find((component) => component.id === selectedConnectorLibraryId);
     return modulesAllowedForFrameSlot(
-      selectedConnector.libraryComponentId,
+      selectedConnectorLibraryId,
       connectorSearchTarget.slotId,
       moduleAllowedRelationships,
       moduleCatalog
-    );
+    ).filter((module) => moduleMatchesFrameSide(module, frameComponent, includeReverseCompat));
   }, [
+    connectorCatalogState,
     connectorOptions,
     connectorSearchTarget,
+    includeReverseCompat,
     moduleAllowedRelationships,
     moduleCatalog,
-    selectedConnector?.libraryComponentId
+    selectedConnectorLibraryId
   ]);
   const filteredConnectorSearchResults = useMemo(() => {
     const query = connectorSearchQuery.trim().toLowerCase();
@@ -1260,10 +1266,10 @@ export function CableCanvas({
                     );
                     return (
                       <div key={slot.slotId} className={styles.slotBlock}>
-                        <span className={styles.slotBlockTitle}>Slot {slot.slotId}</span>
                         <label>
-                          Module name
+                          Slot {slot.slotId} name
                           <input
+                            className={styles.slotNameInput}
                             value={slotNameDrafts[slot.slotId] ?? slot.reference}
                             disabled={readOnly}
                             onChange={(event) =>
@@ -1488,16 +1494,25 @@ export function CableCanvas({
                 <button type="button" onClick={() => setShowAddConnectorDialog(true)} disabled={readOnly}>
                   Add new connector
                 </button>
-              ) : null}
+              ) : (
+                <label className={styles.reverseCompatToggle}>
+                  <input
+                    type="checkbox"
+                    checked={includeReverseCompat}
+                    onChange={(event) => setIncludeReverseCompat(event.target.checked)}
+                  />
+                  Reverse compatibility
+                </label>
+              )}
             </div>
             <div className={styles.connectorSearchTableWrap}>
               <table className={styles.connectorSearchTable}>
                 <thead>
                   <tr>
+                    <th aria-label="Select" />
                     {connectorSearchColumns.map((column) => (
                       <th key={column.key}>{column.label}</th>
                     ))}
-                    <th aria-label="Select" />
                   </tr>
                 </thead>
                 <tbody>
@@ -1512,13 +1527,6 @@ export function CableCanvas({
                   ) : (
                     filteredConnectorSearchResults.map((component) => (
                       <tr key={component.id}>
-                        {connectorSearchColumns.map((column) => (
-                          <td key={column.key}>
-                            {column.key === "partType"
-                              ? displayPartType(component.partType) || "-"
-                              : readComponentFieldValue(component, column.key)}
-                          </td>
-                        ))}
                         <td>
                           <button
                             type="button"
@@ -1531,11 +1539,19 @@ export function CableCanvas({
                               }
                               setShowConnectorSearchDialog(false);
                               setConnectorSearchQuery("");
+                              setIncludeReverseCompat(false);
                             }}
                           >
                             Select
                           </button>
                         </td>
+                        {connectorSearchColumns.map((column) => (
+                          <td key={column.key}>
+                            {column.key === "partType"
+                              ? displayPartType(component.partType) || "-"
+                              : readComponentFieldValue(component, column.key)}
+                          </td>
+                        ))}
                       </tr>
                     ))
                   )}
@@ -1548,6 +1564,7 @@ export function CableCanvas({
                 onClick={() => {
                   setShowConnectorSearchDialog(false);
                   setConnectorSearchQuery("");
+                  setIncludeReverseCompat(false);
                 }}
               >
                 Close

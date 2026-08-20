@@ -129,6 +129,45 @@ export function usedConnectorReferences(connectors: Array<{ reference: string; s
   return used;
 }
 
+export type CatalogSide = "ITA" | "RECEIVER" | "DUAL" | "";
+
+export function normalizeCatalogSide(side?: string): CatalogSide {
+  const normalized = (side ?? "").trim().toUpperCase();
+  if (normalized === "ITA") {
+    return "ITA";
+  }
+  if (normalized === "RECEIVER" || normalized === "RCV") {
+    return "RECEIVER";
+  }
+  if (normalized === "DUAL") {
+    return "DUAL";
+  }
+  return "";
+}
+
+/**
+ * Reverse-compatibility filter: with includeReverse off, only modules on the
+ * frame's side (or DUAL / unspecified) are suggested for its slots.
+ */
+export function moduleMatchesFrameSide(
+  module: { side?: string },
+  frame: { side?: string } | undefined,
+  includeReverse: boolean
+): boolean {
+  if (includeReverse) {
+    return true;
+  }
+  const frameSide = normalizeCatalogSide(frame?.side);
+  if (!frameSide || frameSide === "DUAL") {
+    return true;
+  }
+  const moduleSide = normalizeCatalogSide(module.side);
+  if (!moduleSide || moduleSide === "DUAL") {
+    return true;
+  }
+  return moduleSide === frameSide;
+}
+
 export function modulesAllowedForFrameSlot<T extends { partNumber: string; category: string; partType?: string }>(
   framePartId: string,
   slotId: string,

@@ -83,10 +83,12 @@ test("define connector can place an ITA frame with per-slot modules", async ({ p
   const moduleAId = `e2e-mod-a-${token}`;
   const moduleBId = `e2e-mod-b-${token}`;
   const otherId = `e2e-mod-other-${token}`;
+  const reverseId = `e2e-mod-rev-${token}`;
   const framePn = `ITA-${token}`;
   const moduleAPn = `MODA-${token}`;
   const moduleBPn = `MODB-${token}`;
   const otherPn = `OTHER-${token}`;
+  const reversePn = `REVMOD-${token}`;
 
   await ingestReviewedLibraryItems(request, [
     {
@@ -99,6 +101,7 @@ test("define connector can place an ITA frame with per-slot modules", async ({ p
       stockStatus: "in_stock",
       isReviewed: false,
       partType: "ITA",
+      side: "ITA",
       attributes: { moduleCapacity: 2, slotIds: ["A", "B"] }
     },
     {
@@ -111,6 +114,7 @@ test("define connector can place an ITA frame with per-slot modules", async ({ p
       stockStatus: "in_stock",
       isReviewed: false,
       partType: "MODULE",
+      side: "ITA",
       attributes: { pinCount: 2, pinIds: ["1", "2"] }
     },
     {
@@ -123,6 +127,20 @@ test("define connector can place an ITA frame with per-slot modules", async ({ p
       stockStatus: "in_stock",
       isReviewed: false,
       partType: "MODULE",
+      side: "ITA",
+      attributes: { pinCount: 2, pinIds: ["1", "2"] }
+    },
+    {
+      id: reverseId,
+      category: "module",
+      family: "iCon",
+      partNumber: reversePn,
+      description: "Reverse-side module",
+      isActive: true,
+      stockStatus: "in_stock",
+      isReviewed: false,
+      partType: "MODULE",
+      side: "RECEIVER",
       attributes: { pinCount: 2, pinIds: ["1", "2"] }
     },
     {
@@ -140,7 +158,7 @@ test("define connector can place an ITA frame with per-slot modules", async ({ p
   ]);
   await putPartRelationship(request, {
     parentPartId: frameId,
-    compatibleParts: [moduleAPn],
+    compatibleParts: [moduleAPn, reversePn],
     relationshipType: "MODULE_ALLOWED",
     positionType: "MODULE_SLOT",
     parentPositions: ["A"],
@@ -179,6 +197,11 @@ test("define connector can place an ITA frame with per-slot modules", async ({ p
   await expect(page.getByRole("dialog", { name: "Select slot A module" })).toBeVisible();
   await expect(page.getByRole("row").filter({ hasText: moduleAPn })).toBeVisible();
   await expect(page.getByRole("row").filter({ hasText: otherPn })).toHaveCount(0);
+  await expect(page.getByRole("row").filter({ hasText: reversePn })).toHaveCount(0);
+  await page.getByLabel("Reverse compatibility").check();
+  await expect(page.getByRole("row").filter({ hasText: reversePn })).toBeVisible();
+  await page.getByLabel("Reverse compatibility").uncheck();
+  await expect(page.getByRole("row").filter({ hasText: reversePn })).toHaveCount(0);
   await page.getByRole("row").filter({ hasText: moduleAPn }).getByRole("button", { name: "Select" }).click();
   await expect(page.getByRole("button", { name: "Change slot A module" })).toContainText(`Part number: ${moduleAPn}`);
 

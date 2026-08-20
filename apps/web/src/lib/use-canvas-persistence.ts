@@ -59,6 +59,7 @@ export function useCanvasPersistence({
     initiallyDirty ? "Unsaved changes." : "All changes saved."
   );
   const [retryTick, setRetryTick] = useState(0);
+  const changeSeqRef = useRef(0);
   const skipDirtyTrackingRef = useRef(true);
   const retryTimeoutRef = useRef<number | null>(null);
   const saveCanvasActionRef = useRef<SaveCanvasAction | undefined>(saveCanvasAction);
@@ -105,6 +106,7 @@ export function useCanvasPersistence({
     if (readOnly || !saveCanvasActionRef.current || conflict) {
       return;
     }
+    changeSeqRef.current += 1;
     setDirty(true);
     setSaveMessage("Unsaved changes.");
     // Intentionally omit saveCanvasAction: Next.js revalidation can replace the
@@ -117,6 +119,7 @@ export function useCanvasPersistence({
       return;
     }
     const timeoutId = window.setTimeout(async () => {
+      const seqAtSave = changeSeqRef.current;
       setSaveMessage("Saving...");
       try {
         if (retryTimeoutRef.current !== null) {
@@ -144,6 +147,12 @@ export function useCanvasPersistence({
         setBaseline(result.snapshot);
         if (result.snapshotHash) {
           setBaselineHash(result.snapshotHash);
+        }
+        if (changeSeqRef.current !== seqAtSave) {
+          // Edits arrived while this save was in flight; stay dirty so the
+          // next debounce persists them instead of silently dropping them.
+          setSaveMessage("Unsaved changes.");
+          return;
         }
         setDirty(false);
         setSaveMessage(`Saved at ${new Date().toLocaleTimeString()}.`);

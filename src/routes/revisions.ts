@@ -51,7 +51,22 @@ const snapshotSchema = z.object({
         strainReliefPartNumber: z.string().optional(),
         strainReliefLibraryComponentId: z.string().optional(),
         pins: z.array(z.object({ id: z.string(), number: z.string() })),
-        location: z.object({ x: z.number(), y: z.number() }).optional()
+        location: z.object({ x: z.number(), y: z.number() }).optional(),
+        slots: z
+          .array(
+            z.object({
+              slotId: z.string(),
+              reference: z.string(),
+              partNumber: z.string().optional(),
+              libraryComponentId: z.string().optional(),
+              pins: z.array(z.object({ id: z.string(), number: z.string() })),
+              backshellPartNumber: z.string().optional(),
+              backshellLibraryComponentId: z.string().optional(),
+              strainReliefPartNumber: z.string().optional(),
+              strainReliefLibraryComponentId: z.string().optional()
+            })
+          )
+          .optional()
       })
     )
     .default([]),

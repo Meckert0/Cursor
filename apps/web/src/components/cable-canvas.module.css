@@ -13,7 +13,8 @@
 }
 
 .selectionDetailsShell {
-  min-height: 96px;
+  height: 96px;
+  max-height: 96px;
   display: flex;
 }
 
@@ -201,27 +202,15 @@
 }
 
 .slotBlocks {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  width: 100%;
+  display: contents;
 }
 
 .slotBlock {
-  display: grid;
-  gap: 8px;
-  min-width: 220px;
-  flex: 1 1 220px;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 8px;
-  background: #f8fafc;
+  display: contents;
 }
 
-.slotBlockTitle {
-  font-size: 12px;
-  font-weight: 600;
-  color: #334155;
+.slotNameInput {
+  width: 110px;
 }
 
 .connectorSearchDialog {
@@ -240,6 +229,15 @@
   margin: 0;
   color: #1e293b;
   font-size: 16px;
+}
+
+.reverseCompatToggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #334155;
+  white-space: nowrap;
 }
 
 .connectorSearchControls {

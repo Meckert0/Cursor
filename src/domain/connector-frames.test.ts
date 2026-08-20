@@ -5,8 +5,10 @@ import {
   defaultSlotReference,
   expandConnectorsForDetails,
   flattenFramePins,
+  moduleMatchesFrameSide,
   modulesAllowedForFrameSlot,
   namespacedPinId,
+  normalizeCatalogSide,
   parseNamespacedPinId,
   retargetSlotReferences,
   slotIdsForFrame,
@@ -84,6 +86,26 @@ test("modulesAllowedForFrameSlot filters by frame, slot, and allowed status", ()
     modulesAllowedForFrameSlot("frame-1", "B", relationships, modules).map((mod) => mod.partNumber),
     ["510161130"]
   );
+});
+
+test("moduleMatchesFrameSide hides opposite-side modules unless reverse compatibility is on", () => {
+  assert.equal(normalizeCatalogSide(" rcv "), "RECEIVER");
+  assert.equal(normalizeCatalogSide("ita"), "ITA");
+  assert.equal(normalizeCatalogSide("DUAL"), "DUAL");
+  assert.equal(normalizeCatalogSide(undefined), "");
+
+  const itaFrame = { side: "ITA" };
+  assert.equal(moduleMatchesFrameSide({ side: "ITA" }, itaFrame, false), true);
+  assert.equal(moduleMatchesFrameSide({ side: "RECEIVER" }, itaFrame, false), false);
+  assert.equal(moduleMatchesFrameSide({ side: "RCV" }, itaFrame, false), false);
+  assert.equal(moduleMatchesFrameSide({ side: "DUAL" }, itaFrame, false), true);
+  assert.equal(moduleMatchesFrameSide({}, itaFrame, false), true);
+  // Reverse compatibility checkbox keeps everything.
+  assert.equal(moduleMatchesFrameSide({ side: "RECEIVER" }, itaFrame, true), true);
+  // Unknown or dual frame side cannot filter.
+  assert.equal(moduleMatchesFrameSide({ side: "RECEIVER" }, {}, false), true);
+  assert.equal(moduleMatchesFrameSide({ side: "RECEIVER" }, { side: "DUAL" }, false), true);
+  assert.equal(moduleMatchesFrameSide({ side: "ITA" }, undefined, false), true);
 });
 
 test("empty parentPositions allows the module in every slot", () => {

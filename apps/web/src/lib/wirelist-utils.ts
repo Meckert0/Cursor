@@ -448,8 +448,12 @@ export function wirelistRowsToSnapshot(
   const existingMappingByPathId = new Map(baseline.pinMappings.map((mapping) => [mapping.pathId, mapping]));
   const pinMappings: SnapshotPinMapping[] = [];
   const { cablePaths } = partitionSnapshotPaths(baseline.paths, baseline.pinMappings);
+  const baselinePathById = new Map(baseline.paths.map((path) => [path.id, path]));
 
   const wireRunPaths = rows.map((row, index) => {
+    // Blank grid rows reuse canvas path ids; keep the canvas-authored length and
+    // sleeving when the row (which cannot edit sleeving) does not override them.
+    const replacedPath = baselinePathById.get(row.id);
     const fromContact = row.fromContact.trim();
     const toContact = row.toContact.trim();
     const parsedLength = Number(row.length);
@@ -483,8 +487,8 @@ export function wirelistRowsToSnapshot(
       toConnectorId: toEndpoint.nodeId,
       pathType: "wire",
       wirelistManaged: true,
-      length: hasNumericLength ? parsedLength : undefined,
-      sleeving: row.sleeving,
+      length: hasNumericLength ? parsedLength : replacedPath?.length,
+      sleeving: row.sleeving !== "none" ? row.sleeving : (replacedPath?.sleeving ?? row.sleeving),
       wireComponentId: row.wireComponentId || undefined,
       fromContact: fromContact || undefined,
       fromSignalDescription: row.fromSignalDescription.trim() || undefined,

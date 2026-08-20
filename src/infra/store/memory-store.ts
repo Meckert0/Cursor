@@ -1269,7 +1269,7 @@ export class MemoryStore implements Store {
     }
     this.parts.delete(input.componentId);
     for (const [key, row] of this.partRelationships.entries()) {
-      if (row.parentPartId === input.componentId || row.childPartId === input.componentId) {
+      if (row.parentPartId === input.componentId || row.compatibleParts.includes(part.partNumber)) {
         this.partRelationships.delete(key);
       }
     }
@@ -1543,14 +1543,14 @@ export class MemoryStore implements Store {
 
   async listPartRelationships(input?: {
     parentPartId?: string;
-    childPartId?: string;
+    compatiblePart?: string;
     relationshipType?: string;
   }): Promise<PartRelationship[]> {
     return Array.from(this.partRelationships.values()).filter((row) => {
       if (input?.parentPartId && row.parentPartId !== input.parentPartId) {
         return false;
       }
-      if (input?.childPartId && (row.childPartId ?? "") !== input.childPartId) {
+      if (input?.compatiblePart && !row.compatibleParts.includes(input.compatiblePart)) {
         return false;
       }
       if (input?.relationshipType && row.relationshipType !== input.relationshipType) {
@@ -1562,9 +1562,6 @@ export class MemoryStore implements Store {
 
   async upsertPartRelationship(input: PartRelationshipInput): Promise<PartRelationship> {
     const normalized = normalizePartRelationship(input);
-    if (normalized.childPartId && normalized.childPartId === normalized.parentPartId) {
-      throw new Error("RELATIONSHIP_SELF_REFERENCE");
-    }
     const naturalKey = partRelationshipNaturalKey(normalized);
     const existingByNaturalKey = this.partRelationships.get(naturalKey);
     const row: PartRelationship = {

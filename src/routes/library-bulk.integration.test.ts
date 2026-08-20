@@ -97,7 +97,7 @@ test("bulk endpoints require an admin account", async () => {
         method: "POST",
         url: "/v1/library/relationships/bulk",
         payload: {
-          rows: [{ parentPartId: "a", childPartId: "b", relationshipType: "MATES_WITH", status: "allowed" }]
+          rows: [{ parentPartId: "a", compatibleParts: ["b"], relationshipType: "MATES_WITH", status: "allowed" }]
         }
       }
     ];
@@ -417,7 +417,7 @@ test("frame ingest, partType filter, and generic relationship CRUD", async () =>
       headers: { cookie: admin.cookie },
       payload: {
         parentPartId: "frame-ita",
-        childPartId: "mod-ita",
+        compatibleParts: "MOD-100",
         relationshipType: "MODULE_ALLOWED",
         positionType: "MODULE_SLOT",
         parentPositions: ["A", "B"],
@@ -426,8 +426,9 @@ test("frame ingest, partType filter, and generic relationship CRUD", async () =>
       }
     });
     assert.equal(upsert.statusCode, 200);
-    const created = upsert.json() as { id: string; status: string };
+    const created = upsert.json() as { id: string; status: string; compatibleParts: string[] };
     assert.equal(created.status, "allowed");
+    assert.deepEqual(created.compatibleParts, ["MOD-100"]);
 
     const bulk = await app.inject({
       method: "POST",
@@ -437,7 +438,7 @@ test("frame ingest, partType filter, and generic relationship CRUD", async () =>
         rows: [
           {
             parentPartId: "frame-ita",
-            childPartId: "mod-ita",
+            compatibleParts: ["MOD-100"],
             relationshipType: "MODULE_ALLOWED",
             positionType: "MODULE_SLOT",
             parentPositions: ["A"],
@@ -446,7 +447,7 @@ test("frame ingest, partType filter, and generic relationship CRUD", async () =>
           },
           {
             parentPartId: "mod-ita",
-            childPartId: "sim-insert",
+            compatibleParts: ["SIM-100"],
             relationshipType: "INSERT_ALLOWED",
             positionType: "SIM_SLOT",
             parentPositions: ["A1"],
@@ -465,9 +466,10 @@ test("frame ingest, partType filter, and generic relationship CRUD", async () =>
     });
     assert.equal(listed.statusCode, 200);
     const rows = listed.json().items as Array<{ id: string; status: string; parentPositions: string[] }>;
-    assert.equal(rows.length, 1);
-    assert.equal(rows[0]?.status, "review");
-    assert.deepEqual(rows[0]?.parentPositions, ["A"]);
+    // The A,B allowed row and the A review row are distinct rows at the Excel grain.
+    assert.equal(rows.length, 2);
+    const reviewRow = rows.find((row) => row.status === "review");
+    assert.deepEqual(reviewRow?.parentPositions, ["A"]);
 
     const deleted = await app.inject({
       method: "DELETE",

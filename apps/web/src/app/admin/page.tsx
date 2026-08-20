@@ -345,10 +345,10 @@ function parseParentPositions(raw: string): string[] {
 async function upsertRelationshipAction(formData: FormData) {
   "use server";
   await requireAdminUser();
-  const childPartId = optionalFormText(formData, "childPartId");
+  const compatibleParts = optionalFormText(formData, "compatibleParts");
   await upsertPartRelationship({
     parentPartId: requireFormField(formData, "parentPartId"),
-    childPartId: childPartId || undefined,
+    compatibleParts: compatibleParts || undefined,
     relationshipType: requireFormField(formData, "relationshipType"),
     positionType: optionalFormText(formData, "positionType") || undefined,
     parentPositions: parseParentPositions(String(formData.get("parentPositions") ?? "")),

@@ -242,7 +242,8 @@ export interface Store {
   deletePartAlias(input: { codeSystem: string; code: string }): Promise<boolean>;
   listPartRelationships(input?: {
     parentPartId?: string;
-    childPartId?: string;
+    /** Part number contained in the compatible_parts CSV. */
+    compatiblePart?: string;
     relationshipType?: string;
   }): Promise<PartRelationship[]>;
   upsertPartRelationship(input: PartRelationshipInput): Promise<PartRelationship>;

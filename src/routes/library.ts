@@ -428,28 +428,19 @@ const bulkModuleStrainReliefCompatSchema = z.object({
   rows: z.array(moduleStrainReliefCompatSchema).min(1)
 });
 
-const partRelationshipSchema = z
-  .object({
-    id: z.string().min(1).optional(),
-    parentPartId: z.string().min(1),
-    childPartId: z.string().min(1).optional(),
-    relationshipType: z.string().min(1),
-    positionType: z.string().min(1).optional(),
-    parentPositions: z.array(z.string().min(1)).default([]),
-    status: compatStatusSchema,
-    sourceStatus: z.string().optional(),
-    notes: z.string().optional(),
-    extra: z.record(z.string(), z.unknown()).optional()
-  })
-  .superRefine((value, context) => {
-    if (value.childPartId && value.childPartId === value.parentPartId) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "childPartId must differ from parentPartId",
-        path: ["childPartId"]
-      });
-    }
-  });
+const partRelationshipSchema = z.object({
+  id: z.string().min(1).optional(),
+  parentPartId: z.string().min(1),
+  /** Compatible part numbers: array or comma-separated string, Excel-style. */
+  compatibleParts: z.union([z.array(z.string()), z.string()]).optional(),
+  relationshipType: z.string().min(1),
+  positionType: z.string().min(1).optional(),
+  parentPositions: z.array(z.string().min(1)).default([]),
+  status: compatStatusSchema,
+  sourceStatus: z.string().optional(),
+  notes: z.string().optional(),
+  extra: z.record(z.string(), z.unknown()).optional()
+});
 
 const bulkPartRelationshipSchema = z.object({
   rows: z.array(partRelationshipSchema).min(1)
@@ -457,7 +448,7 @@ const bulkPartRelationshipSchema = z.object({
 
 const listRelationshipsQuerySchema = z.object({
   parentPartId: z.string().min(1).optional(),
-  childPartId: z.string().min(1).optional(),
+  compatiblePart: z.string().min(1).optional(),
   relationshipType: z.string().min(1).optional()
 });
 
@@ -1086,7 +1077,7 @@ export function registerLibraryRoutes(app: FastifyInstance) {
     const query = listRelationshipsQuerySchema.parse(request.query);
     const items = await app.store.listPartRelationships({
       parentPartId: query.parentPartId,
-      childPartId: query.childPartId,
+      compatiblePart: query.compatiblePart,
       relationshipType: query.relationshipType
     });
     return { items };
@@ -1100,14 +1091,7 @@ export function registerLibraryRoutes(app: FastifyInstance) {
     if (!parsedBody.success) {
       return reply.badRequest(parsedBody.error.issues.map((issue) => issue.message).join("; "));
     }
-    try {
-      return await app.store.upsertPartRelationship(parsedBody.data);
-    } catch (error) {
-      if (error instanceof Error && error.message === "RELATIONSHIP_SELF_REFERENCE") {
-        return reply.badRequest("childPartId must differ from parentPartId.");
-      }
-      throw error;
-    }
+    return app.store.upsertPartRelationship(parsedBody.data);
   });
 
   app.post("/v1/library/relationships/bulk", async (request, reply) => {
@@ -1115,14 +1099,7 @@ export function registerLibraryRoutes(app: FastifyInstance) {
       return;
     }
     const body = bulkPartRelationshipSchema.parse(request.body);
-    try {
-      return await app.store.bulkUpsertPartRelationships({ rows: body.rows });
-    } catch (error) {
-      if (error instanceof Error && error.message === "RELATIONSHIP_SELF_REFERENCE") {
-        return reply.badRequest("childPartId must differ from parentPartId.");
-      }
-      throw error;
-    }
+    return app.store.bulkUpsertPartRelationships({ rows: body.rows });
   });
 
   app.delete("/v1/library/relationships", async (request, reply) => {

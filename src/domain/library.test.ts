@@ -26,10 +26,10 @@ test("isCanvasConnectorPart hides frames and SIM inserts", () => {
   assert.equal(isCanvasConnectorPart({ category: "contact", partType: "CONTACT" }), false);
 });
 
-test("normalizePartRelationship trims identity and collapses empty child", () => {
+test("normalizePartRelationship trims identity and parses compatible parts", () => {
   const row = normalizePartRelationship({
     parentPartId: " parent ",
-    childPartId: "  ",
+    compatibleParts: " 510161101 , ,510161102 ",
     relationshipType: " WIRE_COMPATIBILITY ",
     positionType: " WIRE ",
     parentPositions: [" 22 ", "", "24"],
@@ -37,13 +37,22 @@ test("normalizePartRelationship trims identity and collapses empty child", () =>
     extra: {}
   });
   assert.equal(row.parentPartId, "parent");
-  assert.equal(row.childPartId, undefined);
+  assert.deepEqual(row.compatibleParts, ["510161101", "510161102"]);
   assert.equal(row.relationshipType, "WIRE_COMPATIBILITY");
   assert.equal(row.positionType, "WIRE");
   assert.deepEqual(row.parentPositions, ["22", "24"]);
   assert.equal(row.extra, undefined);
   assert.equal(
     partRelationshipNaturalKey(row),
-    "parent::::WIRE_COMPATIBILITY::WIRE"
+    "parent::WIRE_COMPATIBILITY::WIRE::22,24::allowed"
   );
+
+  const empty = normalizePartRelationship({
+    parentPartId: "parent",
+    compatibleParts: "  ",
+    relationshipType: "WIRE_COMPATIBILITY",
+    parentPositions: [],
+    status: "allowed"
+  });
+  assert.deepEqual(empty.compatibleParts, []);
 });

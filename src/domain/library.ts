@@ -232,7 +232,8 @@ export interface ModuleStrainReliefCompat {
 export interface PartRelationship {
   id: string;
   parentPartId: string;
-  childPartId?: string;
+  /** Compatible part numbers at the Excel grain (comma-separated in the DB). Empty for gauge/media rules. */
+  compatibleParts: string[];
   relationshipType: string;
   positionType?: string;
   parentPositions: string[];
@@ -354,17 +355,22 @@ export function emptyAttributesForCategory(category: LibraryCategory): CategoryA
   }
 }
 
-/** Natural key for generic catalog relationships (null child/position collapse to empty). */
+/** Natural key at the Excel COMPATIBILITY grain: one row per rule, children grouped. */
 export function partRelationshipNaturalKey(row: {
   parentPartId: string;
-  childPartId?: string;
   relationshipType: string;
   positionType?: string;
+  parentPositions: string[];
+  status: CompatStatus;
 }): string {
-  return `${row.parentPartId}::${row.childPartId ?? ""}::${row.relationshipType}::${row.positionType ?? ""}`;
+  return `${row.parentPartId}::${row.relationshipType}::${row.positionType ?? ""}::${row.parentPositions.join(",")}::${row.status}`;
 }
 
-export type PartRelationshipInput = Omit<PartRelationship, "id"> & { id?: string };
+export type PartRelationshipInput = Omit<PartRelationship, "id" | "compatibleParts"> & {
+  id?: string;
+  /** Accepts an array of part numbers or a single comma-separated string. */
+  compatibleParts?: string[] | string;
+};
 
 function trimToUndefined(value?: string): string | undefined {
   const trimmed = value?.trim();
@@ -378,14 +384,17 @@ function objectOrUndefined(value?: Record<string, unknown>): Record<string, unkn
   return value;
 }
 
+function normalizeStringList(value?: string[] | string): string[] {
+  const entries = Array.isArray(value) ? value : (value ?? "").split(",");
+  return entries.map((entry) => String(entry).trim()).filter((entry) => entry.length > 0);
+}
+
 export function normalizePartRelationship(input: PartRelationshipInput): PartRelationship {
-  const parentPositions = Array.isArray(input.parentPositions)
-    ? input.parentPositions.map((entry) => String(entry).trim()).filter((entry) => entry.length > 0)
-    : [];
+  const parentPositions = normalizeStringList(input.parentPositions);
   return {
     id: input.id?.trim() || `rel-${crypto.randomUUID()}`,
     parentPartId: input.parentPartId.trim(),
-    childPartId: trimToUndefined(input.childPartId),
+    compatibleParts: normalizeStringList(input.compatibleParts),
     relationshipType: input.relationshipType.trim(),
     positionType: trimToUndefined(input.positionType),
     parentPositions,

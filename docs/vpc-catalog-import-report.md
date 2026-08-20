@@ -1,7 +1,7 @@
 # VPC i1/iCon catalog import — reconciliation
 
-- Source: `c:\Users\meckert\Desktop\File Folder\vpc_i1_icon_complete_database.xlsx`
-- Generated: 2026-08-20T15:52:46.741Z
+- Source: `C:\Users\meckert\Desktop\File Folder\vpc_i1_icon_complete_database.xlsx`
+- Generated: 2026-08-20T16:59:14.054Z
 
 ## Parts
 
@@ -20,12 +20,12 @@
 ## Compatibility
 
 - Source COMPATIBILITY rows: 149
-- Exploded parent/child rows: 537
-- Stored part_relationships: 537
-  - CONTACT_ALLOWED: 208
-  - INSERT_ALLOWED: 16
+- Parent/child pairs represented: 537
+- Stored part_relationships: 143
+  - CONTACT_ALLOWED: 46
+  - INSERT_ALLOWED: 4
   - MATES_WITH: 21
-  - MODULE_ALLOWED: 234
+  - MODULE_ALLOWED: 14
   - WIRE_COMPATIBILITY: 58
 - Dual-write module_contact_compat: 208
 - Workbook status values:
@@ -43,4 +43,4 @@
 
 ## Issues
 
-- None
+- merged-relationship: 6

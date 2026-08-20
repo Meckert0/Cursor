@@ -95,7 +95,7 @@ test("memory store round-trips VPC catalog types and generic relationships", asy
 
   const allowed = await store.upsertPartRelationship({
     parentPartId: "frame-1",
-    childPartId: "mod-1",
+    compatibleParts: ["MOD-1"],
     relationshipType: "MODULE_ALLOWED",
     positionType: "MODULE_SLOT",
     parentPositions: ["A", "B"],
@@ -103,18 +103,32 @@ test("memory store round-trips VPC catalog types and generic relationships", asy
     sourceStatus: "CONFIRMED"
   });
   assert.equal(allowed.relationshipType, "MODULE_ALLOWED");
+  assert.deepEqual(allowed.compatibleParts, ["MOD-1"]);
+
+  // Same natural key (parent/type/position/positions/status) updates in place, CSV accepted.
   const rerun = await store.upsertPartRelationship({
     parentPartId: "frame-1",
-    childPartId: "mod-1",
+    compatibleParts: "MOD-1, SIM-1",
     relationshipType: "MODULE_ALLOWED",
     positionType: "MODULE_SLOT",
-    parentPositions: ["A"],
+    parentPositions: ["A", "B"],
+    status: "allowed",
+    sourceStatus: "CONFIRMED"
+  });
+  assert.equal(rerun.id, allowed.id);
+  assert.deepEqual(rerun.compatibleParts, ["MOD-1", "SIM-1"]);
+
+  // A different status is a separate row at the Excel grain.
+  const clearance = await store.upsertPartRelationship({
+    parentPartId: "frame-1",
+    compatibleParts: ["MOD-1"],
+    relationshipType: "MODULE_ALLOWED",
+    positionType: "MODULE_SLOT",
+    parentPositions: ["A", "B"],
     status: "review",
     sourceStatus: "CONDITIONAL_CLEARANCE"
   });
-  assert.equal(rerun.id, allowed.id);
-  assert.equal(rerun.status, "review");
-  assert.deepEqual(rerun.parentPositions, ["A"]);
+  assert.notEqual(clearance.id, allowed.id);
 
   const wireRule = await store.upsertPartRelationship({
     parentPartId: "cnt-1",
@@ -124,12 +138,14 @@ test("memory store round-trips VPC catalog types and generic relationships", asy
     status: "allowed",
     extra: { gauges: ["22", "RG316"] }
   });
-  assert.equal(wireRule.childPartId, undefined);
+  assert.deepEqual(wireRule.compatibleParts, []);
 
   const listedRels = await store.listPartRelationships({ parentPartId: "frame-1" });
-  assert.equal(listedRels.length, 1);
+  assert.equal(listedRels.length, 2);
+  assert.equal((await store.listPartRelationships({ compatiblePart: "SIM-1" })).length, 1);
 
   assert.equal(await store.deletePartRelationship({ id: allowed.id }), true);
+  assert.equal(await store.deletePartRelationship({ id: clearance.id }), true);
   assert.equal((await store.listPartRelationships({ parentPartId: "frame-1" })).length, 0);
 
   assert.equal(await store.deleteLibraryComponent({ componentId: "cnt-1" }), true);

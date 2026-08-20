@@ -26,7 +26,7 @@ export function renderVpcCatalogReport(build: VpcCatalogBuild, sourceFile: strin
   lines.push("## Compatibility");
   lines.push("");
   lines.push(`- Source COMPATIBILITY rows: ${build.stats.sourceCompatRows}`);
-  lines.push(`- Exploded parent/child rows: ${build.stats.explodedCompatRows}`);
+  lines.push(`- Parent/child pairs represented: ${build.stats.explodedCompatRows}`);
   lines.push(`- Stored part_relationships: ${build.relationships.length}`);
   for (const [type, count] of Object.entries(build.stats.relationshipsByType).sort()) {
     lines.push(`  - ${type}: ${count}`);

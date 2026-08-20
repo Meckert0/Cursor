@@ -342,7 +342,7 @@ type FrameExtRow = {
 type PartRelationshipRow = {
   id: string;
   parent_part_id: string;
-  child_part_id: string | null;
+  compatible_parts: string | null;
   relationship_type: string;
   position_type: string | null;
   parent_positions_json: unknown;
@@ -1046,7 +1046,7 @@ function mapPartRelationship(row: PartRelationshipRow): PartRelationship {
   return normalizePartRelationship({
     id: row.id,
     parentPartId: row.parent_part_id,
-    childPartId: row.child_part_id ?? undefined,
+    compatibleParts: row.compatible_parts ?? undefined,
     relationshipType: row.relationship_type,
     positionType: row.position_type ?? undefined,
     parentPositions: asStringArray(row.parent_positions_json),
@@ -3176,46 +3176,44 @@ export class PostgresStore implements Store {
 
   async listPartRelationships(input?: {
     parentPartId?: string;
-    childPartId?: string;
+    compatiblePart?: string;
     relationshipType?: string;
   }): Promise<PartRelationship[]> {
     const result = await this.pool.query<PartRelationshipRow>(
-      `SELECT id, parent_part_id, child_part_id, relationship_type, position_type,
+      `SELECT id, parent_part_id, compatible_parts, relationship_type, position_type,
               parent_positions_json, status, source_status, notes, extra_json
        FROM part_relationships
        WHERE ($1::text IS NULL OR parent_part_id = $1::text)
-         AND ($2::text IS NULL OR child_part_id = $2::text)
+         AND ($2::text IS NULL OR ',' || COALESCE(compatible_parts, '') || ',' LIKE '%,' || $2::text || ',%')
          AND ($3::text IS NULL OR relationship_type = $3::text)
-       ORDER BY relationship_type ASC, parent_part_id ASC, child_part_id ASC NULLS LAST`,
-      [input?.parentPartId ?? null, input?.childPartId ?? null, input?.relationshipType ?? null]
+       ORDER BY relationship_type ASC, parent_part_id ASC, position_type ASC NULLS LAST`,
+      [input?.parentPartId ?? null, input?.compatiblePart ?? null, input?.relationshipType ?? null]
     );
     return result.rows.map(mapPartRelationship);
   }
 
   async upsertPartRelationship(input: PartRelationshipInput): Promise<PartRelationship> {
     const normalized = normalizePartRelationship(input);
-    if (normalized.childPartId && normalized.childPartId === normalized.parentPartId) {
-      throw new Error("RELATIONSHIP_SELF_REFERENCE");
-    }
-    const existing = await this.pool.query<PartRelationshipRow>(
-      `SELECT id, parent_part_id, child_part_id, relationship_type, position_type,
-              parent_positions_json, status, source_status, notes, extra_json
+    const existing = await this.pool.query<{ id: string }>(
+      `SELECT id
        FROM part_relationships
        WHERE parent_part_id = $1
-         AND COALESCE(child_part_id, '') = COALESCE($2, '')
-         AND relationship_type = $3
-         AND COALESCE(position_type, '') = COALESCE($4, '')`,
+         AND relationship_type = $2
+         AND COALESCE(position_type, '') = COALESCE($3, '')
+         AND parent_positions_json = $4::jsonb
+         AND status = $5`,
       [
         normalized.parentPartId,
-        normalized.childPartId ?? null,
         normalized.relationshipType,
-        normalized.positionType ?? null
+        normalized.positionType ?? null,
+        JSON.stringify(normalized.parentPositions),
+        normalized.status
       ]
     );
     const id = existing.rows[0]?.id ?? normalized.id;
     const result = await this.pool.query<PartRelationshipRow>(
       `INSERT INTO part_relationships (
-         id, parent_part_id, child_part_id, relationship_type, position_type,
+         id, parent_part_id, compatible_parts, relationship_type, position_type,
          parent_positions_json, status, source_status, notes, extra_json
        ) VALUES (
          $1, $2, $3, $4, $5,
@@ -3224,7 +3222,7 @@ export class PostgresStore implements Store {
        ON CONFLICT (id)
        DO UPDATE SET
          parent_part_id = EXCLUDED.parent_part_id,
-         child_part_id = EXCLUDED.child_part_id,
+         compatible_parts = EXCLUDED.compatible_parts,
          relationship_type = EXCLUDED.relationship_type,
          position_type = EXCLUDED.position_type,
          parent_positions_json = EXCLUDED.parent_positions_json,
@@ -3232,12 +3230,12 @@ export class PostgresStore implements Store {
          source_status = EXCLUDED.source_status,
          notes = EXCLUDED.notes,
          extra_json = EXCLUDED.extra_json
-       RETURNING id, parent_part_id, child_part_id, relationship_type, position_type,
+       RETURNING id, parent_part_id, compatible_parts, relationship_type, position_type,
                  parent_positions_json, status, source_status, notes, extra_json`,
       [
         id,
         normalized.parentPartId,
-        normalized.childPartId ?? null,
+        normalized.compatibleParts.length > 0 ? normalized.compatibleParts.join(",") : null,
         normalized.relationshipType,
         normalized.positionType ?? null,
         JSON.stringify(normalized.parentPositions),

@@ -132,7 +132,8 @@ export interface PartAliasDto {
 export interface PartRelationshipDto {
   id: string;
   parentPartId: string;
-  childPartId?: string;
+  /** Compatible part numbers (Excel-style list). */
+  compatibleParts: string[];
   relationshipType: string;
   positionType?: string;
   parentPositions: string[];
@@ -876,15 +877,16 @@ export async function deletePartAlias(input: { codeSystem: string; code: string 
 
 export async function listPartRelationships(input?: {
   parentPartId?: string;
-  childPartId?: string;
+  /** Part number contained in the row's compatible parts list. */
+  compatiblePart?: string;
   relationshipType?: string;
 }): Promise<PartRelationshipDto[]> {
   const search = new URLSearchParams();
   if (input?.parentPartId) {
     search.set("parentPartId", input.parentPartId);
   }
-  if (input?.childPartId) {
-    search.set("childPartId", input.childPartId);
+  if (input?.compatiblePart) {
+    search.set("compatiblePart", input.compatiblePart);
   }
   if (input?.relationshipType) {
     search.set("relationshipType", input.relationshipType);
@@ -894,7 +896,12 @@ export async function listPartRelationships(input?: {
   return response.items;
 }
 
-export function upsertPartRelationship(input: Omit<PartRelationshipDto, "id"> & { id?: string }): Promise<PartRelationshipDto> {
+export function upsertPartRelationship(
+  input: Omit<PartRelationshipDto, "id" | "compatibleParts"> & {
+    id?: string;
+    compatibleParts?: string[] | string;
+  }
+): Promise<PartRelationshipDto> {
   return apiRequest<PartRelationshipDto>("/v1/library/relationships", {
     method: "PUT",
     body: input

@@ -67,7 +67,7 @@ const ALLOWED_SOURCE_STATUSES = new Set([
   "EXCLUSIVE_CONFIRMED"
 ]);
 
-type MutablePart = VpcCatalogPart & { partNumberKey: string };
+type MutablePart = VpcCatalogPart & { id: string; partNumberKey: string };
 
 function cellText(value: VpcCell | undefined): string | undefined {
   if (value === null || value === undefined) {
@@ -194,20 +194,24 @@ function numericGauges(gauges: string[]): number[] | undefined {
   return numbers.length > 0 ? numbers : undefined;
 }
 
-function sectionLabel(positions: string[]): string | undefined {
-  const prefixes = new Set(
-    positions.map((position) => position.match(/^[A-Za-z]+/)?.[0] ?? position)
-  );
-  return prefixes.size === 1 ? [...prefixes][0] : undefined;
-}
-
 function relationshipId(row: {
   parentPartId: string;
-  childPartId?: string;
   relationshipType: string;
   positionType?: string;
+  parentPositions: string[];
+  status: CompatStatus;
 }): string {
-  return `rel-${partRelationshipNaturalKey(row).replace(/[^a-zA-Z0-9]+/g, "-").replace(/-+$/g, "")}`;
+  const key = partRelationshipNaturalKey(row).replace(/[^a-zA-Z0-9]+/g, "-").replace(/-+$/g, "");
+  return `rel-${key.length > 120 ? `${key.slice(0, 96)}-${simpleHash(key)}` : key}`;
+}
+
+/** Stable short hash so long pin-list keys still produce deterministic ids. */
+function simpleHash(value: string): string {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) | 0;
+  }
+  return (hash >>> 0).toString(36);
 }
 
 function worseStatus(left: CompatStatus, right: CompatStatus): CompatStatus {
@@ -336,11 +340,13 @@ export function parseVpcCatalog(input: {
     partsByType[partType] = (partsByType[partType] ?? 0) + 1;
   }
 
-  const exploded: PartRelationshipInput[] = [];
+  const grouped = new Map<string, PartRelationshipInput & { compatibleParts: string[] }>();
+  let explodedPairCount = 0;
   const pinIdsByModule = new Map<string, string[]>();
   const contactPositionsByModule = new Map<string, Map<string, ModuleContactPosition>>();
   const slotIdsByFrame = new Map<string, string[]>();
   const gaugesByContact = new Map<string, { gauges: string[]; wireInterface?: string }>();
+  const moduleContactByKey = new Map<string, ModuleContactCompat>();
 
   for (const row of input.compatibility) {
     const parentPn = cellText(row.cells.parent_part);
@@ -378,7 +384,7 @@ export function parseVpcCatalog(input: {
     }
 
     const parentPositions = splitList(row.cells.parent_positions);
-    let positionType = cellText(row.cells.position_type)?.toUpperCase();
+    const positionType = cellText(row.cells.position_type)?.toUpperCase();
     const children = splitList(row.cells.compatible_parts);
     const gauges = splitList(row.cells.wire_gauges_awg);
     const wireInterface = cellText(row.cells.wire_cable_or_interface);
@@ -387,13 +393,6 @@ export function parseVpcCatalog(input: {
     const removable =
       removableRaw === undefined ? undefined : cellBool(row.cells.removable, false);
     const notes = cellText(row.cells.notes);
-
-    if (relationshipType === "INSERT_ALLOWED" && positionType) {
-      const section = sectionLabel(parentPositions);
-      if (section) {
-        positionType = `${positionType}:${section}`;
-      }
-    }
 
     if (relationshipType === "MODULE_ALLOWED" && parent.category === "frame") {
       slotIdsByFrame.set(parent.id, uniqueInOrder([...(slotIdsByFrame.get(parent.id) ?? []), ...parentPositions]));
@@ -414,9 +413,7 @@ export function parseVpcCatalog(input: {
       gaugesByContact.set(parent.id, { gauges, wireInterface });
     }
 
-    const extra = extraFromCompat({ quantity, removable, gauges, wireInterface });
-    const childPns = relationshipType === "WIRE_COMPATIBILITY" && children.length === 0 ? [undefined] : children;
-    if (childPns.length === 0) {
+    if (children.length === 0 && relationshipType !== "WIRE_COMPATIBILITY") {
       issues.push({
         sheet: "COMPATIBILITY",
         row: row.row,
@@ -426,55 +423,67 @@ export function parseVpcCatalog(input: {
       continue;
     }
 
-    for (const childPn of childPns) {
-      let childId: string | undefined;
-      if (childPn !== undefined) {
-        const child = partsByNumber.get(childPn);
-        if (!child) {
-          issues.push({
-            sheet: "COMPATIBILITY",
-            row: row.row,
-            kind: "orphan-child",
-            detail: `${parentPn} → ${childPn} (${relationshipType})`
-          });
-          continue;
-        }
-        childId = child.id;
+    const compatibleParts: string[] = [];
+    for (const childPn of children) {
+      const child = partsByNumber.get(childPn);
+      if (!child) {
+        issues.push({
+          sheet: "COMPATIBILITY",
+          row: row.row,
+          kind: "orphan-child",
+          detail: `${parentPn} → ${childPn} (${relationshipType})`
+        });
+        continue;
       }
-      const rel: PartRelationshipInput = {
-        parentPartId: parent.id,
-        childPartId: childId,
-        relationshipType,
-        positionType,
-        parentPositions,
-        status: mapped.status,
-        sourceStatus,
-        notes,
-        extra
-      };
-      rel.id = relationshipId(rel);
-      exploded.push(rel);
+      compatibleParts.push(childPn);
+      explodedPairCount += 1;
+      if (relationshipType === "CONTACT_ALLOWED" && parent.category === "module") {
+        const pairKey = `${parent.id}::${child.id}`;
+        const existingPair = moduleContactByKey.get(pairKey);
+        if (!existingPair) {
+          moduleContactByKey.set(pairKey, {
+            modulePartId: parent.id,
+            contactPartId: child.id,
+            status: mapped.status,
+            notes,
+            source: "vpc-catalog"
+          });
+        } else {
+          existingPair.status = worseStatus(existingPair.status, mapped.status);
+        }
+      }
     }
-  }
-
-  const merged = new Map<string, PartRelationshipInput>();
-  for (const row of exploded) {
-    const key = partRelationshipNaturalKey(row);
-    const existing = merged.get(key);
-    if (!existing) {
-      merged.set(key, { ...row, parentPositions: [...row.parentPositions] });
+    if (children.length > 0 && compatibleParts.length === 0) {
       continue;
     }
-    existing.parentPositions = uniqueInOrder([...existing.parentPositions, ...row.parentPositions]);
-    const nextStatus = worseStatus(existing.status, row.status);
-    if (nextStatus !== existing.status) {
-      existing.sourceStatus = row.sourceStatus;
+    if (relationshipType === "WIRE_COMPATIBILITY" && compatibleParts.length === 0) {
+      explodedPairCount += 1;
     }
-    existing.status = nextStatus;
-    if (row.notes && row.notes !== existing.notes) {
-      existing.notes = [existing.notes, row.notes].filter(Boolean).join(" | ");
+
+    const rel: PartRelationshipInput & { compatibleParts: string[] } = {
+      parentPartId: parent.id,
+      compatibleParts,
+      relationshipType,
+      positionType,
+      parentPositions,
+      status: mapped.status,
+      sourceStatus,
+      notes,
+      extra: extraFromCompat({ quantity, removable, gauges, wireInterface })
+    };
+    rel.id = relationshipId(rel);
+
+    const key = partRelationshipNaturalKey(rel);
+    const existing = grouped.get(key);
+    if (!existing) {
+      grouped.set(key, rel);
+      continue;
     }
-    existing.extra = { ...(existing.extra ?? {}), ...(row.extra ?? {}) };
+    existing.compatibleParts = uniqueInOrder([...existing.compatibleParts, ...rel.compatibleParts]);
+    if (rel.notes && rel.notes !== existing.notes) {
+      existing.notes = [existing.notes, rel.notes].filter(Boolean).join(" | ");
+    }
+    existing.extra = { ...(existing.extra ?? {}), ...(rel.extra ?? {}) };
     issues.push({
       sheet: "COMPATIBILITY",
       kind: "merged-relationship",
@@ -516,26 +525,6 @@ export function parseVpcCatalog(input: {
     }
   }
 
-  const moduleContactByKey = new Map<string, ModuleContactCompat>();
-  for (const row of merged.values()) {
-    if (row.relationshipType !== "CONTACT_ALLOWED" || !row.childPartId) {
-      continue;
-    }
-    const key = `${row.parentPartId}::${row.childPartId}`;
-    const existing = moduleContactByKey.get(key);
-    if (!existing) {
-      moduleContactByKey.set(key, {
-        modulePartId: row.parentPartId,
-        contactPartId: row.childPartId,
-        status: row.status,
-        notes: row.notes,
-        source: "vpc-catalog"
-      });
-      continue;
-    }
-    existing.status = worseStatus(existing.status, row.status);
-  }
-
   const provenance: PartImportProvenance[] = [];
   for (const part of partsByNumber.values()) {
     provenance.push({
@@ -565,7 +554,7 @@ export function parseVpcCatalog(input: {
     });
   }
 
-  const relationships = [...merged.values()];
+  const relationships = [...grouped.values()];
   const relationshipsByType: Record<string, number> = {};
   for (const row of relationships) {
     relationshipsByType[row.relationshipType] = (relationshipsByType[row.relationshipType] ?? 0) + 1;
@@ -585,7 +574,7 @@ export function parseVpcCatalog(input: {
       partsByType,
       relationshipsByType,
       statusMapped,
-      explodedCompatRows: exploded.length,
+      explodedCompatRows: explodedPairCount,
       sourceCompatRows: input.compatibility.length,
       sourcePartRows: input.parts.length
     }

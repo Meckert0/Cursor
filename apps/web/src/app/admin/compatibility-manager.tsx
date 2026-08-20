@@ -354,13 +354,13 @@ export function CompatibilityManager(props: CompatibilityManagerProps) {
         <div className={styles.compatPanel}>
           <form action={props.upsertRelationshipAction} className={styles.compatAddForm}>
             <PartSelect name="parentPartId" parts={allParts} label="Parent part" />
-            <PartSelect
-              name="childPartId"
-              parts={allParts}
-              label="Child part"
-              required={false}
-              emptyLabel="None (gauge/media rule)"
-            />
+            <label>
+              Compatible parts
+              <input
+                name="compatibleParts"
+                placeholder="510161101, 510161102, … (empty for gauge/media rule)"
+              />
+            </label>
             <label>
               Relationship type
               <input name="relationshipType" list="relationship-types" required placeholder="MODULE_ALLOWED" />
@@ -395,7 +395,7 @@ export function CompatibilityManager(props: CompatibilityManagerProps) {
                 <tr>
                   <th>Type</th>
                   <th>Parent</th>
-                  <th>Child</th>
+                  <th>Compatible parts</th>
                   <th>Positions</th>
                   <th>Status</th>
                   <th>Actions</th>
@@ -414,7 +414,7 @@ export function CompatibilityManager(props: CompatibilityManagerProps) {
                         {row.positionType ? ` · ${row.positionType}` : ""}
                       </td>
                       <td>{resolvePn(partById, row.parentPartId)}</td>
-                      <td>{row.childPartId ? resolvePn(partById, row.childPartId) : "—"}</td>
+                      <td>{row.compatibleParts.length > 0 ? row.compatibleParts.join(", ") : "—"}</td>
                       <td>{row.parentPositions.length > 0 ? row.parentPositions.join(", ") : "—"}</td>
                       <td>{row.status}</td>
                       <td>

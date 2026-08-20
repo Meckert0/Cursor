@@ -163,7 +163,7 @@ test(
 
       const relationship = await store.upsertPartRelationship({
         parentPartId: frameId,
-        childPartId: moduleId,
+        compatibleParts: [`MOD-${suffix}`],
         relationshipType: "MODULE_ALLOWED",
         positionType: "MODULE_SLOT",
         parentPositions: ["A", "B"],
@@ -171,8 +171,22 @@ test(
         sourceStatus: "CONFIRMED"
       });
       assert.equal(relationship.relationshipType, "MODULE_ALLOWED");
+      assert.deepEqual(relationship.compatibleParts, [`MOD-${suffix}`]);
+      const rerun = await store.upsertPartRelationship({
+        parentPartId: frameId,
+        compatibleParts: `MOD-${suffix},SIM-${suffix}`,
+        relationshipType: "MODULE_ALLOWED",
+        positionType: "MODULE_SLOT",
+        parentPositions: ["A", "B"],
+        status: "allowed",
+        sourceStatus: "CONFIRMED"
+      });
+      assert.equal(rerun.id, relationship.id);
+      assert.deepEqual(rerun.compatibleParts, [`MOD-${suffix}`, `SIM-${suffix}`]);
       const listedRels = await store.listPartRelationships({ parentPartId: frameId });
       assert.equal(listedRels.length, 1);
+      const byPn = await store.listPartRelationships({ compatiblePart: `SIM-${suffix}` });
+      assert.ok(byPn.some((row) => row.id === relationship.id));
       assert.equal(await store.deletePartRelationship({ id: relationship.id }), true);
 
       assert.equal(await store.deleteContactWireCompat({ contactPartId: contactId, wirePartId: wireId }), true);

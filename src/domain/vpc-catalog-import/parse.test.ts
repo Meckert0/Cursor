@@ -105,7 +105,7 @@ test("mapWorkbookStatus maps confirmed family to allowed and conditional to revi
   assert.deepEqual(mapWorkbookStatus("NOPE"), { status: "review", unknown: true });
 });
 
-test("parseVpcCatalog maps part types, explodes compat, and dual-writes contacts", () => {
+test("parseVpcCatalog maps part types, keeps grouped compat rows, and dual-writes contacts", () => {
   const build = parseVpcCatalog({
     parts: baseParts,
     compatibility: [
@@ -233,17 +233,20 @@ test("parseVpcCatalog maps part types, explodes compat, and dual-writes contacts
 
   const allowed = build.relationships.filter((row) => row.relationshipType === "MODULE_ALLOWED");
   assert.equal(allowed.length, 2);
-  const clearance = allowed.find((row) => row.childPartId === "prt-module-510161101");
-  assert.equal(clearance?.status, "review");
+  const family = allowed.find((row) => row.status === "allowed");
+  assert.deepEqual(family?.compatibleParts, ["510161101", "510161130"]);
+  const clearance = allowed.find((row) => row.status === "review");
+  assert.deepEqual(clearance?.compatibleParts, ["510161101"]);
   assert.equal(clearance?.sourceStatus, "CONDITIONAL_CLEARANCE");
 
   const inserts = build.relationships.filter((row) => row.relationshipType === "INSERT_ALLOWED");
   assert.equal(inserts.length, 2);
-  assert.ok(inserts.some((row) => row.positionType === "SIM_SLOT:A"));
-  assert.ok(inserts.some((row) => row.positionType === "SIM_SLOT:B"));
+  assert.ok(inserts.every((row) => row.positionType === "SIM_SLOT"));
+  assert.ok(inserts.some((row) => row.parentPositions.join(",") === "A1,A2"));
+  assert.ok(inserts.some((row) => row.parentPositions.join(",") === "B1,B2"));
 
   const wire = build.relationships.find((row) => row.relationshipType === "WIRE_COMPATIBILITY");
-  assert.equal(wire?.childPartId, undefined);
+  assert.deepEqual(wire?.compatibleParts, []);
   assert.deepEqual(wire?.extra?.gauges, ["22", "24"]);
 
   assert.equal(build.moduleContactCompat.length, 1);

@@ -16,16 +16,16 @@ todos:
     status: completed
   - id: git-push
     content: "After structure is in the repo: commit and push to GitHub so Vercel deploys the new code"
-    status: pending
+    status: completed
   - id: apply-029-neon
     content: "After Vercel deploy: run npm run migrate against Neon so the new tables exist (schema only, no catalog rows)"
-    status: pending
+    status: completed
   - id: import-pipeline
     content: "DEFERRED: vpc-catalog-import script that writes the workbook to Postgres via DATABASE_URL"
-    status: pending
+    status: completed
   - id: hosted-load
     content: "DEFERRED: import the i1/iCon workbook and verify row counts in /admin"
-    status: pending
+    status: completed
 isProject: false
 ---
 

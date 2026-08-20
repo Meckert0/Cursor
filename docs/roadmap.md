@@ -16,7 +16,7 @@ Get one cable completely working from start to finish, with a complete bill of m
 - Hosted architecture is in place on Vercel (PostgreSQL, Redis, S3 or Vercel Blob). Local development still defaults to SQLite and file artifacts. See `docs/deployment.md`.
 - The workflow shell works end to end in the browser: author on canvas/wirelist, validate, export (JSON/PDF/XLSX), and submit for quote.
 - Rules depth v2, the E2E journey matrix, library governance, canvas persistence/hardening, export reliability v1, wirelist pin-mapping authoring (Phase A), BOM completeness (Phase C), canvas/wirelist data-integrity hardening (Phase D), and the full-cable E2E acceptance journey (Phase E) are shipped.
-- The catalog starts empty. Phase B shipped a starter seed, then that automatic seed was removed; ingest parts via admin, the library API, or `npm run import:cpq`.
+- The catalog starts empty. Phase B shipped a starter seed, then that automatic seed was removed; ingest parts via admin, the library API, `npm run import:cpq`, or `npm run import:vpc-catalog`.
 - The Complete-Cable MVP exit criteria are met. Notifications and datastore-admin breadth remain deferred post-MVP.
 - GitHub Actions CI is the standing validation gate (backend tests, frontend lint/build/unit tests, Playwright E2E).
 
@@ -44,11 +44,11 @@ Get one cable completely working from start to finish, with a complete bill of m
 
 ### In Progress
 
-- None. VPC catalog schema Phase 1 is complete in the working tree. Phase 2 (GitHub/Vercel + Neon migrate) waits on an explicit ask.
+- None.
 
 ## Near-Term Priorities (Ordered)
 
-VPC catalog schema Phase 1 is in the working tree. Phase 2 is commit/push then `npm run migrate` against Neon (empty tables). Phase 3 is the i1/iCon workbook import. Do not start Phase 2 or 3 until asked.
+VPC catalog schema Phases 1–3 are complete: `029` on Neon, then `npm run import:vpc-catalog` for the i1/iCon workbook. Canvas/frame authoring and CPQ merge remain deferred.
 
 Phases A-E are complete. The ordered MVP plan below is retained as the shipped record.
 
@@ -120,7 +120,7 @@ Acceptance: the spec passes in CI and is the standing acceptance test for "one c
 
 ## Deferred Scope (Post-MVP)
 
-- VPC catalog schema (Phase 1 structure shipped in-repo: migration `029`, `frame` category, `part_relationships`. Phase 2 GitHub/Vercel + Neon migrate, then Phase 3 workbook import — see `docs/vpc_catalog_schema_7ab9d02d.plan.md`).
+- VPC canvas/frame authoring and CPQ merge (catalog schema + i1/iCon workbook import are done; see `docs/vpc_catalog_schema_7ab9d02d.plan.md`).
 - Workflow notifications v1 (in-app unread feed on submit-for-quote, state transitions, moderation decisions; optional email delivery).
 - Datastore admin and operational breadth (migration status surfacing, Redis lock diagnostics, artifact manifests and orphan detection).
 - Pricing / manufacturer / inventory quantity columns on BOM (library schema does not yet carry these).
@@ -149,7 +149,8 @@ MVP exit requires:
 
 ## Changelog Notes
 
-- 2026-08-20: VPC catalog schema Phase 1 — Postgres migration `029` (shared part taxonomy, `frames`, module/contact extensions, `part_relationships`), store/API round-trip, Item Database fields, generic relationship manager, canvas connector picker excludes frames and SIM inserts. Catalog rows and workbook import remain deferred.
+- 2026-08-20: VPC catalog Phase 3 — `import:vpc-catalog` loads the i1/iCon PARTS/COMPATIBILITY workbook into Postgres (`part_relationships` + dual-write `module_contact_compat`). Phases 1–2 shipped the `029` schema to GitHub/Neon first.
+- 2026-08-20: VPC catalog schema Phase 1 — Postgres migration `029` (shared part taxonomy, `frames`, module/contact extensions, `part_relationships`), store/API round-trip, Item Database fields, generic relationship manager, canvas connector picker excludes frames and SIM inserts.
 - 2026-08-18: Hosted Vercel Production/Test architecture is implemented (PostgreSQL, Redis, S3 or Vercel Blob; local default remains SQLite + file artifacts). Catalog automatic seed removed — catalog starts empty. Export retention now keeps the DB row when Blob/S3/file delete fails so cleanup can retry. Frontend lint/hooks cleanup and GitHub Actions upgraded to Node 24-capable majors (`checkout`/`setup-node`/`upload-artifact` v7). Supersedes the 2026-07-20 local-only note; deployment packaging is no longer deferred.
 - 2026-07-20: Confirmed local-only product mode for now (no cloud deploy packaging). **Superseded 2026-08-18.** Complete-Cable MVP remains available locally via `npm run dev:full`; notifications and BOM pricing stay post-MVP.
 - 2026-07-10: Completed Phase E — full-cable E2E acceptance journey (canonical fixture, fixture BOM/validation coverage, browser journey through author → validate → resolved BOM → JSON/PDF/XLSX export → submit for quote). Complete-Cable MVP exit criteria met.

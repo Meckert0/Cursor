@@ -22,7 +22,7 @@ The API loads a project `.env` file at startup (`src/infra/env/load-dotenv.ts`) 
 
 The catalog is a **global shared item database**: parts created (and reviewed) on this store are visible to other users of the same API/database and usable across projects. Separate SQLite files do not sync; use one shared DB (or Postgres) for multi-user sharing.
 
-CPQMatricesInfo workbook load into this catalog is available via `npm run import:cpq` (see `scripts/import-cpq.ts` and `docs/cpq-import-report.md`). Schema readiness for that load is migration `028`.
+CPQMatricesInfo workbook load into this catalog is available via `npm run import:cpq` (see `scripts/import-cpq.ts` and `docs/cpq-import-report.md`). Schema readiness for that load is migration `028`. VPC i1/iCon product-catalog load is `npm run import:vpc-catalog` (`scripts/import-vpc-catalog.ts`), which writes PARTS and COMPATIBILITY rows straight to Postgres (`DATABASE_URL`) after migration `029`.
 
 Postgres schema changes are plain `.sql` files in `db/migrations/`, applied in filename order by `npm run migrate` (`scripts/migrate.ts`), which tracks applied files in a `schema_migrations` table. The item model was introduced by `027_parts_model.sql`, corrected for CPQ ingest readiness by `028_parts_model_cpq_readiness.sql`, and extended for VPC i1/iCon catalog readiness by `029_vpc_catalog_readiness.sql`.
 

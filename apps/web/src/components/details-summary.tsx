@@ -4,12 +4,11 @@ import { useMemo } from "react";
 import {
   buildConnectorPairTotals,
   buildUniqueWireSections,
-  formatConnectorPinsLabel,
   getSleevingLabel,
   readCanvasDraftSnapshot
 } from "@/lib/cable-canvas-utils";
-import { expandConnectorsForDetails } from "@/lib/connector-frames";
-import type { RevisionDto } from "@/lib/api";
+import { buildConnectorDetailsRows } from "@/lib/connector-contact-groups";
+import type { LibraryComponentDto, RevisionDto } from "@/lib/api";
 import styles from "./details-summary.module.css";
 
 type JunctionNode = NonNullable<RevisionDto["snapshot"]["junctions"]>[number];
@@ -19,13 +18,15 @@ export function DetailsSummary({
   snapshot,
   connectors: connectorsOverride,
   junctions: junctionsOverride,
-  paths: pathsOverride
+  paths: pathsOverride,
+  connectorCatalog = []
 }: {
   revisionId: string;
   snapshot: RevisionDto["snapshot"];
   connectors?: RevisionDto["snapshot"]["connectors"];
   junctions?: JunctionNode[];
   paths?: RevisionDto["snapshot"]["paths"];
+  connectorCatalog?: LibraryComponentDto[];
 }) {
   const hasLiveOverrides = connectorsOverride !== undefined && pathsOverride !== undefined;
   const draftSnapshot = useMemo(() => {
@@ -57,7 +58,10 @@ export function DetailsSummary({
   }, [draftSnapshot?.paths, hasLiveOverrides, pathsOverride, snapshot.paths]);
 
   const uniqueWireSections = useMemo(() => buildUniqueWireSections(paths), [paths]);
-  const logicalConnectors = useMemo(() => expandConnectorsForDetails(connectors), [connectors]);
+  const connectorDetails = useMemo(
+    () => buildConnectorDetailsRows(connectors, connectorCatalog),
+    [connectorCatalog, connectors]
+  );
   const connectorPairTotals = useMemo(
     () =>
       buildConnectorPairTotals({
@@ -73,15 +77,15 @@ export function DetailsSummary({
       <section className={styles.summaryPanel}>
         <h3>Connectors</h3>
         <ul>
-          {logicalConnectors.length === 0 ? <li>No connectors yet.</li> : null}
-          {logicalConnectors.map((connector) => (
-            <li key={`${connector.canvasId}:${connector.slotId ?? "node"}`}>
-              {connector.reference} ({connector.canvasId}
-              {connector.slotId ? ` slot ${connector.slotId}` : ""}) -{" "}
-              {formatConnectorPinsLabel({
-                partNumber: connector.partNumber,
-                pins: connector.pins
-              })}
+          {connectorDetails.length === 0 ? <li>No connectors yet.</li> : null}
+          {connectorDetails.map((connector) => (
+            <li key={connector.id} className={styles.connectorItem}>
+              <span>{connector.heading}</span>
+              <ul className={styles.contactGroups}>
+                {connector.lines.map((line, index) => (
+                  <li key={`${connector.id}:${index}`}>{line}</li>
+                ))}
+              </ul>
             </li>
           ))}
         </ul>

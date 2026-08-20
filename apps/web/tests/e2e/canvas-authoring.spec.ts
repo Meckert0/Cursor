@@ -115,7 +115,7 @@ test("define connector can place an ITA frame with per-slot modules", async ({ p
       isReviewed: false,
       partType: "MODULE",
       side: "ITA",
-      attributes: { pinCount: 2, pinIds: ["1", "2"] }
+      attributes: { pinCount: 2, pinIds: ["1", "2"], contactFamily1: "TP", gender: "ITA" }
     },
     {
       id: moduleBId,
@@ -128,7 +128,7 @@ test("define connector can place an ITA frame with per-slot modules", async ({ p
       isReviewed: false,
       partType: "MODULE",
       side: "ITA",
-      attributes: { pinCount: 2, pinIds: ["1", "2"] }
+      attributes: { pinCount: 2, pinIds: ["1", "2"], contactFamily1: "MC", gender: "ITA" }
     },
     {
       id: reverseId,
@@ -213,6 +213,6 @@ test("define connector can place an ITA frame with per-slot modules", async ({ p
 
   await openDetailsWithRetry(page);
   await expect(page.getByRole("heading", { name: "Connectors" })).toBeVisible();
-  await expect(page.getByText(/J1A/)).toBeVisible();
-  await expect(page.getByText(/J1B/)).toBeVisible();
+  await expect(page.getByText(/J1A: 2 TP ITA/)).toBeVisible();
+  await expect(page.getByText(/J1B: 2 MC ITA/)).toBeVisible();
 });

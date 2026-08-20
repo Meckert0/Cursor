@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { DetailsSummary } from "@/components/details-summary";
-import { getHarness, getRevision } from "@/lib/api";
+import { getHarness, getRevision, listLibraryComponents } from "@/lib/api";
 import { requireSignedInUser } from "@/lib/auth";
 import styles from "./page.module.css";
 
@@ -15,6 +15,10 @@ export default async function HarnessDetailsPage({
   const { harnessId } = await params;
   const harness = await getHarness(harnessId);
   const detail = await getRevision(harness.currentRevisionId);
+  const connectorCatalog = await listLibraryComponents({
+    category: "module",
+    isActive: true
+  });
 
   return (
     <div className={styles.page}>
@@ -29,7 +33,11 @@ export default async function HarnessDetailsPage({
           </div>
         </header>
 
-        <DetailsSummary revisionId={detail.id} snapshot={detail.snapshot} />
+        <DetailsSummary
+          revisionId={detail.id}
+          snapshot={detail.snapshot}
+          connectorCatalog={connectorCatalog}
+        />
       </main>
     </div>
   );

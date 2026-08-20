@@ -1773,6 +1773,7 @@ export function CableCanvas({
             connectors={connectors}
             junctions={junctions}
             paths={pathsState}
+            connectorCatalog={connectorCatalogState}
           />
         ) : null}
       </section>

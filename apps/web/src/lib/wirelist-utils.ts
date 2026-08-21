@@ -440,6 +440,15 @@ export function snapshotToWirelistRows(snapshot: RevisionDto["snapshot"]): Wirel
   });
 }
 
+export function nextWireRowId(usedIds: Iterable<string>): string {
+  const used = new Set(usedIds);
+  let next = 1;
+  while (used.has(`p_wire_${next}`)) {
+    next += 1;
+  }
+  return `p_wire_${next}`;
+}
+
 export function wirelistRowsToSnapshot(
   baseline: RevisionDto["snapshot"],
   rows: WirelistRow[],
@@ -447,13 +456,20 @@ export function wirelistRowsToSnapshot(
 ): RevisionDto["snapshot"] {
   const existingMappingByPathId = new Map(baseline.pinMappings.map((mapping) => [mapping.pathId, mapping]));
   const pinMappings: SnapshotPinMapping[] = [];
-  const { cablePaths } = partitionSnapshotPaths(baseline.paths, baseline.pinMappings);
-  const baselinePathById = new Map(baseline.paths.map((path) => [path.id, path]));
+  const { cablePaths, wireRunPaths: baselineWireRuns } = partitionSnapshotPaths(
+    baseline.paths,
+    baseline.pinMappings
+  );
+  const cablePathIds = new Set(cablePaths.map((path) => path.id));
+  const wireRunPathById = new Map(baselineWireRuns.map((path) => [path.id, path]));
+  const usedPathIds = new Set(baseline.paths.map((path) => path.id));
 
   const wireRunPaths = rows.map((row, index) => {
-    // Blank grid rows reuse canvas path ids; keep the canvas-authored length and
-    // sleeving when the row (which cannot edit sleeving) does not override them.
-    const replacedPath = baselinePathById.get(row.id);
+    // Wirelist rows own wire-run paths only. A row id that collides with a
+    // canvas cable section gets a fresh p_wire_* id instead of replacing it.
+    const pathId = cablePathIds.has(row.id) ? nextWireRowId(usedPathIds) : row.id;
+    usedPathIds.add(pathId);
+    const replacedPath = wireRunPathById.get(pathId);
     const fromContact = row.fromContact.trim();
     const toContact = row.toContact.trim();
     const parsedLength = Number(row.length);
@@ -467,10 +483,10 @@ export function wirelistRowsToSnapshot(
       fromEndpoint.pinId &&
       toEndpoint.pinId
     ) {
-      const existing = existingMappingByPathId.get(row.id);
+      const existing = existingMappingByPathId.get(pathId);
       pinMappings.push({
-        id: existing?.id ?? `pm_${row.id}`,
-        pathId: row.id,
+        id: existing?.id ?? `pm_${pathId}`,
+        pathId,
         fromConnectorId: fromEndpoint.nodeId,
         fromPinId: fromEndpoint.pinId,
         toConnectorId: toEndpoint.nodeId,
@@ -480,7 +496,7 @@ export function wirelistRowsToSnapshot(
     }
 
     return {
-      id: row.id,
+      id: pathId,
       runNumber: parseRunNumber(row.runNumber, index),
       wireName: row.wireName || `wire${index + 1}`,
       fromConnectorId: fromEndpoint.nodeId,
@@ -506,12 +522,10 @@ export function wirelistRowsToSnapshot(
     };
   });
 
-  const wireRunIds = new Set(wireRunPaths.map((path) => path.id));
-  const preservedCablePaths = cablePaths.filter((path) => !wireRunIds.has(path.id));
-
+  // Canvas cable sections are never deleted or replaced by wirelist saves.
   return {
     ...baseline,
-    paths: mergeSnapshotPaths(preservedCablePaths, wireRunPaths),
+    paths: mergeSnapshotPaths(cablePaths, wireRunPaths),
     pinMappings
   };
 }
@@ -726,8 +740,13 @@ export function verifyWirelistLocation(
   if (!positions) {
     return { state: "invalid", message: "Connector name does not exist" };
   }
-  if (position.length > 0 && positions.has(position)) {
-    return { state: "valid", message: null };
+  if (position.length > 0) {
+    const needle = position.toLowerCase();
+    for (const candidate of positions) {
+      if (candidate.trim().toLowerCase() === needle) {
+        return { state: "valid", message: null };
+      }
+    }
   }
   return { state: "partial", message: "Connector position not correct" };
 }
@@ -735,6 +754,16 @@ export function verifyWirelistLocation(
 export type WirelistContactCompatRow = {
   modulePartId: string;
   contactPartId: string;
+  status: "allowed" | "forbidden" | "review";
+};
+
+export type WirelistContactRelationshipRow = {
+  parentPartId: string;
+  /** Compatible contact part numbers (Excel-style list). */
+  compatibleParts: string[];
+  relationshipType?: string;
+  /** Module pin ids the contact may occupy; empty means every pin. */
+  parentPositions: string[];
   status: "allowed" | "forbidden" | "review";
 };
 
@@ -767,6 +796,8 @@ function findModuleForLocation(
   );
 }
 
+const CONTACT_POSITION_MESSAGE = "Contact is not compatible with this position";
+
 export function verifyWirelistContact(
   contactValue: string,
   locationValue: string,
@@ -777,7 +808,8 @@ export function verifyWirelistContact(
     slots?: Array<{ slotId: string; reference: string; libraryComponentId?: string }>;
   }>,
   contactCatalog: Array<{ id: string; partNumber: string }>,
-  moduleContactCompat: WirelistContactCompatRow[]
+  moduleContactCompat: WirelistContactCompatRow[],
+  contactRelationships: WirelistContactRelationshipRow[] = []
 ): WirelistLocationVerification {
   const trimmedContact = contactValue.trim();
   if (!trimmedContact) {
@@ -794,11 +826,45 @@ export function verifyWirelistContact(
   if (!modulePartId) {
     return { state: "partial", message: "Connector module is not defined" };
   }
+
+  const moduleRelationships = contactRelationships.filter(
+    (row) =>
+      row.parentPartId === modulePartId &&
+      (row.relationshipType ?? "CONTACT_ALLOWED").trim().toUpperCase() === "CONTACT_ALLOWED"
+  );
+  if (moduleRelationships.length > 0) {
+    const contactKey = trimmedContact.toLowerCase();
+    const matching = moduleRelationships.filter((row) =>
+      row.compatibleParts.some((partNumber) => partNumber.trim().toLowerCase() === contactKey)
+    );
+    if (matching.length === 0) {
+      return { state: "invalid", message: CONTACT_POSITION_MESSAGE };
+    }
+    const pinKey = parseWirelistLocation(locationValue).pinNumber.trim().toLowerCase();
+    // Rows without parentPositions allow the contact on every pin of the module.
+    const pinMatched = matching.filter((row) => {
+      if (row.parentPositions.length === 0) {
+        return true;
+      }
+      return (
+        pinKey.length > 0 &&
+        row.parentPositions.some((position) => position.trim().toLowerCase() === pinKey)
+      );
+    });
+    if (pinMatched.length === 0 || pinMatched.some((row) => row.status === "forbidden")) {
+      return { state: "invalid", message: CONTACT_POSITION_MESSAGE };
+    }
+    if (pinMatched.some((row) => row.status === "review")) {
+      return { state: "partial", message: "Contact compatibility requires review" };
+    }
+    return { state: "valid", message: null };
+  }
+
   const compat = moduleContactCompat.find(
     (row) => row.modulePartId === modulePartId && row.contactPartId === contact.id
   );
   if (!compat) {
-    return { state: "empty", message: null };
+    return { state: "invalid", message: CONTACT_POSITION_MESSAGE };
   }
   if (compat.status === "allowed") {
     return { state: "valid", message: null };
@@ -824,6 +890,7 @@ export function parseImportedWirelistRows(input: {
       .filter((component) => component.category === "wire")
       .map((component) => [component.partNumber.trim().toLowerCase(), component.id])
   );
+  const usedRowIds = new Set(input.existingRows.map((row) => row.id));
   const parsedRows = input.records.map((record, index) => {
     const existing = input.existingRows[index];
     const wirePartNumber = getValue(record, resolved, "Wire/Patchcord P/N");
@@ -832,8 +899,10 @@ export function parseImportedWirelistRows(input: {
     const sleeving = WIRELIST_SLEEVING_OPTIONS.includes(sleevingRaw as WirelistSleeving)
       ? (sleevingRaw as WirelistSleeving)
       : existing?.sleeving ?? "none";
+    const rowId = existing?.id || nextWireRowId(usedRowIds);
+    usedRowIds.add(rowId);
     return {
-      id: existing?.id || `p_canvas_${index + 1}`,
+      id: rowId,
       runNumber: getValue(record, resolved, "Run #") || existing?.runNumber || String(index + 1),
       fromLocation: getValue(record, resolved, "From Location (Conn - Pin)") || existing?.fromLocation || "",
       fromContact: getValue(record, resolved, "From Contact") || existing?.fromContact || "",

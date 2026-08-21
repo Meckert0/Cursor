@@ -6,6 +6,7 @@ import {
   getRevision,
   listLibraryComponents,
   listModuleContactCompat,
+  listPartRelationships,
   updateRevisionSnapshot,
   type RevisionDto
 } from "@/lib/api";
@@ -50,6 +51,7 @@ export default async function HarnessWirelistPage({
     isActive: true
   });
   const moduleContactCompat = await listModuleContactCompat();
+  const contactRelationships = await listPartRelationships({ relationshipType: "CONTACT_ALLOWED" });
 
   async function importWirelistAction(formData: FormData) {
     "use server";
@@ -197,6 +199,7 @@ export default async function HarnessWirelistPage({
             connectorCatalog={connectorCatalog}
             contactCatalog={contactCatalog}
             moduleContactCompat={moduleContactCompat}
+            contactRelationships={contactRelationships}
             importWirelistAction={importWirelistAction}
             exportWirelistAction={exportWirelistAction}
             saveWirelistAction={saveWirelistAction}

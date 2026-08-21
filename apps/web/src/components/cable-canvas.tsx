@@ -38,6 +38,7 @@ import {
   usedConnectorReferences,
   type FrameModuleRelationship
 } from "@/lib/connector-frames";
+import { isWireRunPath } from "@/lib/path-roles";
 import {
   useCanvasHistory,
   type CanvasNodePosition as NodePosition,
@@ -595,6 +596,11 @@ export function CableCanvas({
       return;
     }
     if (selectedEntity.type === "path") {
+      const selectedPathEntry = pathsState.find((path) => path.id === selectedEntity.id);
+      // Wirelist-owned wire runs are only deletable from the wirelist grid.
+      if (selectedPathEntry && isWireRunPath(selectedPathEntry)) {
+        return;
+      }
       pushUndoCheckpoint();
       const nextPaths = pathsState.filter((path) => path.id !== selectedEntity.id);
       setPathsState(nextPaths);
@@ -604,7 +610,9 @@ export function CableCanvas({
     }
     pushUndoCheckpoint();
     const nextPaths = pathsState.filter(
-      (path) => path.fromConnectorId !== selectedEntity.id && path.toConnectorId !== selectedEntity.id
+      (path) =>
+        isWireRunPath(path) ||
+        (path.fromConnectorId !== selectedEntity.id && path.toConnectorId !== selectedEntity.id)
     );
     const nextPositions = { ...positions };
     delete nextPositions[selectedEntity.id];

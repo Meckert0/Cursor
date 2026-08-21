@@ -17,11 +17,13 @@ import {
   buildConnectorPositionLookup,
   buildWirelistNodeIds,
   filterPopulatedWirelistRows,
+  nextWireRowId,
   snapshotToWirelistRows,
   validateWirelistRows,
   verifyWirelistContact,
   verifyWirelistLocation,
   wirelistRowsToSnapshot,
+  type WirelistContactRelationshipRow,
   type WirelistLocationState,
   type WirelistRow
 } from "@/lib/wirelist-utils";
@@ -190,9 +192,9 @@ function downloadBase64File(fileName: string, fileBase64: string) {
   URL.revokeObjectURL(url);
 }
 
-function createBlankRow(index: number): WirelistRow {
+function createBlankRow(index: number, usedIds: Iterable<string> = []): WirelistRow {
   return {
-    id: `p_canvas_${index + 1}`,
+    id: nextWireRowId(usedIds),
     runNumber: String(index + 1),
     fromLocation: "",
     fromContact: "",
@@ -230,6 +232,7 @@ export function WirelistGrid({
   connectorCatalog,
   contactCatalog = [],
   moduleContactCompat = [],
+  contactRelationships = [],
   importWirelistAction,
   exportWirelistAction,
   saveWirelistAction
@@ -245,6 +248,7 @@ export function WirelistGrid({
     contactPartId: string;
     status: "allowed" | "forbidden" | "review";
   }>;
+  contactRelationships?: WirelistContactRelationshipRow[];
   importWirelistAction: (formData: FormData) => Promise<ImportResult>;
   exportWirelistAction: (rows: WirelistRow[]) => Promise<ExportResult>;
   saveWirelistAction: (input: {
@@ -482,7 +486,7 @@ export function WirelistGrid({
     }
     const nextRows = [...rows];
     if (!nextRows[rowIndex]) {
-      nextRows[rowIndex] = createBlankRow(rowIndex);
+      nextRows[rowIndex] = createBlankRow(rowIndex, nextRows.map((row) => row.id));
     }
     nextRows[rowIndex] = setRowCellValue(nextRows[rowIndex], key, value);
     pushHistory(nextRows);
@@ -524,10 +528,12 @@ export function WirelistGrid({
       .split(/\r?\n/)
       .map((line) => line.split("\t"));
     const nextRows = [...rows];
+    const usedRowIds = new Set(nextRows.map((row) => row.id));
     lineValues.forEach((line, lineOffset) => {
       const targetRowIndex = rowIndex + lineOffset;
       if (!nextRows[targetRowIndex]) {
-        nextRows[targetRowIndex] = createBlankRow(targetRowIndex);
+        nextRows[targetRowIndex] = createBlankRow(targetRowIndex, usedRowIds);
+        usedRowIds.add(nextRows[targetRowIndex].id);
       }
       line.forEach((cell, cellOffset) => {
         const targetKey = CELL_KEYS[startColumnIndex + cellOffset];
@@ -663,7 +669,10 @@ export function WirelistGrid({
     });
   }
 
-  const displayRows = useMemo(() => [...rows, createBlankRow(rows.length)], [rows]);
+  const displayRows = useMemo(
+    () => [...rows, createBlankRow(rows.length, rows.map((row) => row.id))],
+    [rows]
+  );
 
   return (
     <section className={styles.wrapper}>
@@ -802,7 +811,8 @@ export function WirelistGrid({
                     row.fromLocation,
                     connectorSource,
                     contactCatalog,
-                    moduleContactCompat
+                    moduleContactCompat,
+                    contactRelationships
                   )
                 : { state: "empty" as WirelistLocationState, message: null };
               const toContactCheck = shouldVerify
@@ -811,7 +821,8 @@ export function WirelistGrid({
                     row.toLocation,
                     connectorSource,
                     contactCatalog,
-                    moduleContactCompat
+                    moduleContactCompat,
+                    contactRelationships
                   )
                 : { state: "empty" as WirelistLocationState, message: null };
               return (

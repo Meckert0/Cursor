@@ -171,6 +171,36 @@ describe("cable-canvas-utils", () => {
     expect(result.nextSelectedPathId).toBe("p2");
   });
 
+  it("keeps wirelist wire runs when their connector is removed", () => {
+    const result = removeConnectorAndRelatedPaths({
+      connectorId: "c2",
+      connectors: [
+        { id: "c1", reference: "J1", pins: [{ id: "1", number: "1" }] },
+        { id: "c2", reference: "J2", pins: [{ id: "1", number: "1" }] }
+      ],
+      paths: [
+        { id: "p-cable", fromConnectorId: "c1", toConnectorId: "c2", pathType: "cable" },
+        {
+          id: "p-wire",
+          fromConnectorId: "c1",
+          toConnectorId: "c2",
+          pathType: "wire",
+          wirelistManaged: true,
+          fromLocation: "J1 - 1",
+          toLocation: "J2 - 1"
+        }
+      ],
+      positions: { c1: { x: 10, y: 20 }, c2: { x: 30, y: 40 } },
+      currentFromId: "c1",
+      currentToId: "c2",
+      currentSelectedConnectorId: "c2",
+      currentSelectedPathId: "p-cable"
+    });
+
+    expect(result.paths.map((path) => path.id)).toEqual(["p-wire"]);
+    expect(result.paths[0]).toMatchObject({ fromLocation: "J1 - 1", toLocation: "J2 - 1" });
+  });
+
   it("normalizes selected path id when path disappears", () => {
     const result = normalizeSelectedPathId(
       [
@@ -275,6 +305,61 @@ describe("cable-canvas-utils", () => {
       pathType: "cable",
       length: 5
     });
+  });
+
+  it("keeps wirelist runs and pin mappings when a connector is deleted on the canvas", () => {
+    const baseline = {
+      connectors: [
+        { id: "c1", reference: "J1", pins: [{ id: "1", number: "1" }] },
+        { id: "c2", reference: "J2", pins: [{ id: "1", number: "1" }] }
+      ],
+      junctions: [],
+      paths: [
+        {
+          id: "p-wire",
+          pathType: "wire",
+          wirelistManaged: true,
+          fromConnectorId: "c1",
+          toConnectorId: "c2",
+          fromLocation: "J1 - 1",
+          toLocation: "J2 - 1",
+          fromContact: "CNT-1"
+        }
+      ],
+      pinMappings: [
+        {
+          id: "m1",
+          pathId: "p-wire",
+          fromConnectorId: "c1",
+          fromPinId: "1",
+          toConnectorId: "c2",
+          toPinId: "1",
+          mappingType: "one_to_one" as const
+        }
+      ],
+      bundles: [],
+      annotations: []
+    } as RevisionDto["snapshot"];
+
+    // Canvas state after the user deleted connector c2.
+    const next = buildSnapshotFromCanvas(baseline, {
+      connectors: [baseline.connectors[0]],
+      junctions: [],
+      paths: [],
+      positions: { c1: { x: 10, y: 20 } }
+    });
+
+    expect(next.connectors.map((connector) => connector.id)).toEqual(["c1"]);
+    expect(next.paths).toHaveLength(1);
+    expect(next.paths[0]).toMatchObject({
+      id: "p-wire",
+      pathType: "wire",
+      fromLocation: "J1 - 1",
+      toLocation: "J2 - 1",
+      fromContact: "CNT-1"
+    });
+    expect(next.pinMappings).toHaveLength(1);
+    expect(next.pinMappings[0]).toMatchObject({ id: "m1", pathId: "p-wire" });
   });
 
   it("builds connector pair totals through junction paths", () => {

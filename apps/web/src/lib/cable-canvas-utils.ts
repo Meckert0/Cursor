@@ -1,6 +1,7 @@
 import type { LibraryComponentDto, RevisionDto } from "./api";
 import {
   isCableSectionPath,
+  isWireRunPath,
   mergeSnapshotPaths,
   normalizePathType,
   partitionSnapshotPaths,
@@ -87,10 +88,6 @@ export function buildSnapshotFromCanvas(
   const wireRunPaths = baselineWireRuns;
   const mergedPaths = mergeSnapshotPaths(cablePaths, wireRunPaths);
   const pathIds = new Set(mergedPaths.map((path) => path.id));
-  const connectorIds = new Set(input.connectors.map((connector) => connector.id));
-  const pinsByConnector = new Map(
-    input.connectors.map((connector) => [connector.id, new Set(connector.pins.map((pin) => pin.id))])
-  );
 
   return {
     ...baseline,
@@ -103,17 +100,10 @@ export function buildSnapshotFromCanvas(
       location: input.positions[junction.id] ?? junction.location
     })),
     paths: mergedPaths,
-    pinMappings: baseline.pinMappings.filter((mapping) => {
-      if (!pathIds.has(mapping.pathId)) {
-        return false;
-      }
-      if (!connectorIds.has(mapping.fromConnectorId) || !connectorIds.has(mapping.toConnectorId)) {
-        return false;
-      }
-      const fromPins = pinsByConnector.get(mapping.fromConnectorId);
-      const toPins = pinsByConnector.get(mapping.toConnectorId);
-      return Boolean(fromPins?.has(mapping.fromPinId) && toPins?.has(mapping.toPinId));
-    }),
+    // Wirelist-owned pin mappings survive canvas edits even when their
+    // connectors are deleted; the verifier flags them until the connector is
+    // recreated. Only mappings for paths that no longer exist are dropped.
+    pinMappings: baseline.pinMappings.filter((mapping) => pathIds.has(mapping.pathId)),
     bundles: baseline.bundles.map((bundle) => ({
       ...bundle,
       pathIds: bundle.pathIds.filter((pathId) => pathIds.has(pathId))
@@ -438,8 +428,12 @@ export function removeConnectorAndRelatedPaths(input: {
   nextSelectedPathId: string;
 } {
   const connectors = input.connectors.filter((connector) => connector.id !== input.connectorId);
+  // Wirelist-owned wire runs are never deleted by canvas edits; only cable
+  // sections attached to the removed connector go away.
   const paths = input.paths.filter(
-    (path) => path.fromConnectorId !== input.connectorId && path.toConnectorId !== input.connectorId
+    (path) =>
+      isWireRunPath(path) ||
+      (path.fromConnectorId !== input.connectorId && path.toConnectorId !== input.connectorId)
   );
   const positions = { ...input.positions };
   delete positions[input.connectorId];

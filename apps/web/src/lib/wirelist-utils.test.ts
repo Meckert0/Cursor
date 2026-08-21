@@ -151,6 +151,54 @@ describe("wirelist-utils", () => {
     });
   });
 
+  it("keeps the canvas cable and reassigns the row id when a wirelist row id collides", () => {
+    const baseline = {
+      ...snapshot,
+      paths: [
+        {
+          id: "p_canvas_1",
+          pathType: "cable",
+          fromConnectorId: "c1",
+          toConnectorId: "c2",
+          length: 8
+        }
+      ],
+      pinMappings: []
+    };
+    const saved = wirelistRowsToSnapshot(baseline, [
+      blankRow({ id: "p_canvas_1", fromLocation: "J1-3", toLocation: "J2-A1", length: "12" })
+    ]);
+    expect(saved.paths.find((path) => path.id === "p_canvas_1")).toMatchObject({
+      pathType: "cable",
+      length: 8
+    });
+    const wireRun = saved.paths.find((path) => path.pathType === "wire");
+    expect(wireRun?.id).toBe("p_wire_1");
+    expect(wireRun).toMatchObject({ length: 12, wirelistManaged: true });
+    expect(saved.pinMappings).toEqual([
+      expect.objectContaining({ pathId: "p_wire_1", fromPinId: "3", toPinId: "A1" })
+    ]);
+  });
+
+  it("does not remove canvas cables when wirelist rows are deleted", () => {
+    const baseline = {
+      ...snapshot,
+      paths: [
+        {
+          id: "p-cable",
+          pathType: "cable",
+          fromConnectorId: "c1",
+          toConnectorId: "c2",
+          length: 8
+        },
+        snapshot.paths[0]
+      ]
+    };
+    const saved = wirelistRowsToSnapshot(baseline, []);
+    expect(saved.paths).toHaveLength(1);
+    expect(saved.paths[0]).toMatchObject({ id: "p-cable", pathType: "cable", length: 8 });
+  });
+
   it("preserves sleeving on snapshot round-trip without exporting it", () => {
     const rows = snapshotToWirelistRows({
       ...snapshot,
@@ -420,7 +468,8 @@ describe("pin mapping save/load round-trip", () => {
         wireName: "wire1",
         fromConnectorId: "c1",
         toConnectorId: "c2",
-        pathType: "wire"
+        pathType: "wire",
+        wirelistManaged: true
       }
     ],
     pinMappings: [] as Array<{
@@ -709,6 +758,13 @@ describe("verifyWirelistLocation", () => {
     expect(verifyWirelistLocation("j1 - 3", connectorPositions).state).toBe("valid");
   });
 
+  it("matches pin numbers case-insensitively", () => {
+    const lookup = buildConnectorPositionLookup([
+      { reference: "J3", pins: [{ number: "A1" }] }
+    ]);
+    expect(verifyWirelistLocation("J3 - a1", lookup).state).toBe("valid");
+  });
+
   it("marks a known connector with an out-of-range position as partial", () => {
     expect(verifyWirelistLocation("J1 - 9", connectorPositions)).toEqual({
       state: "partial",
@@ -807,12 +863,88 @@ describe("verifyWirelistContact", () => {
     });
   });
 
-  it("does not shade when the catalog has no chart row", () => {
+  it("marks a contact with no chart row as incompatible with the position", () => {
     expect(
       verifyWirelistContact("CNT-1", "J1 - 1", connectors, contactCatalog, [
         { modulePartId: "mod-other", contactPartId: "cnt-1", status: "allowed" }
       ])
-    ).toEqual({ state: "empty", message: null });
+    ).toEqual({ state: "invalid", message: "Contact is not compatible with this position" });
+  });
+
+  describe("with CONTACT_ALLOWED relationships", () => {
+    const contactRelationships = [
+      {
+        parentPartId: "mod-1",
+        compatibleParts: ["CNT-1"],
+        relationshipType: "CONTACT_ALLOWED",
+        parentPositions: ["1", "2", "3", "4"],
+        status: "allowed" as const
+      },
+      {
+        parentPartId: "mod-1",
+        compatibleParts: ["CNT-3"],
+        relationshipType: "CONTACT_ALLOWED",
+        parentPositions: [],
+        status: "allowed" as const
+      }
+    ];
+
+    it("marks an allowed contact on a listed pin as valid", () => {
+      expect(
+        verifyWirelistContact("CNT-1", "J1 - 3", connectors, contactCatalog, [], contactRelationships)
+      ).toEqual({ state: "valid", message: null });
+    });
+
+    it("marks an allowed contact on an unlisted pin as incompatible with the position", () => {
+      expect(
+        verifyWirelistContact("CNT-1", "J1 - 5", connectors, contactCatalog, [], contactRelationships)
+      ).toEqual({ state: "invalid", message: "Contact is not compatible with this position" });
+    });
+
+    it("allows any pin when parentPositions is empty", () => {
+      expect(
+        verifyWirelistContact("CNT-3", "J1 - 9", connectors, contactCatalog, [], contactRelationships).state
+      ).toBe("valid");
+    });
+
+    it("marks a contact the module has no relationship row for as incompatible with the position", () => {
+      expect(
+        verifyWirelistContact("CNT-2", "J1 - 1", connectors, contactCatalog, [], contactRelationships)
+      ).toEqual({ state: "invalid", message: "Contact is not compatible with this position" });
+    });
+
+    it("prefers relationships over the module-contact fallback", () => {
+      expect(
+        verifyWirelistContact(
+          "CNT-1",
+          "J1 - 5",
+          connectors,
+          contactCatalog,
+          [{ modulePartId: "mod-1", contactPartId: "cnt-1", status: "allowed" }],
+          contactRelationships
+        ).state
+      ).toBe("invalid");
+    });
+
+    it("marks a review relationship as partial", () => {
+      expect(
+        verifyWirelistContact("CNT-1", "J1 - 1", connectors, contactCatalog, [], [
+          {
+            parentPartId: "mod-1",
+            compatibleParts: ["CNT-1"],
+            relationshipType: "CONTACT_ALLOWED",
+            parentPositions: [],
+            status: "review" as const
+          }
+        ])
+      ).toEqual({ state: "partial", message: "Contact compatibility requires review" });
+    });
+
+    it("still reports missing modules as partial when the connector is deleted", () => {
+      expect(
+        verifyWirelistContact("CNT-1", "J1 - 1", [], contactCatalog, [], contactRelationships)
+      ).toEqual({ state: "partial", message: "Connector module is not defined" });
+    });
   });
 });
 

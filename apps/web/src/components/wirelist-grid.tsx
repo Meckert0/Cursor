@@ -13,6 +13,7 @@ import {
 } from "react";
 import type { LibraryComponentDto, RevisionDto } from "@/lib/api";
 import { readCanvasDraftSnapshot } from "@/lib/cable-canvas-utils";
+import { buildColumnsCounted } from "@/lib/wirelist-columns-counted";
 import {
   buildConnectorPositionLookup,
   buildWirelistNodeIds,
@@ -27,6 +28,7 @@ import {
   type WirelistLocationState,
   type WirelistRow
 } from "@/lib/wirelist-utils";
+import { WirelistColumnsCountedPanel } from "./wirelist-columns-counted-panel";
 import styles from "./wirelist-grid.module.css";
 
 const CELL_KEYS: Array<keyof WirelistRow> = [
@@ -250,7 +252,10 @@ export function WirelistGrid({
   }>;
   contactRelationships?: WirelistContactRelationshipRow[];
   importWirelistAction: (formData: FormData) => Promise<ImportResult>;
-  exportWirelistAction: (rows: WirelistRow[]) => Promise<ExportResult>;
+  exportWirelistAction: (
+    rows: WirelistRow[],
+    connectors: RevisionDto["snapshot"]["connectors"]
+  ) => Promise<ExportResult>;
   saveWirelistAction: (input: {
     snapshot: RevisionDto["snapshot"];
     expectedSnapshotHash: string;
@@ -269,6 +274,7 @@ export function WirelistGrid({
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => ({ ...DEFAULT_COLUMN_WIDTHS }));
   const [zoomLevel, setZoomLevel] = useState(1);
   const [verifierEnabled, setVerifierEnabled] = useState(false);
+  const [columnsCountedOpen, setColumnsCountedOpen] = useState(false);
   const [draftConnectors, setDraftConnectors] = useState<RevisionDto["snapshot"]["connectors"] | null>(null);
   const [resizingColumnId, setResizingColumnId] = useState<string | null>(null);
   const retryTimeoutRef = useRef<number | null>(null);
@@ -304,6 +310,10 @@ export function WirelistGrid({
     [connectorSource, connectorPositions]
   );
   const nodeIds = useMemo(() => buildWirelistNodeIds(effectiveSnapshot), [effectiveSnapshot]);
+  const columnsCounted = useMemo(
+    () => (columnsCountedOpen ? buildColumnsCounted(rows, connectorSource) : null),
+    [columnsCountedOpen, rows, connectorSource]
+  );
   const saveValidationErrors = useMemo(
     () =>
       validateWirelistRows(
@@ -659,7 +669,7 @@ export function WirelistGrid({
       return;
     }
     startExportTransition(async () => {
-      const result = await exportWirelistAction(exportRows);
+      const result = await exportWirelistAction(exportRows, connectorSource);
       if (!result.ok || !result.fileName || !result.fileBase64) {
         setSaveMessage(result.error ?? "Export failed.");
         return;
@@ -711,6 +721,14 @@ export function WirelistGrid({
             </button>
             <button type="button" onClick={handleExportClick} disabled={isExportPending}>
               {isExportPending ? "Downloading..." : "Download file"}
+            </button>
+            <button
+              type="button"
+              aria-pressed={columnsCountedOpen}
+              data-testid="wirelist-columns-counted-toggle"
+              onClick={() => setColumnsCountedOpen((previous) => !previous)}
+            >
+              {columnsCountedOpen ? "Hide columns counted" : "Columns counted"}
             </button>
           </div>
           <div className={styles.toolbarDivider} aria-hidden="true" />
@@ -1049,6 +1067,7 @@ export function WirelistGrid({
           ))}
         </datalist>
       </div>
+      {columnsCounted ? <WirelistColumnsCountedPanel counted={columnsCounted} /> : null}
     </section>
   );
 }

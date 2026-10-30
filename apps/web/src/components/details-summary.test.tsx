@@ -3,13 +3,18 @@ import { describe, expect, it } from "vitest";
 import type { LibraryComponentDto, RevisionDto } from "@/lib/api";
 import { DetailsSummary } from "./details-summary";
 
-function module(partNumber: string, id: string): LibraryComponentDto {
+function module(
+  partNumber: string,
+  id: string,
+  description = "Test module",
+  attributes: Record<string, unknown> = { pinCount: 16, contactFamily1: "TP", gender: "ITA" }
+): LibraryComponentDto {
   return {
     id,
     category: "module",
     family: "iCon",
     partNumber,
-    description: "Test module",
+    description,
     isActive: true,
     isReviewed: true,
     stockStatus: "in_stock",
@@ -20,7 +25,7 @@ function module(partNumber: string, id: string): LibraryComponentDto {
     updatedAt: "2026-01-01T00:00:00.000Z",
     side: "ITA",
     partType: "MODULE",
-    attributes: { pinCount: 16, contactFamily1: "TP", gender: "ITA" }
+    attributes
   };
 }
 
@@ -75,15 +80,27 @@ describe("DetailsSummary", () => {
         revisionId="rev-1"
         snapshot={snapshot}
         connectorCatalog={[
-          module("510103", "mod-510"),
-          module("MOD-A", "mod-a")
+          module("510103", "mod-510", "Signal module"),
+          module("MOD-A", "mod-a", "Power and signal", {
+            pinCount: 16,
+            contactFamily1: "TP",
+            pinCount2: 19,
+            contactFamily2: "MC",
+            gender: "ITA"
+          })
         ]}
       />
     );
 
-    expect(screen.getByText("J1 — 510103")).toBeInTheDocument();
+    expect(screen.getByText("J1 — 510103 — Signal module")).toBeInTheDocument();
     expect(screen.getByText("J2")).toBeInTheDocument();
-    expect(screen.getByText("J2A — MOD-A: 16 TP ITA")).toBeInTheDocument();
+    const slotModule = screen.getByText("J2A — MOD-A — Power and signal");
+    const slotContacts = slotModule.closest("li")?.querySelectorAll(":scope > ul > li");
+    expect(slotContacts).toHaveLength(2);
+    expect(slotContacts?.[0]).toHaveTextContent("16 TP ITA");
+    expect(slotContacts?.[1]).toHaveTextContent("19 MC ITA");
+    expect(screen.getAllByText("16 TP ITA")).toHaveLength(2);
+    expect(screen.queryByText("J2A — MOD-A: 16 TP ITA")).not.toBeInTheDocument();
     expect(
       screen.getByText("cable1: c_canvas_1 -> c_canvas_2, 24 in, expandable sleeving, bundle dia —")
     ).toBeInTheDocument();

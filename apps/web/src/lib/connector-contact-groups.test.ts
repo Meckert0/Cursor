@@ -13,7 +13,7 @@ function module(attributes: Record<string, unknown>, extra?: Partial<LibraryComp
     category: "module",
     family: "iCon",
     partNumber: extra?.partNumber ?? "MOD-1",
-    description: "Test module",
+    description: extra?.description ?? "Test module",
     isActive: true,
     isReviewed: true,
     stockStatus: "in_stock",
@@ -104,14 +104,22 @@ describe("connector contact groups", () => {
       }
     ];
     const catalog = [
-      module({ pinCount: 16, contactFamily1: "TP", gender: "ITA" }, { id: "mod-510", partNumber: "510103", side: "ITA" })
+      module(
+        { pinCount: 16, contactFamily1: "TP", pinCount2: 19, contactFamily2: "MC", gender: "ITA" },
+        { id: "mod-510", partNumber: "510103", side: "ITA", description: "Signal and power" }
+      )
     ];
 
     expect(buildConnectorDetailsRows(connectors, catalog)).toEqual([
       {
         id: "c_canvas_1",
-        heading: "J1 — 510103",
-        lines: ["16 TP ITA"]
+        modules: [
+          {
+            id: "c_canvas_1",
+            label: "J1 — 510103 — Signal and power",
+            contacts: ["16 TP ITA", "19 MC ITA"]
+          }
+        ]
       }
     ]);
   });
@@ -126,11 +134,16 @@ describe("connector contact groups", () => {
       }
     ];
 
-    expect(buildConnectorDetailsRows(connectors, [module({ pinCount: 2, contactFamily1: "MC" })])).toEqual([
+    expect(buildConnectorDetailsRows(connectors, [module({ pinCount: 2, contactFamily1: "MC" }, { description: "Mini coax" })])).toEqual([
       {
         id: "c1",
-        heading: "J1 — MOD-1",
-        lines: ["2 MC"]
+        modules: [
+          {
+            id: "c1",
+            label: "J1 — MOD-1 — Mini coax",
+            contacts: ["2 MC"]
+          }
+        ]
       }
     ]);
   });
@@ -167,16 +180,30 @@ describe("connector contact groups", () => {
     const catalog = [
       module(
         { pinCount: 16, contactFamily1: "TP", pinCount2: 19, contactFamily2: "MC", gender: "ITA" },
-        { id: "mod-a", partNumber: "MOD-A", side: "ITA" }
+        { id: "mod-a", partNumber: "MOD-A", side: "ITA", description: "Power and signal" }
       ),
-      module({ pinCount: 2, contactFamily1: "MC" }, { id: "mod-b", partNumber: "MOD-B", side: "ITA" })
+      module(
+        { pinCount: 2, contactFamily1: "MC" },
+        { id: "mod-b", partNumber: "MOD-B", side: "ITA", description: "Coax pair" }
+      )
     ];
 
     expect(buildConnectorDetailsRows(connectors, catalog)).toEqual([
       {
         id: "c1",
-        heading: "J1",
-        lines: ["J1A — MOD-A: 16 TP ITA", "J1A — MOD-A: 19 MC ITA", "J1B — MOD-B: 2 MC ITA"]
+        housing: "J1",
+        modules: [
+          {
+            id: "A",
+            label: "J1A — MOD-A — Power and signal",
+            contacts: ["16 TP ITA", "19 MC ITA"]
+          },
+          {
+            id: "B",
+            label: "J1B — MOD-B — Coax pair",
+            contacts: ["2 MC ITA"]
+          }
+        ]
       }
     ]);
   });

@@ -10,11 +10,26 @@ import {
   getSleevingLabel,
   readCanvasDraftSnapshot
 } from "@/lib/cable-canvas-utils";
-import { buildConnectorDetailsRows } from "@/lib/connector-contact-groups";
+import { buildConnectorDetailsRows, type ConnectorDetailsModule } from "@/lib/connector-contact-groups";
 import type { LibraryComponentDto, RevisionDto } from "@/lib/api";
 import styles from "./details-summary.module.css";
 
 type JunctionNode = NonNullable<RevisionDto["snapshot"]["junctions"]>[number];
+
+function ModuleLine({ module }: { module: ConnectorDetailsModule }) {
+  return (
+    <>
+      <span>{module.label}</span>
+      {module.contacts.length > 0 ? (
+        <ul className={styles.contactGroups}>
+          {module.contacts.map((contact, index) => (
+            <li key={`${module.id}:${index}`}>{contact}</li>
+          ))}
+        </ul>
+      ) : null}
+    </>
+  );
+}
 
 export function DetailsSummary({
   revisionId,
@@ -86,12 +101,18 @@ export function DetailsSummary({
           {connectorDetails.length === 0 ? <li>No connectors yet.</li> : null}
           {connectorDetails.map((connector) => (
             <li key={connector.id} className={styles.connectorItem}>
-              <span>{connector.heading}</span>
-              <ul className={styles.contactGroups}>
-                {connector.lines.map((line, index) => (
-                  <li key={`${connector.id}:${index}`}>{line}</li>
-                ))}
-              </ul>
+              {connector.housing ? <span>{connector.housing}</span> : null}
+              {connector.housing || connector.modules.length !== 1 ? (
+                <ul className={styles.modules}>
+                  {connector.modules.map((module) => (
+                    <li key={module.id}>
+                      <ModuleLine module={module} />
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <ModuleLine module={connector.modules[0]} />
+              )}
             </li>
           ))}
         </ul>

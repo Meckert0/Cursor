@@ -11,10 +11,17 @@ export type ConnectorContactGroup = {
   gender: string;
 };
 
+export type ConnectorDetailsModule = {
+  id: string;
+  label: string;
+  contacts: string[];
+};
+
 export type ConnectorDetailsRow = {
   id: string;
-  heading: string;
-  lines: string[];
+  /** Frame housing name. Absent when the connector is a single module. */
+  housing?: string;
+  modules: ConnectorDetailsModule[];
 };
 
 function asPositiveInt(value: unknown): number | undefined {
@@ -158,23 +165,27 @@ function connectorDisplayName(reference: string, id: string): string {
   return name || id;
 }
 
-function withModulePartNumber(name: string, partNumber: string | undefined): string {
-  return partNumber ? `${name} — ${partNumber}` : name;
+function moduleSummaryLabel(name: string, partNumber: string | undefined, description: string | undefined): string {
+  return [name, partNumber, description?.trim()].filter((part) => part && part.length > 0).join(" — ");
 }
 
-function linesForModule(
-  component: LibraryComponentDto | undefined,
-  pins: Array<{ id: string; number: string }>,
-  prefix?: string
-): string[] {
-  const groups = readModuleContactGroups(component, pins.length);
-  if (groups.length === 0) {
-    return prefix ? [`${prefix}: none`] : ["none"];
-  }
-  return groups.map((group) => {
-    const label = formatContactGroupLabel(group);
-    return prefix ? `${prefix}: ${label}` : label;
-  });
+function moduleLine(input: {
+  id: string;
+  name: string;
+  partNumber?: string;
+  component: LibraryComponentDto | undefined;
+  pins: Array<{ id: string; number: string }>;
+}): ConnectorDetailsModule {
+  const groups = readModuleContactGroups(input.component, input.pins.length);
+  return {
+    id: input.id,
+    label: moduleSummaryLabel(
+      input.name,
+      resolvedModulePartNumber(input.partNumber, input.component),
+      input.component?.description
+    ),
+    contacts: groups.length === 0 ? ["none"] : groups.map((group) => formatContactGroupLabel(group))
+  };
 }
 
 export function buildConnectorDetailsRows(
@@ -185,21 +196,23 @@ export function buildConnectorDetailsRows(
     const name = connectorDisplayName(connector.reference, connector.id);
     if (isFrameHousingConnector(connector)) {
       const populatedSlots = (connector.slots ?? []).filter((slot: ConnectorSlot) => isSlotPopulated(slot));
-      const lines = populatedSlots.flatMap((slot) => {
+      const modules = populatedSlots.map((slot) => {
         const component = findCatalogComponent(catalog, {
           libraryComponentId: slot.libraryComponentId,
           partNumber: slot.partNumber
         });
-        return linesForModule(
+        return moduleLine({
+          id: slot.slotId,
+          name: connectorDisplayName(slot.reference, slot.slotId),
+          partNumber: slot.partNumber,
           component,
-          slot.pins,
-          withModulePartNumber(slot.reference, resolvedModulePartNumber(slot.partNumber, component))
-        );
+          pins: slot.pins
+        });
       });
       return {
         id: connector.id,
-        heading: name,
-        lines: lines.length > 0 ? lines : ["none"]
+        housing: name,
+        modules: modules.length > 0 ? modules : [{ id: `${connector.id}:none`, label: "none", contacts: [] }]
       };
     }
 
@@ -209,8 +222,15 @@ export function buildConnectorDetailsRows(
     });
     return {
       id: connector.id,
-      heading: withModulePartNumber(name, resolvedModulePartNumber(connector.partNumber, component)),
-      lines: linesForModule(component, connector.pins)
+      modules: [
+        moduleLine({
+          id: connector.id,
+          name,
+          partNumber: connector.partNumber,
+          component,
+          pins: connector.pins
+        })
+      ]
     };
   });
 }

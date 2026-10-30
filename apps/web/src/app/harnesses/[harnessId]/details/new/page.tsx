@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { DetailsPurchasingBom } from "@/components/details-purchasing-bom";
 import { DetailsSummary } from "@/components/details-summary";
 import { getHarness, getRevision, listLibraryComponents } from "@/lib/api";
 import { requireSignedInUser } from "@/lib/auth";
@@ -38,6 +39,7 @@ export default async function HarnessDetailsPage({
           snapshot={detail.snapshot}
           connectorCatalog={connectorCatalog}
         />
+        <DetailsPurchasingBom revisionId={detail.id} snapshot={detail.snapshot} />
       </main>
     </div>
   );

@@ -89,6 +89,52 @@ describe("connector contact groups", () => {
     expect(formatContactGroupLabel({ pinCount: 9, contactType: "", gender: "" })).toBe("9");
   });
 
+  it("shows the module part number beside the connector name", () => {
+    const connectors: RevisionDto["snapshot"]["connectors"] = [
+      {
+        id: "c_canvas_1",
+        reference: "J1",
+        partNumber: "510103",
+        backshellPartNumber: "410120",
+        strainReliefPartNumber: "SR-1",
+        pins: [
+          { id: "1", number: "1" },
+          { id: "2", number: "2" }
+        ]
+      }
+    ];
+    const catalog = [
+      module({ pinCount: 16, contactFamily1: "TP", gender: "ITA" }, { id: "mod-510", partNumber: "510103", side: "ITA" })
+    ];
+
+    expect(buildConnectorDetailsRows(connectors, catalog)).toEqual([
+      {
+        id: "c_canvas_1",
+        heading: "J1 — 510103",
+        lines: ["16 TP ITA"]
+      }
+    ]);
+  });
+
+  it("uses the catalog module part number when the snapshot omits it", () => {
+    const connectors: RevisionDto["snapshot"]["connectors"] = [
+      {
+        id: "c1",
+        reference: "J1",
+        libraryComponentId: "mod-1",
+        pins: [{ id: "1", number: "1" }]
+      }
+    ];
+
+    expect(buildConnectorDetailsRows(connectors, [module({ pinCount: 2, contactFamily1: "MC" })])).toEqual([
+      {
+        id: "c1",
+        heading: "J1 — MOD-1",
+        lines: ["2 MC"]
+      }
+    ]);
+  });
+
   it("groups frame slot modules under the same connector", () => {
     const connectors: RevisionDto["snapshot"]["connectors"] = [
       {
@@ -129,8 +175,8 @@ describe("connector contact groups", () => {
     expect(buildConnectorDetailsRows(connectors, catalog)).toEqual([
       {
         id: "c1",
-        heading: "J1 (c1)",
-        lines: ["J1A: 16 TP ITA", "J1A: 19 MC ITA", "J1B: 2 MC ITA"]
+        heading: "J1",
+        lines: ["J1A — MOD-A: 16 TP ITA", "J1A — MOD-A: 19 MC ITA", "J1B — MOD-B: 2 MC ITA"]
       }
     ]);
   });

@@ -141,6 +141,27 @@ export function formatContactGroupLabel(group: ConnectorContactGroup): string {
   return [String(group.pinCount), group.contactType, group.gender].filter((part) => part.length > 0).join(" ");
 }
 
+function resolvedModulePartNumber(
+  partNumber: string | undefined,
+  component: LibraryComponentDto | undefined
+): string | undefined {
+  const snapshotPart = partNumber?.trim();
+  if (snapshotPart) {
+    return snapshotPart;
+  }
+  const catalogPart = component?.partNumber?.trim();
+  return catalogPart || undefined;
+}
+
+function connectorDisplayName(reference: string, id: string): string {
+  const name = reference.trim();
+  return name || id;
+}
+
+function withModulePartNumber(name: string, partNumber: string | undefined): string {
+  return partNumber ? `${name} — ${partNumber}` : name;
+}
+
 function linesForModule(
   component: LibraryComponentDto | undefined,
   pins: Array<{ id: string; number: string }>,
@@ -161,36 +182,35 @@ export function buildConnectorDetailsRows(
   catalog: LibraryComponentDto[]
 ): ConnectorDetailsRow[] {
   return connectors.map((connector) => {
-    const heading = `${connector.reference} (${connector.id})`;
+    const name = connectorDisplayName(connector.reference, connector.id);
     if (isFrameHousingConnector(connector)) {
       const populatedSlots = (connector.slots ?? []).filter((slot: ConnectorSlot) => isSlotPopulated(slot));
-      const lines = populatedSlots.flatMap((slot) =>
-        linesForModule(
-          findCatalogComponent(catalog, {
-            libraryComponentId: slot.libraryComponentId,
-            partNumber: slot.partNumber
-          }),
+      const lines = populatedSlots.flatMap((slot) => {
+        const component = findCatalogComponent(catalog, {
+          libraryComponentId: slot.libraryComponentId,
+          partNumber: slot.partNumber
+        });
+        return linesForModule(
+          component,
           slot.pins,
-          slot.reference
-        )
-      );
+          withModulePartNumber(slot.reference, resolvedModulePartNumber(slot.partNumber, component))
+        );
+      });
       return {
         id: connector.id,
-        heading,
+        heading: name,
         lines: lines.length > 0 ? lines : ["none"]
       };
     }
 
+    const component = findCatalogComponent(catalog, {
+      libraryComponentId: connector.libraryComponentId,
+      partNumber: connector.partNumber
+    });
     return {
       id: connector.id,
-      heading,
-      lines: linesForModule(
-        findCatalogComponent(catalog, {
-          libraryComponentId: connector.libraryComponentId,
-          partNumber: connector.partNumber
-        }),
-        connector.pins
-      )
+      heading: withModulePartNumber(name, resolvedModulePartNumber(connector.partNumber, component)),
+      lines: linesForModule(component, connector.pins)
     };
   });
 }

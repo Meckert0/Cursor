@@ -455,6 +455,41 @@ export function removeConnectorAndRelatedPaths(input: {
   };
 }
 
+/**
+ * Diameter, in inches, of the wires that share one cable section.
+ * Returns null when the section has no assigned wires, any wire is missing a
+ * positive overall diameter, or the packing rule is not defined yet.
+ * Do not invent a packing factor here.
+ */
+export function bundleDiameterInches(wireDiametersIn: Array<number | null | undefined>): number | null {
+  if (wireDiametersIn.length === 0) {
+    return null;
+  }
+  const complete = wireDiametersIn.every(
+    (value) => typeof value === "number" && Number.isFinite(value) && value > 0
+  );
+  if (!complete) {
+    return null;
+  }
+  return null;
+}
+
+export function formatBundleDiameterLabel(inches: number | null): string {
+  return inches === null ? "bundle dia —" : `bundle dia ${inches} in`;
+}
+
+export function formatEndpointTotalLabel(input: {
+  fromReference?: string;
+  toReference?: string;
+  fromId: string;
+  toId: string;
+  length: number;
+}): string {
+  const fromLabel = input.fromReference?.trim() || input.fromId;
+  const toLabel = input.toReference?.trim() || input.toId;
+  return `${fromLabel} -> ${toLabel}: ${input.length} in`;
+}
+
 export function buildUniqueWireSections(paths: Path[]): UniqueWireSection[] {
   return paths
     .filter((path) => isCableSectionPath(path))

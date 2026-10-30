@@ -148,7 +148,7 @@ test("full-cable journey: author, validate, BOM, export, submit", async ({ page,
 
   await page.getByRole("link", { name: "Open Revision Workspace" }).click();
   await expect(page).toHaveURL(/\/details\/[0-9a-f-]+/, { timeout: 20_000 });
-  await expect(page.getByRole("heading", { name: "Details" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Revision Workspace" })).toBeVisible();
   await expect(page.getByTestId("details-bom-section")).toBeVisible({ timeout: 15_000 });
 
   await page.getByTestId("run-validation-submit").click();

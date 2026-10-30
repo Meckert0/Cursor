@@ -52,7 +52,7 @@ test("harness root route redirects to canvas and keeps details access", async ({
   await expect(page.getByRole("heading", { name: "Harness Canvas" })).toBeVisible();
 
   await page.getByRole("link", { name: "Open Revision Workspace" }).click();
-  await expect(page.getByRole("heading", { name: "Details" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Revision Workspace" })).toBeVisible();
 });
 
 test("legacy revision routes redirect to details routes", async ({ page }) => {
@@ -82,5 +82,5 @@ test("legacy revision routes redirect to details routes", async ({ page }) => {
   const detailId = detailIdMatch?.[1] ?? "";
   await page.goto(`/revisions/${detailId}`);
   await expect(page).toHaveURL(new RegExp(`/details/${detailId}$`));
-  await expectHeadingWithRetry(page, "Details");
+  await expectHeadingWithRetry(page, "Revision Workspace");
 });

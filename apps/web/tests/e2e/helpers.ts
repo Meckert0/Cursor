@@ -81,7 +81,7 @@ export async function createHarnessOnProjectPage(page: Page, harnessName: string
 export async function openRevisionWorkspace(page: Page) {
   await page.getByRole("link", { name: "Open Revision Workspace" }).click();
   await expect(page).toHaveURL(/\/details\/[0-9a-f-]+/, { timeout: 20_000 });
-  await expectHeadingWithRetry(page, "Details");
+  await expectHeadingWithRetry(page, "Revision Workspace");
   await expect(page.getByTestId("details-bom-section")).toBeVisible({ timeout: 15_000 });
 }
 

@@ -73,7 +73,7 @@ test("canvas-first flow reaches details workspace", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Harness Canvas" })).toBeVisible();
   await page.getByRole("link", { name: "Open Revision Workspace" }).click();
   await expect(page).toHaveURL(/\/details\/[0-9a-f-]+/, { timeout: 20_000 });
-  await expect(page.getByRole("heading", { name: "Details" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Revision Workspace" })).toBeVisible();
 });
 
 test("define connector can place an ITA frame with per-slot modules", async ({ page, request }) => {

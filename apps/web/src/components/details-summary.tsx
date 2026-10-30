@@ -4,6 +4,9 @@ import { useMemo } from "react";
 import {
   buildConnectorPairTotals,
   buildUniqueWireSections,
+  bundleDiameterInches,
+  formatBundleDiameterLabel,
+  formatEndpointTotalLabel,
   getSleevingLabel,
   readCanvasDraftSnapshot
 } from "@/lib/cable-canvas-utils";
@@ -58,6 +61,9 @@ export function DetailsSummary({
   }, [draftSnapshot?.paths, hasLiveOverrides, pathsOverride, snapshot.paths]);
 
   const uniqueWireSections = useMemo(() => buildUniqueWireSections(paths), [paths]);
+  // Wirelist runs are not assigned to cable sections yet, and the packing
+  // rule is not defined. Pass no diameters so each section stays blank.
+  const bundleDiameterLabel = formatBundleDiameterLabel(bundleDiameterInches([]));
   const connectorDetails = useMemo(
     () => buildConnectorDetailsRows(connectors, connectorCatalog),
     [connectorCatalog, connectors]
@@ -98,7 +104,7 @@ export function DetailsSummary({
             <li key={section.pathId}>
               {section.wireName}: {section.fromNodeId}
               {" -> "}
-              {section.toNodeId}, {section.lengthFt} in, {getSleevingLabel(section.sleeving)}
+              {section.toNodeId}, {section.lengthFt} in, {getSleevingLabel(section.sleeving)}, {bundleDiameterLabel}
             </li>
           ))}
         </ul>
@@ -110,14 +116,15 @@ export function DetailsSummary({
           {connectorPairTotals.map((pair) => {
             const fromReference = connectors.find((connector) => connector.id === pair.fromConnectorId)?.reference;
             const toReference = connectors.find((connector) => connector.id === pair.toConnectorId)?.reference;
-            const fromLabel = fromReference ? `${fromReference} (${pair.fromConnectorId})` : pair.fromConnectorId;
-            const toLabel = toReference ? `${toReference} (${pair.toConnectorId})` : pair.toConnectorId;
             return (
               <li key={`${pair.fromConnectorId}:${pair.toConnectorId}`}>
-                {fromLabel}
-                {" -> "}
-                {toLabel}: {pair.totalLengthFt} in ({pair.hopCount} section
-                {pair.hopCount === 1 ? "" : "s"})
+                {formatEndpointTotalLabel({
+                  fromReference,
+                  toReference,
+                  fromId: pair.fromConnectorId,
+                  toId: pair.toConnectorId,
+                  length: pair.totalLengthFt
+                })}
               </li>
             );
           })}

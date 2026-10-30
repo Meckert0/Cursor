@@ -164,9 +164,9 @@ export default async function DetailsPage({
       <AutoRefresh enabled={hasPendingExports} intervalMs={3000} />
       <main className={styles.main}>
         <div className={styles.header}>
-          <h1>Details</h1>
+          <h1>Revision Workspace</h1>
           <p>
-            Details {revision.revisionNumber} ({revision.id}) for <strong>{design.name}</strong>
+            Revision {revision.revisionNumber} ({revision.id}) for <strong>{design.name}</strong>
           </p>
           <div className={styles.actions}>
             <Link href={`/harnesses/${design.id}/canvas`}>Back to canvas</Link>

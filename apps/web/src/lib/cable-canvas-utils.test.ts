@@ -8,7 +8,10 @@ import {
   buildDefaultPositions,
   buildSnapshotFromCanvas,
   buildUniqueWireSections,
+  bundleDiameterInches,
+  formatBundleDiameterLabel,
   formatConnectorPinsLabel,
+  formatEndpointTotalLabel,
   normalizePathEndpointSelection,
   normalizeSelectedPathId,
   normalizeUnassignedConnectors,
@@ -519,6 +522,33 @@ describe("cable-canvas-utils", () => {
     expect(filtered.map((row) => row.component.id)).toEqual(["bs-a", "bs-a2"]);
     expect(filtered[0]?.label).toBe("BS-A — Allowed");
     expect(filtered.every((row) => !row.label.includes("("))).toBe(true);
+  });
+
+  it("leaves bundle diameter blank until wires and a packing rule exist", () => {
+    expect(bundleDiameterInches([])).toBeNull();
+    expect(bundleDiameterInches([0.05, undefined])).toBeNull();
+    expect(bundleDiameterInches([0.05, 0.08])).toBeNull();
+    expect(formatBundleDiameterLabel(null)).toBe("bundle dia —");
+    expect(formatBundleDiameterLabel(0.42)).toBe("bundle dia 0.42 in");
+  });
+
+  it("formats endpoint totals with connector names and length only", () => {
+    expect(
+      formatEndpointTotalLabel({
+        fromReference: "J1",
+        toReference: "J2",
+        fromId: "c_canvas_1",
+        toId: "c_canvas_2",
+        length: 24
+      })
+    ).toBe("J1 -> J2: 24 in");
+    expect(
+      formatEndpointTotalLabel({
+        fromId: "c_canvas_1",
+        toId: "c_canvas_2",
+        length: 3.5
+      })
+    ).toBe("c_canvas_1 -> c_canvas_2: 3.5 in");
   });
 
   it("returns no accessory options when module is undefined", () => {

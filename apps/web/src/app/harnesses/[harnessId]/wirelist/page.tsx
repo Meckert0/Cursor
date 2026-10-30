@@ -123,10 +123,7 @@ export default async function HarnessWirelistPage({
     }
   }
 
-  async function exportWirelistAction(
-    rows: WirelistRow[],
-    connectors: RevisionDto["snapshot"]["connectors"] = revision.snapshot.connectors
-  ) {
+  async function exportWirelistAction(rows: WirelistRow[]) {
     "use server";
     const exportRows = filterPopulatedWirelistRows(rows);
     if (exportRows.length === 0) {
@@ -136,7 +133,7 @@ export default async function HarnessWirelistPage({
       };
     }
     try {
-      const buffer = await buildWirelistXlsxBuffer(exportRows, { connectors });
+      const buffer = await buildWirelistXlsxBuffer(exportRows);
       return {
         ok: true,
         fileName: `${sanitizeFileName(harness.name)}-wirelist.xlsx`,

@@ -2,6 +2,9 @@ import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { AutoRefresh } from "@/components/auto-refresh";
+import { WirelistColumnsCountedPanel } from "@/components/wirelist-columns-counted-panel";
+import { buildColumnsCounted, buildConnectorCounts, buildTotalBom } from "@/lib/wirelist-columns-counted";
+import { snapshotToWirelistRows } from "@/lib/wirelist-utils";
 import {
   createRevisionExport,
   getDesign,
@@ -133,6 +136,9 @@ export default async function DetailsPage({
   const revision = await getRevision(detailId);
   const design = await getDesign(revision.designId);
   const bom = await getRevisionBom(detailId);
+  const columnsCounted = buildColumnsCounted(snapshotToWirelistRows(revision.snapshot));
+  const connectorItems = buildConnectorCounts(revision.snapshot.connectors);
+  const totalBom = buildTotalBom(columnsCounted, connectorItems);
   const submissions = await listHarnessSubmissions(design.id);
 
   const rawExports = await listRevisionExports(detailId);
@@ -225,6 +231,41 @@ export default async function DetailsPage({
                       <td>{line.unit}</td>
                       <td>{line.resolution}</td>
                       <td>{line.designRefs.join(", ")}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+        </section>
+
+        <WirelistColumnsCountedPanel
+          counted={columnsCounted}
+          description={`${columnsCounted.rowCount} wirelist row(s) counted, ${columnsCounted.preterminatedEnds} W/CBL end(s). These quantities come from the wirelist. Connector parts are in the next section, and both are combined in Total BOM at the bottom of this page.`}
+        />
+
+        <section className={styles.card} data-testid="details-connectors-section">
+          <h2>Connectors</h2>
+          <p>Connector, module, frame, backshell, and strain relief part numbers from the canvas. One each per use.</p>
+          {connectorItems.length === 0 ? <p>No connector part numbers yet.</p> : null}
+          {connectorItems.length > 0 ? (
+            <div className={styles.bomTableWrap}>
+              <table className={styles.bomTable}>
+                <thead>
+                  <tr>
+                    <th>Part Number</th>
+                    <th>Qty</th>
+                    <th>Unit</th>
+                    <th>References</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {connectorItems.map((item) => (
+                    <tr key={item.value}>
+                      <td>{item.value}</td>
+                      <td>{item.qty}</td>
+                      <td>{item.unit}</td>
+                      <td>{item.sources.join(", ")}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -379,6 +420,39 @@ export default async function DetailsPage({
                 </li>
               ))}
             </ul>
+          ) : null}
+        </section>
+
+        <section className={styles.card} data-testid="details-total-bom">
+          <h2>Total BOM</h2>
+          <p>
+            Columns counted items and connector parts together, sorted alphabetically. The same part number in feet and
+            each stays on separate lines. Items in parentheses are left out.
+          </p>
+          {totalBom.length === 0 ? <p>No BOM items yet.</p> : null}
+          {totalBom.length > 0 ? (
+            <div className={styles.bomTableWrap}>
+              <table className={styles.bomTable}>
+                <thead>
+                  <tr>
+                    <th>Part Number</th>
+                    <th>Qty</th>
+                    <th>Unit</th>
+                    <th>From</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {totalBom.map((line) => (
+                    <tr key={`${line.partNumber}|${line.unit}`}>
+                      <td>{line.partNumber}</td>
+                      <td>{line.quantity}</td>
+                      <td>{line.unit}</td>
+                      <td>{line.sections.join(", ")}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           ) : null}
         </section>
       </main>

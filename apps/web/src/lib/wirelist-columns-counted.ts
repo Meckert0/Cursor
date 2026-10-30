@@ -14,6 +14,10 @@ import { filterPopulatedWirelistRows, type WirelistRow } from "./wirelist-utils"
  *   counted in feet (Length (in) / 12).
  * - Notes items are "PART (qty)" tokens; "PART @len (qty)" keeps the length.
  *
+ * Connector, frame, backshell, and strain-relief parts are not part of this
+ * roll-up; they come from the canvas via `buildConnectorCounts` and are
+ * combined with these lines by `buildTotalBom`.
+ *
  * Intentional differences from the script are called out inline with
  * "Script difference:" comments.
  */
@@ -54,8 +58,15 @@ export type ColumnsCounted = {
   wires: CountedWireLine[];
   labels: CountedItem[];
   notesItems: CountedItem[];
-  connectors: CountedItem[];
   warnings: string[];
+};
+
+export type TotalBomLine = {
+  partNumber: string;
+  quantity: number;
+  unit: CountedUnit;
+  /** Sections that contributed, in the order they were added. */
+  sections: string[];
 };
 
 type SnapshotConnector = RevisionDto["snapshot"]["connectors"][number];
@@ -138,7 +149,6 @@ type WireGroup = {
   partNumber: string;
   total: number;
   unit: CountedUnit;
-  mixedUnits: boolean;
   cuts: Map<string, { length: string; count: number; sources: string[] }>;
 };
 
@@ -199,7 +209,7 @@ export function parseNotesItems(notes: string): ParsedNotes {
   return { items, problems };
 }
 
-function countConnectorParts(connectors: SnapshotConnector[]): CountedItem[] {
+export function buildConnectorCounts(connectors: SnapshotConnector[]): CountedItem[] {
   const counter = new ItemCounter();
   const push = (value: string | undefined, source: string) => {
     if (value === undefined || isSkippedCountValue(value)) {
@@ -227,10 +237,7 @@ function countConnectorParts(connectors: SnapshotConnector[]): CountedItem[] {
   return counter.list();
 }
 
-export function buildColumnsCounted(
-  inputRows: WirelistRow[],
-  connectors: SnapshotConnector[] = []
-): ColumnsCounted {
+export function buildColumnsCounted(inputRows: WirelistRow[]): ColumnsCounted {
   const rows = filterPopulatedWirelistRows(inputRows);
   const warnings: string[] = [];
   const nonBom = new ItemCounter();
@@ -239,6 +246,8 @@ export function buildColumnsCounted(
   const labels = new ItemCounter();
   const notesItems = new ItemCounter();
   const wireGroups = new Map<string, WireGroup>();
+  const wireUnitsSeen = new Map<string, CountedUnit>();
+  const mixedWireParts = new Set<string>();
   let preterminatedEnds = 0;
 
   rows.forEach((row, index) => {
@@ -294,16 +303,21 @@ export function buildColumnsCounted(
         // length and ignores (HALF) on patchcords; both are merged here.
         patchcords.add(partNumber, qty, unit, source);
       } else {
-        const key = partNumber.toLowerCase();
+        const partKey = partNumber.toLowerCase();
+        const previousUnit = wireUnitsSeen.get(partKey);
+        if (!previousUnit) {
+          wireUnitsSeen.set(partKey, unit);
+        } else if (previousUnit !== unit && !mixedWireParts.has(partKey)) {
+          mixedWireParts.add(partKey);
+          warnings.push(
+            `"${partNumber}" is marked W/CBL on some rows but not others; each and feet are listed separately. Check the contact columns.`
+          );
+        }
+        const key = `${partKey}|${unit}`;
         let group = wireGroups.get(key);
         if (!group) {
-          group = { partNumber, total: 0, unit, mixedUnits: false, cuts: new Map() };
+          group = { partNumber, total: 0, unit, cuts: new Map() };
           wireGroups.set(key, group);
-        } else if (group.unit !== unit && !group.mixedUnits) {
-          group.mixedUnits = true;
-          warnings.push(
-            `"${group.partNumber}" is marked W/CBL on some rows but not others; its total mixes each and feet. Check the contact columns.`
-          );
         }
         // Script difference: the script's running total dropped earlier cut
         // lengths when a part number had three or more distinct lengths.
@@ -368,9 +382,66 @@ export function buildColumnsCounted(
     wires,
     labels: labels.list(),
     notesItems: notesItems.list(),
-    connectors: countConnectorParts(connectors),
     warnings
   };
+}
+
+const TOTAL_BOM_SECTIONS: Array<{
+  name: string;
+  items: (counted: ColumnsCounted) => CountedItem[];
+}> = [
+  { name: "BOM Contacts", items: (counted) => counted.bomContacts },
+  { name: "Patchcords", items: (counted) => counted.patchcords },
+  { name: "Wire", items: wireGroupTotals },
+  { name: "Labels", items: (counted) => counted.labels },
+  { name: "Items", items: (counted) => counted.notesItems }
+];
+
+function wireGroupTotals(counted: ColumnsCounted): CountedItem[] {
+  return counted.wires
+    .filter((line) => line.firstInGroup)
+    .map((line) => ({
+      value: line.partNumber,
+      qty: line.groupTotal,
+      unit: line.unit,
+      sources: line.sources
+    }));
+}
+
+/**
+ * Purchasable lines from the wirelist roll-up plus connector parts, one line
+ * per part number and unit, sorted alphabetically. Non-BOM items are excluded.
+ * The same part number in feet and each stays on two lines.
+ */
+export function buildTotalBom(counted: ColumnsCounted, connectors: CountedItem[]): TotalBomLine[] {
+  const lines = new Map<string, TotalBomLine>();
+  const add = (section: string, items: CountedItem[]) => {
+    for (const item of items) {
+      const partNumber = item.value.trim();
+      const key = `${partNumber.toLowerCase()}|${item.unit}`;
+      const existing = lines.get(key);
+      if (existing) {
+        existing.quantity += item.qty;
+        if (!existing.sections.includes(section)) {
+          existing.sections.push(section);
+        }
+        continue;
+      }
+      lines.set(key, { partNumber, quantity: item.qty, unit: item.unit, sections: [section] });
+    }
+  };
+
+  for (const section of TOTAL_BOM_SECTIONS) {
+    add(section.name, section.items(counted));
+  }
+  add("Connectors", connectors);
+
+  return Array.from(lines.values())
+    .map((line) => ({ ...line, quantity: roundQty(line.quantity) }))
+    .sort(
+      (left, right) =>
+        compareValues(left.partNumber, right.partNumber) || left.unit.localeCompare(right.unit)
+    );
 }
 
 export function formatWireCutLabel(line: Pick<CountedWireLine, "partNumber" | "length">): string {

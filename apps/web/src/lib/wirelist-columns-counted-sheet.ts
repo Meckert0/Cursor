@@ -17,8 +17,7 @@ const PATCHCORDS_COLUMN = 8;
 const WIRE_COLUMN = 11;
 const LABELS_COLUMN = 15;
 const NOTES_ITEMS_COLUMN = 18;
-const CONNECTORS_COLUMN = 21;
-const WARNINGS_COLUMN = 24;
+const WARNINGS_COLUMN = 21;
 
 export const COLUMNS_COUNTED_LAST_COLUMN = WARNINGS_COLUMN;
 
@@ -83,13 +82,6 @@ export function buildColumnsCountedSheetRows(counted: ColumnsCounted): SparseShe
 
   writeItemSection(rows, LABELS_COLUMN, "Labels", "Includes all labels.", counted.labels);
   writeItemSection(rows, NOTES_ITEMS_COLUMN, "Items", "Includes items from the notes column.", counted.notesItems);
-  writeItemSection(
-    rows,
-    CONNECTORS_COLUMN,
-    "Connectors",
-    "Includes connector, module, frame, backshell and strain relief part numbers from the canvas.",
-    counted.connectors
-  );
 
   setCell(rows, HEADER_ROW, WARNINGS_COLUMN, "Warnings");
   counted.warnings.forEach((warning, index) => {

@@ -54,14 +54,20 @@ function ItemSection({ id, title, description, items, sourceLabel }: ItemSection
   );
 }
 
-export function WirelistColumnsCountedPanel({ counted }: { counted: ColumnsCounted }) {
+export function WirelistColumnsCountedPanel({
+  counted,
+  description
+}: {
+  counted: ColumnsCounted;
+  description?: string;
+}) {
   return (
     <section className={styles.panel} data-testid="wirelist-columns-counted" aria-label="Columns counted">
       <header className={styles.header}>
         <h2>Columns counted</h2>
         <p>
-          {counted.rowCount} wirelist row(s) counted, {counted.preterminatedEnds} W/CBL end(s). Quantities are rolled up the
-          same way as the Excel &quot;Columns Counted&quot; button; the downloaded file includes this as a sheet.
+          {description ??
+            `${counted.rowCount} wirelist row(s) counted, ${counted.preterminatedEnds} W/CBL end(s). Quantities are rolled up the same way as the Excel "Columns Counted" button. Connector parts are listed on the Details page. The downloaded file includes this roll-up as a sheet.`}
         </p>
       </header>
       {counted.warnings.length > 0 ? (
@@ -141,13 +147,6 @@ export function WirelistColumnsCountedPanel({ counted }: { counted: ColumnsCount
           description='Items written in Notes as "PART (qty)".'
           items={counted.notesItems}
           sourceLabel="Runs"
-        />
-        <ItemSection
-          id="connectors"
-          title="Connectors"
-          description="Connector, module, frame, backshell and strain relief part numbers from the canvas."
-          items={counted.connectors}
-          sourceLabel="References"
         />
       </div>
     </section>

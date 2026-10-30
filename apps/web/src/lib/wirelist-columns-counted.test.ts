@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { RevisionDto } from "./api";
 import {
   buildColumnsCounted,
+  buildConnectorCounts,
+  buildTotalBom,
   formatWireCutLabel,
   isPatchcordPartNumber,
   isPreterminatedContactMarker,
@@ -254,7 +256,7 @@ describe("buildColumnsCounted labels and notes", () => {
   });
 });
 
-describe("buildColumnsCounted connectors", () => {
+describe("buildConnectorCounts", () => {
   it("flattens connector, backshell, strain relief and frame slot parts into one list", () => {
     const connectors: RevisionDto["snapshot"]["connectors"] = [
       {
@@ -278,16 +280,66 @@ describe("buildColumnsCounted connectors", () => {
         ]
       }
     ];
-    const counted = buildColumnsCounted([], connectors);
+    const counted = buildConnectorCounts(connectors);
 
-    expect(items(counted.connectors)).toEqual([
+    expect(items(counted)).toEqual([
       ["BS-1", 2],
       ["FRAME-1", 1],
       ["MOD-A", 2],
       ["MOD-B", 1],
       ["SR-1", 1]
     ]);
-    expect(counted.connectors.find((entry) => entry.value === "BS-1")?.sources).toEqual(["J1", "J4A"]);
+    expect(counted.find((entry) => entry.value === "BS-1")?.sources).toEqual(["J1", "J4A"]);
+  });
+});
+
+describe("buildTotalBom", () => {
+  it("merges wirelist BOM sections with connectors, skips non-BOM items, and sorts alphabetically", () => {
+    const counted = buildColumnsCounted([
+      row({
+        fromContact: "510127",
+        toContact: "(510127)",
+        wirePartNumber: "100222",
+        length: "12",
+        labelPartNumber: "LBL-100",
+        notes: "622222 (2)"
+      }),
+      row({
+        fromContact: "510127",
+        wirePartNumber: "100222",
+        length: "24",
+        labelPartNumber: "510103"
+      }),
+      row({ fromContact: "W/CBL", toContact: "W/CBL", wirePartNumber: "7-100", length: "36" }),
+      row({ fromContact: "W/CBL", wirePartNumber: "200555 (HALF)", length: "60" })
+    ]);
+    const connectors = buildConnectorCounts([
+      { id: "c1", reference: "J1", partNumber: "510103", backshellPartNumber: "410120", pins: [] },
+      { id: "c2", reference: "J2", partNumber: "610122", pins: [] }
+    ]);
+
+    expect(buildTotalBom(counted, connectors).map((line) => [line.partNumber, line.quantity, line.unit, line.sections])).toEqual([
+      ["100222", 3, "ft", ["Wire"]],
+      ["200555 (HALF)", 0.5, "ea", ["Wire"]],
+      ["410120", 1, "ea", ["Connectors"]],
+      ["510103", 2, "ea", ["Labels", "Connectors"]],
+      ["510127", 2, "ea", ["BOM Contacts"]],
+      ["610122", 1, "ea", ["Connectors"]],
+      ["622222", 2, "ea", ["Items"]],
+      ["7-100", 1, "ea", ["Patchcords"]],
+      ["LBL-100", 1, "ea", ["Labels"]]
+    ]);
+  });
+
+  it("keeps feet and each of the same part number on separate lines", () => {
+    const counted = buildColumnsCounted([
+      row({ wirePartNumber: "100222", length: "12" }),
+      row({ fromContact: "W/CBL", wirePartNumber: "100222", length: "12" })
+    ]);
+    expect(buildTotalBom(counted, []).map((line) => [line.partNumber, line.quantity, line.unit])).toEqual([
+      ["100222", 1, "ea"],
+      ["100222", 1, "ft"]
+    ]);
   });
 });
 

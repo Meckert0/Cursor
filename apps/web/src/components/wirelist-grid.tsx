@@ -252,10 +252,7 @@ export function WirelistGrid({
   }>;
   contactRelationships?: WirelistContactRelationshipRow[];
   importWirelistAction: (formData: FormData) => Promise<ImportResult>;
-  exportWirelistAction: (
-    rows: WirelistRow[],
-    connectors: RevisionDto["snapshot"]["connectors"]
-  ) => Promise<ExportResult>;
+  exportWirelistAction: (rows: WirelistRow[]) => Promise<ExportResult>;
   saveWirelistAction: (input: {
     snapshot: RevisionDto["snapshot"];
     expectedSnapshotHash: string;
@@ -311,8 +308,8 @@ export function WirelistGrid({
   );
   const nodeIds = useMemo(() => buildWirelistNodeIds(effectiveSnapshot), [effectiveSnapshot]);
   const columnsCounted = useMemo(
-    () => (columnsCountedOpen ? buildColumnsCounted(rows, connectorSource) : null),
-    [columnsCountedOpen, rows, connectorSource]
+    () => (columnsCountedOpen ? buildColumnsCounted(rows) : null),
+    [columnsCountedOpen, rows]
   );
   const saveValidationErrors = useMemo(
     () =>
@@ -669,7 +666,7 @@ export function WirelistGrid({
       return;
     }
     startExportTransition(async () => {
-      const result = await exportWirelistAction(exportRows, connectorSource);
+      const result = await exportWirelistAction(exportRows);
       if (!result.ok || !result.fileName || !result.fileBase64) {
         setSaveMessage(result.error ?? "Export failed.");
         return;

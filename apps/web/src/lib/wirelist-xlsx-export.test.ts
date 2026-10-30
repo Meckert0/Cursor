@@ -140,11 +140,7 @@ describe("wirelist-xlsx-export", () => {
         }
       ]
     });
-    const connectors: RevisionDto["snapshot"]["connectors"] = [
-      { id: "c1", reference: "J1", partNumber: "MOD-1", backshellPartNumber: "BS-1", pins: [] },
-      { id: "c2", reference: "J2", partNumber: "MOD-1", pins: [] }
-    ];
-    const buffer = await buildWirelistXlsxBuffer(rows, { connectors });
+    const buffer = await buildWirelistXlsxBuffer(rows);
     const workbook = XLSX.read(buffer, { type: "buffer" });
 
     expect(workbook.SheetNames).toEqual(["Wirelist", "BOM", "Columns Counted"]);
@@ -160,7 +156,6 @@ describe("wirelist-xlsx-export", () => {
       "Wire", "Qty", "Total BOM Qty", "Unit",
       "Labels", "Qty", null,
       "Items", "Qty", null,
-      "Connectors", "Qty", null,
       "Warnings"
     ]);
     expect([cell("B6"), cell("C6")]).toEqual(["(100)", 1]);
@@ -170,8 +165,7 @@ describe("wirelist-xlsx-export", () => {
     expect([cell("K7"), cell("L7"), cell("M7"), cell("N7")]).toEqual(['WIRE-1 @24"', 1, 2, "ft"]);
     expect([cell("O6"), cell("P6")]).toEqual(["LBL-1", 2]);
     expect([cell("R6"), cell("S6")]).toEqual(["555555", 2]);
-    expect([cell("U6"), cell("V6"), cell("U7"), cell("V7")]).toEqual(["BS-1", 1, "MOD-1", 2]);
-    expect(cell("X6")).toBeNull();
+    expect(cell("U6")).toBeNull();
   });
 
   it("can omit the Columns Counted sheet", async () => {

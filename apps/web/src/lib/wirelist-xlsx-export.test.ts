@@ -1,6 +1,7 @@
 /** @vitest-environment node */
 import AdmZip from "adm-zip";
 import { describe, expect, it } from "vitest";
+import XLSX from "xlsx";
 import type { RevisionDto } from "./api";
 import { buildWirelistXlsxFromTemplateRows } from "./wirelist-xlsx-from-template";
 import { buildWirelistXlsxBuffer } from "./wirelist-xlsx-export";
@@ -98,6 +99,84 @@ describe("wirelist-xlsx-export", () => {
     expect(headerValues).toEqual([...WIRELIST_TEMPLATE_HEADERS]);
     expect(sheetXml).toContain('<dimension ref="A1:O2"/>');
     expect(zip.readAsText("xl/workbook.xml")).toContain("Wirelist!$A$1:$O$2");
+  });
+
+  it("adds a Columns Counted sheet laid out like the Office Script output", async () => {
+    const rows = snapshotToWirelistRows({
+      ...snapshot,
+      paths: [
+        {
+          ...snapshot.paths[0],
+          id: "p1",
+          runNumber: 1,
+          fromContact: "100",
+          toContact: "(100)",
+          wirePartNumber: "WIRE-1",
+          length: 24,
+          labelPartNumber: "LBL-1",
+          notes: "Add 555555 (2)"
+        },
+        {
+          ...snapshot.paths[0],
+          id: "p2",
+          runNumber: 2,
+          fromContact: "W/CBL",
+          toContact: "100",
+          wirePartNumber: "CBL-1",
+          length: 60,
+          labelPartNumber: "LBL-1",
+          notes: ""
+        },
+        {
+          ...snapshot.paths[0],
+          id: "p3",
+          runNumber: 3,
+          fromContact: "100",
+          toContact: "100",
+          wirePartNumber: "7-100",
+          length: 36,
+          labelPartNumber: "",
+          notes: ""
+        }
+      ]
+    });
+    const connectors: RevisionDto["snapshot"]["connectors"] = [
+      { id: "c1", reference: "J1", partNumber: "MOD-1", backshellPartNumber: "BS-1", pins: [] },
+      { id: "c2", reference: "J2", partNumber: "MOD-1", pins: [] }
+    ];
+    const buffer = await buildWirelistXlsxBuffer(rows, { connectors });
+    const workbook = XLSX.read(buffer, { type: "buffer" });
+
+    expect(workbook.SheetNames).toEqual(["Wirelist", "BOM", "Columns Counted"]);
+    const sheet = workbook.Sheets["Columns Counted"];
+    const grid = XLSX.utils.sheet_to_json<Array<string | number>>(sheet, { header: 1, defval: null });
+    const cell = (ref: string) => sheet[ref]?.v ?? null;
+
+    expect(cell("A1")).toBe("Columns Counted: 3 wirelist row(s), 1 W/CBL end(s).");
+    expect(grid[4].slice(1)).toEqual([
+      "Non-BOM Items", "Qty", null,
+      "BOM Contacts", "Qty", null,
+      "Patchcords", "Qty", null,
+      "Wire", "Qty", "Total BOM Qty", "Unit",
+      "Labels", "Qty", null,
+      "Items", "Qty", null,
+      "Connectors", "Qty", null,
+      "Warnings"
+    ]);
+    expect([cell("B6"), cell("C6")]).toEqual(["(100)", 1]);
+    expect([cell("E6"), cell("F6")]).toEqual(["100", 4]);
+    expect([cell("H6"), cell("I6")]).toEqual(["7-100", 1]);
+    expect([cell("K6"), cell("L6"), cell("M6"), cell("N6")]).toEqual(['CBL-1 @60"', 1, 1, "ea"]);
+    expect([cell("K7"), cell("L7"), cell("M7"), cell("N7")]).toEqual(['WIRE-1 @24"', 1, 2, "ft"]);
+    expect([cell("O6"), cell("P6")]).toEqual(["LBL-1", 2]);
+    expect([cell("R6"), cell("S6")]).toEqual(["555555", 2]);
+    expect([cell("U6"), cell("V6"), cell("U7"), cell("V7")]).toEqual(["BS-1", 1, "MOD-1", 2]);
+    expect(cell("X6")).toBeNull();
+  });
+
+  it("can omit the Columns Counted sheet", async () => {
+    const buffer = await buildWirelistXlsxBuffer(snapshotToWirelistRows(snapshot), { includeColumnsCounted: false });
+    expect(XLSX.read(buffer, { type: "buffer" }).SheetNames).toEqual(["Wirelist", "BOM"]);
   });
 
   it("renders empty cells as dashes and shrinks the print area for short wirelists", async () => {

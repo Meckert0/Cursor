@@ -2,11 +2,17 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import AdmZip from "adm-zip";
+import {
+  COLUMNS_COUNTED_LAST_COLUMN,
+  COLUMNS_COUNTED_SHEET_NAME,
+  type SparseSheetRows
+} from "./wirelist-columns-counted-sheet";
 
 export const WIRELIST_TEMPLATE_COLUMN_COUNT = 15;
 export const BOM_COLUMN_COUNT = 8;
 const WIRELIST_SHEET_XML_PATH = "xl/worksheets/sheet1.xml";
 const BOM_SHEET_XML_PATH = "xl/worksheets/sheet2.xml";
+const COLUMNS_COUNTED_SHEET_XML_PATH = "xl/worksheets/sheet3.xml";
 const WIRELIST_WORKBOOK_XML_PATH = "xl/workbook.xml";
 const WORKBOOK_RELS_PATH = "xl/_rels/workbook.xml.rels";
 const CONTENT_TYPES_PATH = "[Content_Types].xml";
@@ -177,39 +183,77 @@ function buildBomSheetXml(bomRows: Array<Array<string | number>>): string {
 </worksheet>`;
 }
 
-function ensureBomSheetInWorkbook(workbookXml: string): string {
-  if (workbookXml.includes('name="BOM"')) {
+export function buildSparseSheetXml(rows: SparseSheetRows, lastColumnNumber: number): string {
+  const lastRow = Math.max(rows.length, 1);
+  const rowsXml = rows
+    .map((rowValues, rowIndex) => {
+      const rowNumber = rowIndex + 1;
+      const cells = rowValues
+        .map((value, columnIndex) =>
+          value === null || value === undefined || value === ""
+            ? ""
+            : formatCellXml(`${columnLetter(columnIndex + 1)}${rowNumber}`, "", value)
+        )
+        .join("");
+      return cells ? `<row r="${rowNumber}" spans="1:${lastColumnNumber}">${cells}</row>` : "";
+    })
+    .join("");
+
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <dimension ref="A1:${columnLetter(lastColumnNumber)}${lastRow}"/>
+  <sheetData>
+    ${rowsXml}
+  </sheetData>
+</worksheet>`;
+}
+
+type ExtraSheet = {
+  name: string;
+  sheetId: number;
+  relationshipId: string;
+  /** Zip path, e.g. `xl/worksheets/sheet2.xml`. */
+  zipPath: string;
+  xml: string;
+};
+
+function ensureSheetInWorkbook(workbookXml: string, sheet: ExtraSheet): string {
+  if (workbookXml.includes(`name="${escapeXml(sheet.name)}"`)) {
     return workbookXml;
   }
   return workbookXml.replace(
     /<sheets>([\s\S]*?)<\/sheets>/,
-    (_full, inner: string) => `<sheets>${inner}<sheet name="BOM" sheetId="2" r:id="rIdBom"/></sheets>`
+    (_full, inner: string) =>
+      `<sheets>${inner}<sheet name="${escapeXml(sheet.name)}" sheetId="${sheet.sheetId}" r:id="${sheet.relationshipId}"/></sheets>`
   );
 }
 
-function ensureBomSheetRelationship(relsXml: string): string {
-  if (relsXml.includes('Id="rIdBom"') || relsXml.includes("worksheets/sheet2.xml")) {
+function ensureSheetRelationship(relsXml: string, sheet: ExtraSheet): string {
+  const target = sheet.zipPath.replace(/^xl\//, "");
+  if (relsXml.includes(`Id="${sheet.relationshipId}"`) || relsXml.includes(target)) {
     return relsXml;
   }
   return relsXml.replace(
     "</Relationships>",
-    `<Relationship Id="rIdBom" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/></Relationships>`
+    `<Relationship Id="${sheet.relationshipId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="${target}"/></Relationships>`
   );
 }
 
-function ensureBomContentType(contentTypesXml: string): string {
-  if (contentTypesXml.includes('PartName="/xl/worksheets/sheet2.xml"')) {
+function ensureSheetContentType(contentTypesXml: string, sheet: ExtraSheet): string {
+  const partName = `/${sheet.zipPath}`;
+  if (contentTypesXml.includes(`PartName="${partName}"`)) {
     return contentTypesXml;
   }
   return contentTypesXml.replace(
     "</Types>",
-    `<Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>`
+    `<Override PartName="${partName}" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>`
   );
 }
 
 export async function buildWirelistXlsxFromTemplateRows(
   dataRows: Array<Array<string | number>>,
-  bomRows: Array<Array<string | number>> = []
+  bomRows: Array<Array<string | number>> = [],
+  columnsCountedRows: SparseSheetRows | null = null
 ): Promise<Buffer> {
   const templatePath = resolveWirelistTemplatePath();
   const templateBuffer = readFileSync(templatePath);
@@ -237,16 +281,42 @@ export async function buildWirelistXlsxFromTemplateRows(
   const lastRow = Math.max(dataRows.length + 1, 1);
   const sheetXml = zip.readAsText(sheetEntry);
   const filledSheetXml = updateSheetExtent(fillSheetXml(sheetXml, dataRows), lastRow);
-  const workbookXml = ensureBomSheetInWorkbook(updateWorkbookRanges(zip.readAsText(workbookEntry), lastRow));
-  const relsXml = ensureBomSheetRelationship(zip.readAsText(relsEntry));
-  const contentTypesXml = ensureBomContentType(zip.readAsText(contentTypesEntry));
-  const bomSheetXml = buildBomSheetXml(bomRows);
+
+  const extraSheets: ExtraSheet[] = [
+    {
+      name: "BOM",
+      sheetId: 2,
+      relationshipId: "rIdBom",
+      zipPath: BOM_SHEET_XML_PATH,
+      xml: buildBomSheetXml(bomRows)
+    }
+  ];
+  if (columnsCountedRows) {
+    extraSheets.push({
+      name: COLUMNS_COUNTED_SHEET_NAME,
+      sheetId: 3,
+      relationshipId: "rIdColumnsCounted",
+      zipPath: COLUMNS_COUNTED_SHEET_XML_PATH,
+      xml: buildSparseSheetXml(columnsCountedRows, COLUMNS_COUNTED_LAST_COLUMN)
+    });
+  }
+
+  let workbookXml = updateWorkbookRanges(zip.readAsText(workbookEntry), lastRow);
+  let relsXml = zip.readAsText(relsEntry);
+  let contentTypesXml = zip.readAsText(contentTypesEntry);
+  for (const sheet of extraSheets) {
+    workbookXml = ensureSheetInWorkbook(workbookXml, sheet);
+    relsXml = ensureSheetRelationship(relsXml, sheet);
+    contentTypesXml = ensureSheetContentType(contentTypesXml, sheet);
+  }
 
   zip.updateFile(WIRELIST_SHEET_XML_PATH, Buffer.from(filledSheetXml, "utf8"));
   zip.updateFile(WIRELIST_WORKBOOK_XML_PATH, Buffer.from(workbookXml, "utf8"));
   zip.updateFile(WORKBOOK_RELS_PATH, Buffer.from(relsXml, "utf8"));
   zip.updateFile(CONTENT_TYPES_PATH, Buffer.from(contentTypesXml, "utf8"));
-  zip.addFile(BOM_SHEET_XML_PATH, Buffer.from(bomSheetXml, "utf8"));
+  for (const sheet of extraSheets) {
+    zip.addFile(sheet.zipPath, Buffer.from(sheet.xml, "utf8"));
+  }
 
   for (const entry of zip.getEntries()) {
     entry.header.time = FIXED_ZIP_ENTRY_DATE;

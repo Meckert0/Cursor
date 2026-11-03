@@ -151,7 +151,7 @@ export const PART_FIELDS_BY_CATEGORY: Record<LibraryItemCategory, PartFieldMeta[
     attr("cma", "CMA", "number", { isVisibleInViewer: false }),
     attr("wireType", "Wire type", "text", { isVisibleInViewer: false }),
     attr("insulationMaterial", "Insulation material", "text", { isVisibleInViewer: false }),
-    attr("overallDia", "Overall dia", "number", { isVisibleInViewer: false }),
+    attr("overallDia", "Overall diameter (in)", "number"),
     attr("conductorDia", "Conductor dia", "number", { isVisibleInViewer: false }),
     attr("numberOfConductors", "Number of conductors", "number", { isVisibleInViewer: false }),
     attr("tempMax", "Temp max", "number", { isVisibleInViewer: false }),

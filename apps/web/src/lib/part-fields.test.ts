@@ -47,6 +47,14 @@ describe("part fields", () => {
     expect(color?.showInSearch).toBe(true);
   });
 
+  it("shows overall wire diameter in the item database", () => {
+    const overallDia = getPartFieldsForCategory("wire").find((field) => field.key === "overallDia");
+    expect(overallDia?.label).toBe("Overall diameter (in)");
+    expect(overallDia?.inputType).toBe("number");
+    expect(overallDia?.isVisibleInViewer).toBe(true);
+    expect(overallDia?.showOnAddForm).toBe(true);
+  });
+
   it("places module pinIds on attributes as a string-list", () => {
     const pinIds = getPartFieldsForCategory("module").find((field) => field.key === "pinIds");
     expect(pinIds?.inputType).toBe("string-list");

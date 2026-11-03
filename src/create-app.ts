@@ -33,6 +33,7 @@ import { PostgresAuthStore } from "./infra/auth/postgres-auth-store.js";
 import { MemoryStore } from "./infra/store/memory-store.js";
 import { PostgresStore } from "./infra/store/postgres-store.js";
 import type { Store } from "./infra/store/store.js";
+import { ensureWireDiameterCatalog } from "./domain/wire-diameter-catalog.js";
 import { ExportQueueService } from "./services/export-queue.js";
 import { runMaintenance } from "./services/maintenance.js";
 import type { FastifyInstance } from "fastify";
@@ -110,6 +111,13 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Created
     );
   } else {
     throw new Error(`Unsupported STORE_BACKEND="${storeBackend}". Use sqlite, postgres, or memory.`);
+  }
+
+  const wireCatalog = await ensureWireDiameterCatalog(store);
+  if (wireCatalog.inserted > 0 || wireCatalog.updated > 0) {
+    console.info(
+      `Wire diameter catalog: inserted ${wireCatalog.inserted}, updated diameters on ${wireCatalog.updated}.`
+    );
   }
 
   if (redisUrl) {

@@ -15,10 +15,18 @@ export default async function HarnessDetailsPage({
   await requireSignedInUser();
   const { harnessId } = await params;
   const harness = await getHarness(harnessId);
-  const [detail, connectorCatalog, bom] = await Promise.all([
+  const [detail, connectorCatalog, wireCatalog, sleeveCatalog, bom] = await Promise.all([
     getRevision(harness.currentRevisionId),
     listLibraryComponents({
       category: "module",
+      isActive: true
+    }),
+    listLibraryComponents({
+      category: "wire",
+      isActive: true
+    }),
+    listLibraryComponents({
+      category: "sleeve-tube-braid",
       isActive: true
     }),
     getRevisionBom(harness.currentRevisionId)
@@ -41,6 +49,8 @@ export default async function HarnessDetailsPage({
           revisionId={detail.id}
           snapshot={detail.snapshot}
           connectorCatalog={connectorCatalog}
+          wireCatalog={wireCatalog}
+          sleeveCatalog={sleeveCatalog}
         />
         <DetailsPurchasingBom revisionId={detail.id} snapshot={detail.snapshot} />
 

@@ -52,16 +52,33 @@ export default async function HarnessCanvasPage({
   const adminIsViewingAnotherUsersCanvas = signedInUser.accountRole === "admin" && harness.createdBy !== signedInUser.id;
   const isReadOnly = adminIsViewingAnotherUsersCanvas && mode !== "edit";
   const revision = await getRevision(harness.currentRevisionId);
-  const connectorCatalog = await loadConnectorCatalog();
-  const backshellCatalog = await listLibraryComponents({
-    category: "backshell",
-    isActive: true
-  });
-  const strainReliefCatalog = await listLibraryComponents({
-    category: "strain-relief",
-    isActive: true
-  });
-  const [moduleBackshellCompat, moduleStrainReliefCompat, moduleAllowedRelationships] = await Promise.all([
+  const [
+    connectorCatalog,
+    backshellCatalog,
+    strainReliefCatalog,
+    wireCatalog,
+    sleeveCatalog,
+    moduleBackshellCompat,
+    moduleStrainReliefCompat,
+    moduleAllowedRelationships
+  ] = await Promise.all([
+    loadConnectorCatalog(),
+    listLibraryComponents({
+      category: "backshell",
+      isActive: true
+    }),
+    listLibraryComponents({
+      category: "strain-relief",
+      isActive: true
+    }),
+    listLibraryComponents({
+      category: "wire",
+      isActive: true
+    }),
+    listLibraryComponents({
+      category: "sleeve-tube-braid",
+      isActive: true
+    }),
     listModuleBackshellCompat(),
     listModuleStrainReliefCompat(),
     listPartRelationships({ relationshipType: "MODULE_ALLOWED" })
@@ -213,6 +230,8 @@ export default async function HarnessCanvasPage({
             moduleBackshellCompat={moduleBackshellCompat}
             moduleStrainReliefCompat={moduleStrainReliefCompat}
             moduleAllowedRelationships={moduleAllowedRelationships}
+            wireCatalog={wireCatalog}
+            sleeveCatalog={sleeveCatalog}
             quickAddConnectorAction={quickAddConnectorAction}
             saveCanvasAction={saveCanvasSnapshotAction}
             readOnly={isReadOnly}

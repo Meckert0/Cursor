@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import type { LibraryComponentDto, RevisionDto } from "@/lib/api";
+import { bundleDiameterInches, formatBundleDiameterLabel } from "@/lib/cable-canvas-utils";
 import { DetailsSummary } from "./details-summary";
 
 function module(
@@ -111,5 +112,116 @@ describe("DetailsSummary", () => {
     expect(screen.queryByText("410120")).not.toBeInTheDocument();
     expect(screen.queryByText("SR-1")).not.toBeInTheDocument();
     expect(screen.queryByText("BS-9")).not.toBeInTheDocument();
+  });
+
+  it("fills each cable section bundle diameter from the wirelist and sizes the sleeving", () => {
+    const wirePart = (id: string, partNumber: string, overallDia: number): LibraryComponentDto => ({
+      id,
+      category: "wire",
+      family: "M22759",
+      partNumber,
+      description: partNumber,
+      isActive: true,
+      isReviewed: true,
+      stockStatus: "in_stock",
+      createdByUserId: "u1",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      lastEditedByUserId: "u1",
+      lastEditedAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      attributes: { awg: "22", color: "white", overallDia }
+    });
+    const sleeve = (id: string, partNumber: string, minDia: number, maxDia: number): LibraryComponentDto => ({
+      id,
+      category: "sleeve-tube-braid",
+      family: "expandable_sleeving",
+      partNumber,
+      description: partNumber,
+      isActive: true,
+      isReviewed: true,
+      stockStatus: "in_stock",
+      createdByUserId: "u1",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      lastEditedByUserId: "u1",
+      lastEditedAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      attributes: { sizeRanges: [{ minDia, maxDia }] }
+    });
+    const snapshot = {
+      connectors: [
+        { id: "c1", reference: "J1", pins: [{ id: "1", number: "1" }] },
+        { id: "c2", reference: "J2", pins: [{ id: "1", number: "1" }] },
+        { id: "c3", reference: "J3", pins: [{ id: "1", number: "1" }] }
+      ],
+      junctions: [{ id: "jx", location: { x: 0, y: 0 }, label: "JX" }],
+      paths: [
+        {
+          id: "p-trunk",
+          wireName: "cable1",
+          fromConnectorId: "c1",
+          toConnectorId: "jx",
+          pathType: "cable",
+          length: 12,
+          sleeving: "expandable_sleeving"
+        },
+        {
+          id: "p-j2",
+          wireName: "cable2",
+          fromConnectorId: "jx",
+          toConnectorId: "c2",
+          pathType: "cable",
+          length: 6,
+          sleeving: "expandable_sleeving"
+        },
+        {
+          id: "p-j3",
+          wireName: "cable3",
+          fromConnectorId: "jx",
+          toConnectorId: "c3",
+          pathType: "cable",
+          length: 6,
+          sleeving: "none"
+        },
+        {
+          id: "run-12",
+          fromConnectorId: "c1",
+          toConnectorId: "c2",
+          pathType: "wire",
+          wirelistManaged: true,
+          wireComponentId: "w-22",
+          fromLocation: "J1 - 1",
+          toLocation: "J2 - 1"
+        },
+        {
+          id: "run-13",
+          fromConnectorId: "c1",
+          toConnectorId: "c3",
+          pathType: "wire",
+          wirelistManaged: true,
+          wireComponentId: "w-22b",
+          fromLocation: "J1 - 1",
+          toLocation: "J3 - 1"
+        }
+      ],
+      pinMappings: [],
+      bundles: [],
+      annotations: []
+    } as RevisionDto["snapshot"];
+
+    const trunkDiameter = formatBundleDiameterLabel(bundleDiameterInches([0.062, 0.062]));
+    const branchDiameter = formatBundleDiameterLabel(bundleDiameterInches([0.062]));
+
+    render(
+      <DetailsSummary
+        revisionId="rev-bundle"
+        snapshot={snapshot}
+        wireCatalog={[wirePart("w-22", "M22759/16-22", 0.062), wirePart("w-22b", "M22759/16-22-BLU", 0.062)]}
+        sleeveCatalog={[sleeve("slv-s", "SLV-S", 0.06, 0.09), sleeve("slv-l", "SLV-L", 0.09, 0.2)]}
+      />
+    );
+
+    expect(screen.getByText(`cable1: c1 -> jx, 12 in, expandable sleeving, ${trunkDiameter}, size SLV-L`)).toBeInTheDocument();
+    expect(screen.getByText(`cable2: jx -> c2, 6 in, expandable sleeving, ${branchDiameter}, size SLV-S`)).toBeInTheDocument();
+    expect(screen.getByText(`cable3: jx -> c3, 6 in, no sleeving, ${branchDiameter}`)).toBeInTheDocument();
   });
 });

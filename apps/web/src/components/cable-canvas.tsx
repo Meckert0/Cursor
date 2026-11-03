@@ -81,6 +81,8 @@ export function CableCanvas({
   moduleBackshellCompat = [],
   moduleStrainReliefCompat = [],
   moduleAllowedRelationships = [],
+  wireCatalog = [],
+  sleeveCatalog = [],
   quickAddConnectorAction,
   saveCanvasAction,
   readOnly = false
@@ -98,6 +100,8 @@ export function CableCanvas({
     status: "allowed" | "forbidden" | "review";
   }>;
   moduleAllowedRelationships?: FrameModuleRelationship[];
+  wireCatalog?: LibraryComponentDto[];
+  sleeveCatalog?: LibraryComponentDto[];
   quickAddConnectorAction: (formData: FormData) => Promise<{
     ok: boolean;
     notice?: string;
@@ -1782,6 +1786,8 @@ export function CableCanvas({
             junctions={junctions}
             paths={pathsState}
             connectorCatalog={connectorCatalogState}
+            wireCatalog={wireCatalog}
+            sleeveCatalog={sleeveCatalog}
           />
         ) : null}
       </section>

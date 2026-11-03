@@ -4,15 +4,17 @@ import { useMemo } from "react";
 import {
   buildConnectorPairTotals,
   buildUniqueWireSections,
-  bundleDiameterInches,
   formatBundleDiameterLabel,
   formatEndpointTotalLabel,
   getSleevingLabel,
   readCanvasDraftSnapshot
 } from "@/lib/cable-canvas-utils";
+import { cableSectionBundleDiameters, selectSleeveForBundleDiameter } from "@/lib/bundle-diameter";
 import { buildConnectorDetailsRows, type ConnectorDetailsModule } from "@/lib/connector-contact-groups";
 import type { LibraryComponentDto, RevisionDto } from "@/lib/api";
 import styles from "./details-summary.module.css";
+
+const EMPTY_CATALOG: LibraryComponentDto[] = [];
 
 type JunctionNode = NonNullable<RevisionDto["snapshot"]["junctions"]>[number];
 
@@ -37,7 +39,9 @@ export function DetailsSummary({
   connectors: connectorsOverride,
   junctions: junctionsOverride,
   paths: pathsOverride,
-  connectorCatalog = []
+  connectorCatalog = EMPTY_CATALOG,
+  wireCatalog = EMPTY_CATALOG,
+  sleeveCatalog = EMPTY_CATALOG
 }: {
   revisionId: string;
   snapshot: RevisionDto["snapshot"];
@@ -45,6 +49,8 @@ export function DetailsSummary({
   junctions?: JunctionNode[];
   paths?: RevisionDto["snapshot"]["paths"];
   connectorCatalog?: LibraryComponentDto[];
+  wireCatalog?: LibraryComponentDto[];
+  sleeveCatalog?: LibraryComponentDto[];
 }) {
   const hasLiveOverrides = connectorsOverride !== undefined && pathsOverride !== undefined;
   const draftSnapshot = useMemo(() => {
@@ -76,9 +82,19 @@ export function DetailsSummary({
   }, [draftSnapshot?.paths, hasLiveOverrides, pathsOverride, snapshot.paths]);
 
   const uniqueWireSections = useMemo(() => buildUniqueWireSections(paths), [paths]);
-  // Wirelist runs are not assigned to cable sections yet, and the packing
-  // rule is not defined. Pass no diameters so each section stays blank.
-  const bundleDiameterLabel = formatBundleDiameterLabel(bundleDiameterInches([]));
+  const bundleDiameterBySection = useMemo(
+    () =>
+      cableSectionBundleDiameters({
+        connectors,
+        junctions,
+        cablePaths: paths,
+        wireRuns: snapshot.paths,
+        wireCatalog,
+        connectorCatalog,
+        pinMappings: snapshot.pinMappings
+      }),
+    [connectorCatalog, connectors, junctions, paths, snapshot.paths, snapshot.pinMappings, wireCatalog]
+  );
   const connectorDetails = useMemo(
     () => buildConnectorDetailsRows(connectors, connectorCatalog),
     [connectorCatalog, connectors]
@@ -121,13 +137,23 @@ export function DetailsSummary({
         <h3>Cable sections</h3>
         <ul>
           {uniqueWireSections.length === 0 ? <li>No cable sections yet.</li> : null}
-          {uniqueWireSections.map((section) => (
-            <li key={section.pathId}>
-              {section.wireName}: {section.fromNodeId}
-              {" -> "}
-              {section.toNodeId}, {section.lengthFt} in, {getSleevingLabel(section.sleeving)}, {bundleDiameterLabel}
-            </li>
-          ))}
+          {uniqueWireSections.map((section) => {
+            const bundleDiameter = bundleDiameterBySection.get(section.pathId) ?? null;
+            const sleeve = selectSleeveForBundleDiameter({
+              sleeving: section.sleeving,
+              bundleDiameterIn: bundleDiameter,
+              sleeves: sleeveCatalog
+            });
+            return (
+              <li key={section.pathId}>
+                {section.wireName}: {section.fromNodeId}
+                {" -> "}
+                {section.toNodeId}, {section.lengthFt} in, {getSleevingLabel(section.sleeving)},{" "}
+                {formatBundleDiameterLabel(bundleDiameter)}
+                {sleeve ? `, size ${sleeve.partNumber}` : ""}
+              </li>
+            );
+          })}
         </ul>
       </section>
       <section className={styles.summaryPanel}>

@@ -524,12 +524,17 @@ describe("cable-canvas-utils", () => {
     expect(filtered.every((row) => !row.label.includes("("))).toBe(true);
   });
 
-  it("leaves bundle diameter blank until wires and a packing rule exist", () => {
+  it("calculates bundle diameter as 1.155 times d times the square root of N", () => {
     expect(bundleDiameterInches([])).toBeNull();
     expect(bundleDiameterInches([0.05, undefined])).toBeNull();
-    expect(bundleDiameterInches([0.05, 0.08])).toBeNull();
+    expect(bundleDiameterInches([0.05, 0])).toBeNull();
+    expect(bundleDiameterInches([0.05])).toBeCloseTo(1.155 * 0.05, 10);
+    expect(bundleDiameterInches([0.05, 0.05, 0.05, 0.05])).toBeCloseTo(1.155 * 0.05 * Math.sqrt(4), 10);
+    expect(bundleDiameterInches([0.05, 0.08])).toBeCloseTo(1.155 * Math.sqrt(0.05 ** 2 + 0.08 ** 2), 10);
     expect(formatBundleDiameterLabel(null)).toBe("bundle dia —");
+    expect(formatBundleDiameterLabel(Number.NaN)).toBe("bundle dia —");
     expect(formatBundleDiameterLabel(0.42)).toBe("bundle dia 0.42 in");
+    expect(formatBundleDiameterLabel(0.1155)).toBe("bundle dia 0.1155 in");
   });
 
   it("formats endpoint totals with connector names and length only", () => {

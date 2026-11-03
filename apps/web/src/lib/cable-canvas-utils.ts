@@ -456,26 +456,38 @@ export function removeConnectorAndRelatedPaths(input: {
 }
 
 /**
+ * Packing factor from the wire bundle diameter sheet:
+ * D = 1.155 × d × √N for wires of equal diameter d.
+ * Mixed diameters use the same factor on the root-sum-square,
+ * D = 1.155 × √(Σ d²), which is identical when every d is equal.
+ */
+export const BUNDLE_DIAMETER_PACKING_FACTOR = 1.155;
+
+/**
  * Diameter, in inches, of the wires that share one cable section.
- * Returns null when the section has no assigned wires, any wire is missing a
- * positive overall diameter, or the packing rule is not defined yet.
- * Do not invent a packing factor here.
+ * Returns null when the section has no assigned wires or any wire is missing
+ * a positive overall diameter, so sleeving is not sized from a partial bundle.
  */
 export function bundleDiameterInches(wireDiametersIn: Array<number | null | undefined>): number | null {
   if (wireDiametersIn.length === 0) {
     return null;
   }
-  const complete = wireDiametersIn.every(
-    (value) => typeof value === "number" && Number.isFinite(value) && value > 0
-  );
-  if (!complete) {
-    return null;
+  let sumOfSquares = 0;
+  for (const value of wireDiametersIn) {
+    if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+      return null;
+    }
+    sumOfSquares += value * value;
   }
-  return null;
+  return BUNDLE_DIAMETER_PACKING_FACTOR * Math.sqrt(sumOfSquares);
 }
 
 export function formatBundleDiameterLabel(inches: number | null): string {
-  return inches === null ? "bundle dia —" : `bundle dia ${inches} in`;
+  if (inches === null || !Number.isFinite(inches)) {
+    return "bundle dia —";
+  }
+  const rounded = Math.round(inches * 10000) / 10000;
+  return `bundle dia ${rounded} in`;
 }
 
 export function formatEndpointTotalLabel(input: {

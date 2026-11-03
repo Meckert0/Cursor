@@ -11,12 +11,13 @@ import {
 import {
   buildConnectorPinsFromComponent,
   filterAllowedAccessoryOptionsForModule,
+  formatCableSectionCanvasLabel,
   formatConnectorPinsLabel,
-  getSleevingLabel,
   loadInitialCanvasDraft,
   normalizeSelectedPathId,
   SLEEVING_OPTIONS
 } from "@/lib/cable-canvas-utils";
+import { cableSectionBundleDiameters } from "@/lib/bundle-diameter";
 import {
   getPartFieldsForCategory,
   readPartFieldRawValue,
@@ -286,6 +287,20 @@ export function CableCanvas({
         })
         .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry)),
     [getNodeCenter, pathsState]
+  );
+
+  const bundleDiameterBySection = useMemo(
+    () =>
+      cableSectionBundleDiameters({
+        connectors,
+        junctions,
+        cablePaths: pathsState,
+        wireRuns: snapshot.paths,
+        wireCatalog,
+        connectorCatalog: connectorCatalogState,
+        pinMappings: snapshot.pinMappings
+      }),
+    [connectorCatalogState, connectors, junctions, pathsState, snapshot.paths, snapshot.pinMappings, wireCatalog]
   );
 
   const normalizedSelectedPathId = useMemo(
@@ -1105,7 +1120,12 @@ export function CableCanvas({
     if (target.closest(`.${styles.connectorNode}, .${styles.junctionNode}, .${styles.connectHandle}`)) {
       return;
     }
-    if (target instanceof SVGLineElement || target instanceof SVGTextElement || target instanceof SVGForeignObjectElement) {
+    if (
+      target instanceof SVGLineElement ||
+      target instanceof SVGTextElement ||
+      target instanceof SVGForeignObjectElement ||
+      target.closest(`.${styles.cableLabel}, .${styles.inlineLengthInput}`)
+    ) {
       return;
     }
     setSelectedEntity(null);
@@ -1589,65 +1609,21 @@ export function CableCanvas({
       ) : null}
       <div className={styles.canvas} ref={canvasRef} data-testid="cable-canvas" onPointerDown={handleCanvasBackgroundPointerDown}>
         <svg className={styles.lines} aria-hidden>
-          {paths.map((path) => {
-            const pathEntry = pathsState.find((entry) => entry.id === path.id);
-            const isEditingLength = inlineLengthEdit?.pathId === path.id;
-            const midpointX = (path.x1 + path.x2) / 2 + 6;
-            const midpointY = (path.y1 + path.y2) / 2 - 4;
-            return (
-              <g key={path.id}>
-                <line
-                  x1={path.x1}
-                  y1={path.y1}
-                  x2={path.x2}
-                  y2={path.y2}
-                  className={selectedEntity?.type === "path" && selectedEntity.id === path.id ? styles.selectedLine : undefined}
-                  onPointerDown={(event) => {
-                    event.stopPropagation();
-                    setSelectedPathId(path.id);
-                    setSelectedEntity({ type: "path", id: path.id });
-                  }}
-                />
-                {isEditingLength ? (
-                  <foreignObject x={midpointX - 24} y={midpointY - 20} width={70} height={24}>
-                    <input
-                      ref={inlineLengthInputRef}
-                      className={styles.inlineLengthInput}
-                      value={inlineLengthEdit.draft}
-                      onChange={(event) =>
-                        setInlineLengthEdit((previous) =>
-                          previous && previous.pathId === path.id ? { ...previous, draft: event.target.value } : previous
-                        )
-                      }
-                      onBlur={commitInlineLengthEdit}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          commitInlineLengthEdit();
-                        }
-                        if (event.key === "Escape") {
-                          event.preventDefault();
-                          setInlineLengthEdit(null);
-                        }
-                      }}
-                      aria-label={`Length in inches for ${pathEntry?.wireName ?? path.id}`}
-                    />
-                  </foreignObject>
-                ) : (
-                  <text
-                    x={midpointX}
-                    y={midpointY}
-                    className={styles.lengthLabel}
-                    onDoubleClick={() => startInlineLengthEdit(path.id)}
-                  >
-                    {(pathEntry?.wireName ?? path.id) +
-                      ` - ${pathEntry?.length ?? 0} in` +
-                      ` | ${getSleevingLabel(pathEntry?.sleeving ?? "none")}`}
-                  </text>
-                )}
-              </g>
-            );
-          })}
+          {paths.map((path) => (
+            <line
+              key={path.id}
+              x1={path.x1}
+              y1={path.y1}
+              x2={path.x2}
+              y2={path.y2}
+              className={selectedEntity?.type === "path" && selectedEntity.id === path.id ? styles.selectedLine : undefined}
+              onPointerDown={(event) => {
+                event.stopPropagation();
+                setSelectedPathId(path.id);
+                setSelectedEntity({ type: "path", id: path.id });
+              }}
+            />
+          ))}
           {connectPreview ? (
             <line
               x1={connectPreview.x1}
@@ -1658,6 +1634,64 @@ export function CableCanvas({
             />
           ) : null}
         </svg>
+        {paths.map((path) => {
+          const pathEntry = pathsState.find((entry) => entry.id === path.id);
+          const isEditingLength = inlineLengthEdit?.pathId === path.id;
+          const midpointX = (path.x1 + path.x2) / 2;
+          const midpointY = (path.y1 + path.y2) / 2;
+          const label = formatCableSectionCanvasLabel({
+            wireName: pathEntry?.wireName ?? path.id,
+            lengthInches: pathEntry?.length ?? 0,
+            sleeving: pathEntry?.sleeving ?? "none",
+            bundleDiameterIn: bundleDiameterBySection.get(path.id) ?? null
+          });
+          if (isEditingLength) {
+            return (
+              <input
+                key={path.id}
+                ref={inlineLengthInputRef}
+                className={styles.inlineLengthInput}
+                style={{ left: midpointX, top: midpointY }}
+                value={inlineLengthEdit.draft}
+                onChange={(event) =>
+                  setInlineLengthEdit((previous) =>
+                    previous && previous.pathId === path.id ? { ...previous, draft: event.target.value } : previous
+                  )
+                }
+                onBlur={commitInlineLengthEdit}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    commitInlineLengthEdit();
+                  }
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    setInlineLengthEdit(null);
+                  }
+                }}
+                aria-label={`Length in inches for ${pathEntry?.wireName ?? path.id}`}
+              />
+            );
+          }
+          return (
+            <div
+              key={path.id}
+              className={`${styles.cableLabel}${
+                selectedEntity?.type === "path" && selectedEntity.id === path.id ? ` ${styles.cableLabelSelected}` : ""
+              }`}
+              style={{ left: midpointX, top: midpointY }}
+              data-testid={`cable-label-${path.id}`}
+              onPointerDown={(event) => {
+                event.stopPropagation();
+                setSelectedPathId(path.id);
+                setSelectedEntity({ type: "path", id: path.id });
+              }}
+              onDoubleClick={() => startInlineLengthEdit(path.id)}
+            >
+              {label}
+            </div>
+          );
+        })}
 
         {connectors.map((connector) => {
           const position = positions[connector.id] ?? { x: 0, y: 0 };

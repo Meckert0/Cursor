@@ -361,39 +361,56 @@
 
 .lines line {
   stroke: #64748b;
-  stroke-width: 2;
+  stroke-width: 6;
+  stroke-linecap: round;
   cursor: pointer;
 }
 
-.selectedLine {
+.lines line.selectedLine {
   stroke: #2563eb;
-  stroke-width: 3;
+  stroke-width: 8;
 }
 
-.previewLine {
+.lines line.previewLine {
   stroke: #60a5fa;
-  stroke-width: 2;
-  stroke-dasharray: 6 4;
+  stroke-width: 6;
+  stroke-dasharray: 10 6;
 }
 
-.lines text {
-  fill: #334155;
-  font-size: 11px;
-}
-
-.lengthLabel {
+.cableLabel {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.88);
+  outline: 1px solid rgba(148, 163, 184, 0.35);
+  color: #1e293b;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-align: center;
+  white-space: nowrap;
   cursor: text;
   user-select: none;
 }
 
+.cableLabelSelected {
+  background: rgba(239, 246, 255, 0.94);
+  outline-color: rgba(37, 99, 235, 0.4);
+}
+
 .inlineLengthInput {
-  width: 64px;
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 72px;
   border: 1px solid #2563eb;
   border-radius: 6px;
-  padding: 2px 4px;
+  padding: 2px 6px;
   font: inherit;
-  font-size: 11px;
-  background: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.94);
   color: #1e293b;
 }
 

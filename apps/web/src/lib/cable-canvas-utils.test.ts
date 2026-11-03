@@ -10,6 +10,7 @@ import {
   buildUniqueWireSections,
   bundleDiameterInches,
   formatBundleDiameterLabel,
+  formatCableSectionCanvasLabel,
   formatConnectorPinsLabel,
   formatEndpointTotalLabel,
   normalizePathEndpointSelection,
@@ -535,6 +536,33 @@ describe("cable-canvas-utils", () => {
     expect(formatBundleDiameterLabel(Number.NaN)).toBe("bundle dia —");
     expect(formatBundleDiameterLabel(0.42)).toBe("bundle dia 0.42 in");
     expect(formatBundleDiameterLabel(0.1155)).toBe("bundle dia 0.1155 in");
+  });
+
+  it("centers a canvas cable label with sleeving and bundle diameter", () => {
+    expect(
+      formatCableSectionCanvasLabel({
+        wireName: "cable1",
+        lengthInches: 24,
+        sleeving: "expandable_sleeving",
+        bundleDiameterIn: null
+      })
+    ).toBe("cable1 - 24 in | expandable sleeving | bundle dia —");
+    expect(
+      formatCableSectionCanvasLabel({
+        wireName: "cable1",
+        lengthInches: 12,
+        sleeving: "none",
+        bundleDiameterIn: 0.1155
+      })
+    ).toBe("cable1 - 12 in | no sleeving | bundle dia 0.1155 in");
+    expect(
+      formatCableSectionCanvasLabel({
+        wireName: "cable2",
+        lengthInches: Number.NaN,
+        sleeving: "wire_braid_under_expandable_sleeving",
+        bundleDiameterIn: 0.2
+      })
+    ).toBe("cable2 - 0 in | wire braid under expandable sleeving | bundle dia 0.2 in");
   });
 
   it("formats endpoint totals with connector names and length only", () => {

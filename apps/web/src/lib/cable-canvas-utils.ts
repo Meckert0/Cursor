@@ -490,6 +490,16 @@ export function formatBundleDiameterLabel(inches: number | null): string {
   return `bundle dia ${rounded} in`;
 }
 
+export function formatCableSectionCanvasLabel(input: {
+  wireName: string;
+  lengthInches: number;
+  sleeving: SleevingValue;
+  bundleDiameterIn: number | null;
+}): string {
+  const length = Number.isFinite(input.lengthInches) && input.lengthInches >= 0 ? input.lengthInches : 0;
+  return `${input.wireName} - ${length} in | ${getSleevingLabel(input.sleeving)} | ${formatBundleDiameterLabel(input.bundleDiameterIn)}`;
+}
+
 export function formatEndpointTotalLabel(input: {
   fromReference?: string;
   toReference?: string;

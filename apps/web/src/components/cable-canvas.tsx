@@ -1629,6 +1629,13 @@ export function CableCanvas({
               sleeving,
               selected
             });
+            const outlineClass = [
+              styles.cableSleeveOutline,
+              sleeving === "none" ? "" : styles.cableSleeveOutlineSleeved,
+              sleeving !== "none" && selected ? styles.selectedLine : ""
+            ]
+              .filter(Boolean)
+              .join(" ");
             const sleeveOutline = (
               <rect
                 x={outline.x}
@@ -1636,7 +1643,7 @@ export function CableCanvas({
                 width={outline.width}
                 height={outline.height}
                 transform={`rotate(${outline.angle} ${outline.centerX} ${outline.centerY})`}
-                className={styles.cableSleeveOutline}
+                className={outlineClass}
                 onPointerDown={selectPath}
               />
             );

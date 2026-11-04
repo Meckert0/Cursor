@@ -407,6 +407,14 @@
   cursor: pointer;
 }
 
+.lines rect.cableSleeveOutline.cableSleeveOutlineSleeved {
+  stroke: #64748b;
+}
+
+.lines rect.cableSleeveOutline.cableSleeveOutlineSleeved.selectedLine {
+  stroke: #2563eb;
+}
+
 .lines line.previewLine {
   stroke: #60a5fa;
   stroke-width: 6;

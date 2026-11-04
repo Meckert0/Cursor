@@ -130,6 +130,8 @@ describe("CableCanvas cable sections", () => {
     expect(expandable?.[0]?.getAttribute("class")).toContain(styles.sleevingExpandable);
     const expandableOutline = sections[0]?.querySelector("rect");
     expect(expandableOutline?.getAttribute("class")).toContain(styles.cableSleeveOutline);
+    expect(expandableOutline?.getAttribute("class")).toContain(styles.cableSleeveOutlineSleeved);
+    expect(expandableOutline?.getAttribute("class")).toContain(styles.selectedLine);
     expect(expandableOutline?.getAttribute("transform")).toBe("rotate(0 180 68)");
     expect(Number(expandableOutline?.getAttribute("width"))).toBeCloseTo(199);
     expect(Number(expandableOutline?.getAttribute("height"))).toBeCloseTo(15);
@@ -138,8 +140,11 @@ describe("CableCanvas cable sections", () => {
     const plain = sections[1]?.querySelectorAll("line");
     expect(plain).toHaveLength(1);
     expect(plain?.[0]?.getAttribute("class")).toBeNull();
-    expect(sections[1]?.querySelector("rect")?.getAttribute("class")).toContain(styles.cableSleeveOutline);
+    const plainOutline = sections[1]?.querySelector("rect");
+    expect(plainOutline?.getAttribute("class")).toContain(styles.cableSleeveOutline);
+    expect(plainOutline?.getAttribute("class")).not.toContain(styles.cableSleeveOutlineSleeved);
     expect(canvasCss).toContain(".lines rect.cableSleeveOutline");
+    expect(canvasCss).toContain(".lines rect.cableSleeveOutline.cableSleeveOutlineSleeved {\n  stroke: #64748b;");
     expect(canvasCss).toContain("fill: transparent;");
     expect(canvasCss).not.toContain("cableOutlineExpandable");
   });
@@ -177,6 +182,8 @@ describe("CableCanvas cable sections", () => {
     const outlines = document.querySelectorAll("[data-cable-section] rect");
     expect(outlines).toHaveLength(1);
     expect(outlines[0]?.getAttribute("class")).toContain(styles.cableSleeveOutline);
+    expect(outlines[0]?.getAttribute("class")).toContain(styles.cableSleeveOutlineSleeved);
+    expect(outlines[0]?.getAttribute("class")).toContain(styles.selectedLine);
     expect(outlines[0]?.getAttribute("class")).not.toContain("cableOutline");
     const ys = braidLines.flatMap((line) => [Number(line.getAttribute("y1")), Number(line.getAttribute("y2"))]);
     expect(Math.max(...ys) - Math.min(...ys)).toBeCloseTo(16);

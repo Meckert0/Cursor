@@ -26,7 +26,7 @@ async function connectFirstTwoConnectors(page: Page) {
   await page.mouse.down();
   await page.mouse.move(targetBox!.x + targetBox!.width / 2, targetBox!.y + targetBox!.height / 2, { steps: 8 });
   await page.mouse.up();
-  await expect(page.locator("svg line")).toHaveCount(1, { timeout: 10_000 });
+  await expect(page.locator("[data-cable-section]")).toHaveCount(1, { timeout: 10_000 });
 }
 
 async function defineConnectorModule(page: Page, partNumber: string) {
@@ -63,7 +63,7 @@ async function authorFullCableOnCanvas(page: Page) {
   await waitForCanvasSaved(page);
 
   await connectFirstTwoConnectors(page);
-  await page.locator("svg line").click({ force: true });
+  await page.locator("[data-cable-section] line").last().click({ force: true });
   await expect(page.getByLabel("Wire part number")).toHaveCount(0);
   await expect(page.getByLabel("Length (inches)")).toBeVisible();
   await page.getByLabel("Length (inches)").fill(String(FULL_CABLE.wireLengthIn));

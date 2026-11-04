@@ -37,9 +37,10 @@ test("canvas authoring supports create, connect, and delete", async ({ page }) =
   await page.mouse.down();
   await page.mouse.move(targetBox!.x + targetBox!.width / 2, targetBox!.y + targetBox!.height / 2, { steps: 8 });
   await page.mouse.up();
-  await expect(page.locator("svg line")).toHaveCount(1, { timeout: 10_000 });
+  const cable = page.locator("[data-cable-section]");
+  await expect(cable).toHaveCount(1, { timeout: 10_000 });
 
-  await page.locator("svg line").click({ force: true });
+  await cable.locator("line").last().click({ force: true });
   await expect(page.getByLabel("Wire part number")).toHaveCount(0);
   await expect(page.getByLabel("Length (inches)")).toBeVisible();
   await expect(page.getByLabel("Sleeving")).toBeVisible();

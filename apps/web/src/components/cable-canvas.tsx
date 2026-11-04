@@ -1619,6 +1619,7 @@ export function CableCanvas({
               setSelectedPathId(path.id);
               setSelectedEntity({ type: "path", id: path.id });
             };
+            const outlineSelected = selected ? styles.cableOutlineSelected : "";
             if (sleeving === "wire_braid_under_expandable_sleeving") {
               const crosses = buildCableBraidCrosses({
                 x1: path.x1,
@@ -1628,7 +1629,7 @@ export function CableCanvas({
                 width: selected ? 16 : 12
               });
               return (
-                <g key={path.id}>
+                <g key={path.id} data-cable-section={path.id}>
                   <line
                     x1={path.x1}
                     y1={path.y1}
@@ -1637,6 +1638,17 @@ export function CableCanvas({
                     className={styles.braidHit}
                     onPointerDown={selectPath}
                   />
+                  {crosses.map((segment, index) => (
+                    <line
+                      key={`${path.id}-braid-outline-${index}`}
+                      x1={segment.x1}
+                      y1={segment.y1}
+                      x2={segment.x2}
+                      y2={segment.y2}
+                      className={`${styles.cableOutline} ${styles.cableOutlineBraid} ${outlineSelected}`.trim()}
+                      onPointerDown={selectPath}
+                    />
+                  ))}
                   {crosses.map((segment, index) => (
                     <line
                       key={`${path.id}-braid-${index}`}
@@ -1655,16 +1667,28 @@ export function CableCanvas({
               sleeving === "expandable_sleeving" ? styles.sleevingExpandable : "",
               selected ? styles.selectedLine : ""
             ].filter(Boolean);
+            const outlineClass = `${styles.cableOutline} ${
+              sleeving === "expandable_sleeving" ? styles.cableOutlineExpandable : styles.cableOutlinePlain
+            } ${outlineSelected}`.trim();
             return (
-              <line
-                key={path.id}
-                x1={path.x1}
-                y1={path.y1}
-                x2={path.x2}
-                y2={path.y2}
-                className={classNames.length > 0 ? classNames.join(" ") : undefined}
-                onPointerDown={selectPath}
-              />
+              <g key={path.id} data-cable-section={path.id}>
+                <line
+                  x1={path.x1}
+                  y1={path.y1}
+                  x2={path.x2}
+                  y2={path.y2}
+                  className={outlineClass}
+                  onPointerDown={selectPath}
+                />
+                <line
+                  x1={path.x1}
+                  y1={path.y1}
+                  x2={path.x2}
+                  y2={path.y2}
+                  className={classNames.length > 0 ? classNames.join(" ") : undefined}
+                  onPointerDown={selectPath}
+                />
+              </g>
             );
           })}
           {connectPreview ? (

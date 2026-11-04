@@ -5,6 +5,7 @@ import type { LibraryComponentDto, RevisionDto } from "@/lib/api";
 import { readCanvasDraftSnapshot } from "@/lib/cable-canvas-utils";
 import {
   buildConnectorModuleEntries,
+  formatContactPositionList,
   type ConnectorModuleEntry,
   type ContactCompatRow,
   type ContactRelationshipRow
@@ -15,60 +16,66 @@ const EMPTY_CATALOG: LibraryComponentDto[] = [];
 const EMPTY_COMPAT: ContactCompatRow[] = [];
 const EMPTY_RELATIONSHIPS: ContactRelationshipRow[] = [];
 
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <>
-      <dt>{label}</dt>
-      <dd>{value || "—"}</dd>
-    </>
-  );
+function labeledPart(prefix: string, partNumber: string): string {
+  return partNumber.toUpperCase().startsWith(prefix) ? partNumber : `${prefix} ${partNumber}`;
 }
 
-function ModuleInfo({ entry }: { entry: ConnectorModuleEntry }) {
+function moduleFacts(entry: ConnectorModuleEntry): string[] {
+  return [
+    entry.description,
+    entry.gender,
+    entry.contactGroups.join(", "),
+    entry.backshellPartNumber ? labeledPart("BS", entry.backshellPartNumber) : "",
+    entry.strainReliefPartNumber ? labeledPart("SR", entry.strainReliefPartNumber) : ""
+  ].filter((fact) => fact.length > 0);
+}
+
+function ModuleBlock({ entry }: { entry: ConnectorModuleEntry }) {
+  const facts = moduleFacts(entry);
   return (
-    <dl className={styles.info}>
-      {entry.frame ? (
-        <InfoRow
-          label="Frame"
-          value={[entry.frame.reference, entry.frame.partNumber, `slot ${entry.frame.slotId}`]
-            .filter((part) => part.length > 0)
-            .join(" — ")}
-        />
+    <article className={styles.module} aria-label={`Module ${entry.designator}`}>
+      <h4>
+        <span className={styles.designator}>{entry.designator}</span>
+        <span className={styles.partNumber}>{entry.partNumber || "No part selected"}</span>
+      </h4>
+      {facts.length > 0 ? (
+        <p className={styles.meta}>
+          {facts.map((fact, index) => (
+            <span key={`${index}:${fact}`}>{fact}</span>
+          ))}
+        </p>
       ) : null}
-      <InfoRow label="Description" value={entry.description} />
-      <InfoRow label="Gender" value={entry.gender} />
-      <InfoRow label="Contacts" value={entry.contactGroups.join(", ")} />
-      <InfoRow label="Backshell" value={entry.backshellPartNumber} />
-      <InfoRow label="Strain relief" value={entry.strainReliefPartNumber} />
-    </dl>
+      <CompatibilityTable entry={entry} />
+    </article>
   );
 }
 
 function CompatibilityTable({ entry }: { entry: ConnectorModuleEntry }) {
   if (!entry.moduleDefined) {
-    return <p className={styles.empty}>Select a module on the canvas to see compatible contacts.</p>;
+    return <p className={styles.empty}>No module selected.</p>;
   }
   if (entry.compatibleContacts.length === 0) {
-    return <p className={styles.empty}>No compatible contacts in the library for this module.</p>;
+    return <p className={styles.empty}>No compatible contacts.</p>;
   }
   return (
     <table className={styles.compatTable} aria-label={`Compatible contacts for ${entry.designator}`}>
       <thead>
         <tr>
-          <th scope="col">Contact P/N</th>
-          <th scope="col">Description</th>
-          <th scope="col">AWG range</th>
-          <th scope="col">Positions</th>
+          <th scope="col">Contact</th>
+          <th scope="col">AWG</th>
+          <th scope="col">Pos</th>
           <th scope="col">Status</th>
         </tr>
       </thead>
       <tbody>
         {entry.compatibleContacts.map((contact) => (
           <tr key={contact.partNumber}>
-            <td>{contact.partNumber}</td>
-            <td>{contact.description || "—"}</td>
+            <td>
+              {contact.partNumber}
+              {contact.description ? <span className={styles.contactDesc}> {contact.description}</span> : null}
+            </td>
             <td>{contact.awgRange || "—"}</td>
-            <td>{contact.positions}</td>
+            <td>{formatContactPositionList(contact.positions)}</td>
             <td>{contact.status === "allowed" ? "Allowed" : "Review"}</td>
           </tr>
         ))}
@@ -117,18 +124,7 @@ export function ConnectorModulesSection({
       {entries.length === 0 ? <p className={styles.empty}>No connectors yet.</p> : null}
       <div className={styles.list}>
         {entries.map((entry) => (
-          <article key={entry.key} className={styles.module} aria-label={`Module ${entry.designator}`}>
-            <div className={styles.moduleDetails}>
-              <h4>
-                <span className={styles.designator}>{entry.designator}</span>
-                <span className={styles.partNumber}>{entry.partNumber || "No part selected"}</span>
-              </h4>
-              <ModuleInfo entry={entry} />
-            </div>
-            <div className={styles.compat}>
-              <CompatibilityTable entry={entry} />
-            </div>
-          </article>
+          <ModuleBlock key={entry.key} entry={entry} />
         ))}
       </div>
     </section>

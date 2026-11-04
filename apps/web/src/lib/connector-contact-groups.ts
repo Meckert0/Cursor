@@ -218,6 +218,37 @@ export type ConnectorModuleEntry = {
 
 const POSITION_COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
+/** Collapse a sorted position list so a narrow column can show "1–12" instead of every number. */
+export function formatContactPositionList(positions: string): string {
+  if (positions === "All") {
+    return positions;
+  }
+  const tokens = positions
+    .split(",")
+    .map((token) => token.trim())
+    .filter((token) => token.length > 0);
+  const groups: string[] = [];
+  let index = 0;
+  while (index < tokens.length) {
+    const start = Number(tokens[index]);
+    const numeric = Number.isInteger(start) && String(start) === tokens[index];
+    if (!numeric) {
+      groups.push(tokens[index] ?? "");
+      index += 1;
+      continue;
+    }
+    let end = start;
+    let next = index + 1;
+    while (next < tokens.length && Number(tokens[next]) === end + 1 && String(end + 1) === tokens[next]) {
+      end += 1;
+      next += 1;
+    }
+    groups.push(end === start ? (tokens[index] ?? "") : `${tokens[index]}–${end}`);
+    index = next;
+  }
+  return groups.join(", ");
+}
+
 function compatibleContactsForModule(
   modulePartId: string | undefined,
   contactCatalog: LibraryComponentDto[],

@@ -5,6 +5,7 @@ import {
   displayConnectorGender,
   formatContactAwgRange,
   formatContactGroupLabel,
+  formatContactPositionList,
   readModuleContactGroups
 } from "./connector-contact-groups";
 
@@ -105,6 +106,13 @@ describe("connector contact groups", () => {
     expect(formatContactAwgRange(contact("C-4", { acceptedGauges: ["22", "24"] }))).toBe("22, 24 AWG");
     expect(formatContactAwgRange(contact("C-5", {}))).toBe("");
     expect(formatContactAwgRange(undefined)).toBe("");
+  });
+
+  it("collapses consecutive contact positions into a range", () => {
+    expect(formatContactPositionList("All")).toBe("All");
+    expect(formatContactPositionList("1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12")).toBe("1–12");
+    expect(formatContactPositionList("2, 3, 10")).toBe("2–3, 10");
+    expect(formatContactPositionList("A, B")).toBe("A, B");
   });
 
   it("lists every canvas module sorted by designator with its connector info", () => {

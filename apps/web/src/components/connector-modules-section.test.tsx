@@ -43,7 +43,7 @@ describe("ConnectorModulesSection", () => {
     expect(screen.getByText("DRAFT-1")).toBeInTheDocument();
     expect(screen.queryByText("SAVED-1")).not.toBeInTheDocument();
     expect(screen.getByText("No part selected")).toBeInTheDocument();
-    expect(screen.getByText("Select a module on the canvas to see compatible contacts.")).toBeInTheDocument();
+    expect(screen.getByText("No module selected.")).toBeInTheDocument();
   });
 
   it("shows an empty message without connectors", () => {

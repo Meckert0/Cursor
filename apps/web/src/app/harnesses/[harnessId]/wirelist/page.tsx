@@ -206,7 +206,7 @@ export default async function HarnessWirelistPage({
             saveWirelistAction={saveWirelistAction}
           />
         </section>
-        <section className={styles.card}>
+        <div className={styles.connectorsColumn}>
           <ConnectorModulesSection
             revisionId={revision.id}
             snapshot={revision.snapshot}
@@ -215,7 +215,7 @@ export default async function HarnessWirelistPage({
             moduleContactCompat={moduleContactCompat}
             contactRelationships={contactRelationships}
           />
-        </section>
+        </div>
       </main>
     </div>
   );

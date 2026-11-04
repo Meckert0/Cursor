@@ -104,14 +104,15 @@ describe("DetailsSummary", () => {
     expect(j1.getByText("510103")).toBeInTheDocument();
     expect(j1.getByText("Signal module")).toBeInTheDocument();
     expect(j1.getByText("16 TP ITA")).toBeInTheDocument();
-    expect(j1.getByText("410120")).toBeInTheDocument();
+    expect(j1.getByText("BS 410120")).toBeInTheDocument();
     expect(j1.getByText("SR-1")).toBeInTheDocument();
+    expect(j1.queryByText(/ITA-2/)).not.toBeInTheDocument();
     const j2a = within(modules[1]);
     expect(j2a.getByText("MOD-A")).toBeInTheDocument();
-    expect(j2a.getByText("J2 — ITA-2 — slot A")).toBeInTheDocument();
     expect(j2a.getByText("16 TP ITA, 19 MC ITA")).toBeInTheDocument();
     expect(j2a.getByText("BS-9")).toBeInTheDocument();
-    expect(j2a.getByText("No compatible contacts in the library for this module.")).toBeInTheDocument();
+    expect(j2a.queryByText(/slot A/)).not.toBeInTheDocument();
+    expect(j2a.getByText("No compatible contacts.")).toBeInTheDocument();
     expect(
       screen.getByText("cable1: c_canvas_1 -> c_canvas_2, 24 in, expandable sleeving, bundle dia —")
     ).toBeInTheDocument();
@@ -157,10 +158,10 @@ describe("DetailsSummary", () => {
     const modules = screen.getAllByRole("article");
     expect(modules.map((module) => module.getAttribute("aria-label"))).toEqual(["Module J1", "Module J2"]);
     const j1Rows = within(screen.getByRole("table", { name: "Compatible contacts for J1" })).getAllByRole("row");
-    expect(j1Rows[0]).toHaveTextContent("Contact P/NDescriptionAWG rangePositionsStatus");
-    expect(j1Rows[1]).toHaveTextContent("CNT-22Contact CNT-2222-26 AWG1, 2Allowed");
+    expect(j1Rows[0]).toHaveTextContent("ContactAWGPosStatus");
+    expect(j1Rows[1]).toHaveTextContent("CNT-22 Contact CNT-2222-26 AWG1–2Allowed");
     const j2Rows = within(screen.getByRole("table", { name: "Compatible contacts for J2" })).getAllByRole("row");
-    expect(j2Rows[1]).toHaveTextContent("CNT-16Contact CNT-1616-20 AWGAllReview");
+    expect(j2Rows[1]).toHaveTextContent("CNT-16 Contact CNT-1616-20 AWGAllReview");
   });
 
   it("fills each cable section bundle diameter from the wirelist and sizes the sleeving", () => {

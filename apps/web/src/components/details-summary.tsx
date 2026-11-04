@@ -98,7 +98,7 @@ export function DetailsSummary({
   );
 
   return (
-    <div className={styles.details}>
+    <div className={styles.summaryGrid}>
       <ConnectorModulesSection
         revisionId={revisionId}
         snapshot={snapshot}
@@ -108,30 +108,29 @@ export function DetailsSummary({
         moduleContactCompat={moduleContactCompat}
         contactRelationships={contactRelationships}
       />
-      <div className={styles.summaryGrid}>
-        <section className={styles.summaryPanel}>
-          <h3>Cable sections</h3>
-          <ul>
-            {uniqueWireSections.length === 0 ? <li>No cable sections yet.</li> : null}
-            {uniqueWireSections.map((section) => {
-              const bundleDiameter = bundleDiameterBySection.get(section.pathId) ?? null;
-              const sleeve = selectSleeveForBundleDiameter({
-                sleeving: section.sleeving,
-                bundleDiameterIn: bundleDiameter,
-                sleeves: sleeveCatalog
-              });
-              return (
-                <li key={section.pathId}>
-                  {section.wireName}: {section.fromNodeId}
-                  {" -> "}
-                  {section.toNodeId}, {section.lengthFt} in, {getSleevingLabel(section.sleeving)},{" "}
-                  {formatBundleDiameterLabel(bundleDiameter)}
-                  {sleeve ? `, size ${sleeve.partNumber}` : ""}
-                </li>
-              );
-            })}
-          </ul>
-        </section>
+      <section className={styles.summaryPanel}>
+        <h3>Cable sections</h3>
+        <ul>
+          {uniqueWireSections.length === 0 ? <li>No cable sections yet.</li> : null}
+          {uniqueWireSections.map((section) => {
+            const bundleDiameter = bundleDiameterBySection.get(section.pathId) ?? null;
+            const sleeve = selectSleeveForBundleDiameter({
+              sleeving: section.sleeving,
+              bundleDiameterIn: bundleDiameter,
+              sleeves: sleeveCatalog
+            });
+            return (
+              <li key={section.pathId}>
+                {section.wireName}: {section.fromNodeId}
+                {" -> "}
+                {section.toNodeId}, {section.lengthFt} in, {getSleevingLabel(section.sleeving)},{" "}
+                {formatBundleDiameterLabel(bundleDiameter)}
+                {sleeve ? `, size ${sleeve.partNumber}` : ""}
+              </li>
+            );
+          })}
+        </ul>
+      </section>
         <section className={styles.summaryPanel}>
           <h3>Endpoint totals</h3>
           <ul>
@@ -153,7 +152,6 @@ export function DetailsSummary({
             })}
           </ul>
         </section>
-      </div>
     </div>
   );
 }

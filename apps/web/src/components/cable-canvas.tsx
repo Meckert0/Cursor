@@ -12,6 +12,7 @@ import {
   buildConnectorPinsFromComponent,
   filterAllowedAccessoryOptionsForModule,
   buildCableBraidCrosses,
+  buildCableSleeveOutline,
   formatCableSectionCanvasLabel,
   formatConnectorPinsLabel,
   loadInitialCanvasDraft,
@@ -1123,6 +1124,7 @@ export function CableCanvas({
     }
     if (
       target instanceof SVGLineElement ||
+      target instanceof SVGRectElement ||
       target instanceof SVGTextElement ||
       target instanceof SVGForeignObjectElement ||
       target.closest(`.${styles.cableLabel}, .${styles.inlineLengthInput}`)
@@ -1618,12 +1620,37 @@ export function CableCanvas({
             const pathEntry = pathsState.find((entry) => entry.id === path.id);
             const sleeving = pathEntry?.sleeving ?? "none";
             const selected = selectedEntity?.type === "path" && selectedEntity.id === path.id;
-            const selectPath = (event: ReactPointerEvent<SVGLineElement>) => {
+            const selectPath = (event: ReactPointerEvent<SVGElement>) => {
               event.stopPropagation();
               setSelectedPathId(path.id);
               setSelectedEntity({ type: "path", id: path.id });
             };
-            const outlineSelected = selected ? styles.cableOutlineSelected : "";
+            const outline = buildCableSleeveOutline({
+              x1: path.x1,
+              y1: path.y1,
+              x2: path.x2,
+              y2: path.y2,
+              sleeving,
+              selected
+            });
+            const outlineClass = [
+              styles.cableSleeveOutline,
+              sleeving === "none" ? "" : styles.cableSleeveOutlineSleeved,
+              sleeving !== "none" && selected ? styles.selectedLine : ""
+            ]
+              .filter(Boolean)
+              .join(" ");
+            const sleeveOutline = (
+              <rect
+                x={outline.x}
+                y={outline.y}
+                width={outline.width}
+                height={outline.height}
+                transform={`rotate(${outline.angle} ${outline.centerX} ${outline.centerY})`}
+                className={outlineClass}
+                onPointerDown={selectPath}
+              />
+            );
             if (sleeving === "wire_braid_under_expandable_sleeving") {
               const crosses = buildCableBraidCrosses({
                 x1: path.x1,
@@ -1644,17 +1671,6 @@ export function CableCanvas({
                   />
                   {crosses.map((segment, index) => (
                     <line
-                      key={`${path.id}-braid-outline-${index}`}
-                      x1={segment.x1}
-                      y1={segment.y1}
-                      x2={segment.x2}
-                      y2={segment.y2}
-                      className={`${styles.cableOutline} ${styles.cableOutlineBraid} ${outlineSelected}`.trim()}
-                      onPointerDown={selectPath}
-                    />
-                  ))}
-                  {crosses.map((segment, index) => (
-                    <line
                       key={`${path.id}-braid-${index}`}
                       x1={segment.x1}
                       y1={segment.y1}
@@ -1664,6 +1680,7 @@ export function CableCanvas({
                       onPointerDown={selectPath}
                     />
                   ))}
+                  {sleeveOutline}
                 </g>
               );
             }
@@ -1671,19 +1688,8 @@ export function CableCanvas({
               sleeving === "expandable_sleeving" ? styles.sleevingExpandable : "",
               selected ? styles.selectedLine : ""
             ].filter(Boolean);
-            const outlineClass = `${styles.cableOutline} ${
-              sleeving === "expandable_sleeving" ? styles.cableOutlineExpandable : styles.cableOutlinePlain
-            } ${outlineSelected}`.trim();
             return (
               <g key={path.id} data-cable-section={path.id}>
-                <line
-                  x1={path.x1}
-                  y1={path.y1}
-                  x2={path.x2}
-                  y2={path.y2}
-                  className={outlineClass}
-                  onPointerDown={selectPath}
-                />
                 <line
                   x1={path.x1}
                   y1={path.y1}
@@ -1692,6 +1698,7 @@ export function CableCanvas({
                   className={classNames.length > 0 ? classNames.join(" ") : undefined}
                   onPointerDown={selectPath}
                 />
+                {sleeveOutline}
               </g>
             );
           })}

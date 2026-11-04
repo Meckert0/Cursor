@@ -399,37 +399,20 @@
   cursor: pointer;
 }
 
-.lines line.cableOutline {
+.lines rect.cableSleeveOutline {
+  fill: transparent;
   stroke: #1e293b;
+  stroke-width: 1;
+  stroke-linejoin: miter;
   cursor: pointer;
 }
 
-.lines line.cableOutlinePlain {
-  stroke-width: 8;
-  stroke-linecap: round;
+.lines rect.cableSleeveOutline.cableSleeveOutlineSleeved {
+  stroke: #64748b;
 }
 
-.lines line.cableOutlinePlain.cableOutlineSelected {
-  stroke-width: 10;
-}
-
-.lines line.cableOutlineExpandable {
-  stroke-width: 14;
-  stroke-dasharray: 8 4;
-  stroke-linecap: butt;
-}
-
-.lines line.cableOutlineExpandable.cableOutlineSelected {
-  stroke-width: 18;
-}
-
-.lines line.cableOutlineBraid {
-  stroke-width: 6;
-  stroke-linecap: round;
-}
-
-.lines line.cableOutlineBraid.cableOutlineSelected {
-  stroke-width: 7;
+.lines rect.cableSleeveOutline.cableSleeveOutlineSleeved.selectedLine {
+  stroke: #2563eb;
 }
 
 .lines line.previewLine {

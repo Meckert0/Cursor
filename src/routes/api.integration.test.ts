@@ -1006,6 +1006,122 @@ test("revision snapshot patch updates wirelist data", async () => {
   }
 });
 
+test("snapshot patch keeps wirelist text when a connector is deleted", async () => {
+  const app = buildTestApp();
+  await app.ready();
+  try {
+    const createProjectResponse = await app.inject({
+      method: "POST",
+      url: "/v1/projects",
+      payload: { name: "Project Wirelist Delete", createdBy: "user-a" }
+    });
+    assert.equal(createProjectResponse.statusCode, 201);
+    const project = createProjectResponse.json() as { id: string };
+
+    const createDesignResponse = await app.inject({
+      method: "POST",
+      url: `/v1/projects/${project.id}/designs`,
+      payload: { name: "Harness Wirelist Delete", createdBy: "user-a" }
+    });
+    assert.equal(createDesignResponse.statusCode, 201);
+    const design = createDesignResponse.json() as { id: string };
+
+    const wirePath = {
+      id: "p1",
+      runNumber: 1,
+      wireName: "wire1",
+      fromConnectorId: "c1",
+      toConnectorId: "c2",
+      pathType: "wire",
+      wirelistManaged: true,
+      fromLocation: "J2 - 4",
+      toLocation: "Splice-A",
+      fromContact: "CNT-1",
+      toContact: "CNT-4",
+      wirePartNumber: "M22759/16-22",
+      length: 12,
+      notes: "keep me"
+    };
+    const pinMapping = {
+      id: "m1",
+      pathId: "p1",
+      fromConnectorId: "c1",
+      fromPinId: "pin-a",
+      toConnectorId: "c2",
+      toPinId: "pin-b",
+      mappingType: "one_to_one"
+    };
+
+    const createRevisionResponse = await app.inject({
+      method: "POST",
+      url: `/v1/designs/${design.id}/revisions`,
+      payload: {
+        createdBy: "user-a",
+        snapshot: {
+          connectors: [
+            { id: "c1", reference: "J1", pins: [{ id: "pin-a", number: "1" }] },
+            { id: "c2", reference: "J2", pins: [{ id: "pin-b", number: "4" }] }
+          ],
+          paths: [wirePath],
+          pinMappings: [pinMapping],
+          bundles: [],
+          annotations: []
+        }
+      }
+    });
+    assert.equal(createRevisionResponse.statusCode, 201);
+    const revision = createRevisionResponse.json() as {
+      id: string;
+      snapshotHash: string;
+      snapshot: { paths: Array<Record<string, unknown>>; pinMappings: Array<{ id: string }> };
+    };
+    assert.equal(revision.snapshot.paths[0]?.fromLocation, "J2 - 4");
+    assert.equal(revision.snapshot.paths[0]?.toLocation, "Splice-A");
+    assert.equal(revision.snapshot.paths[0]?.wirelistManaged, true);
+    assert.equal(revision.snapshot.paths[0]?.fromContact, "CNT-1");
+
+    const patchResponse = await app.inject({
+      method: "PATCH",
+      url: `/v1/revisions/${revision.id}/snapshot`,
+      payload: {
+        expectedSnapshotHash: revision.snapshotHash,
+        snapshot: {
+          connectors: [{ id: "c1", reference: "J1", pins: [] }],
+          paths: [wirePath],
+          pinMappings: [pinMapping],
+          bundles: [],
+          annotations: []
+        }
+      }
+    });
+    assert.equal(patchResponse.statusCode, 200);
+    const patched = patchResponse.json() as {
+      snapshot: {
+        connectors: Array<{ id: string }>;
+        paths: Array<Record<string, unknown>>;
+        pinMappings: Array<{ id: string; toConnectorId: string; toPinId: string }>;
+      };
+    };
+    assert.deepEqual(
+      patched.snapshot.connectors.map((connector) => connector.id),
+      ["c1"]
+    );
+    assert.equal(patched.snapshot.paths[0]?.fromLocation, "J2 - 4");
+    assert.equal(patched.snapshot.paths[0]?.toLocation, "Splice-A");
+    assert.equal(patched.snapshot.paths[0]?.wirelistManaged, true);
+    assert.equal(patched.snapshot.paths[0]?.fromContact, "CNT-1");
+    assert.equal(patched.snapshot.paths[0]?.toContact, "CNT-4");
+    assert.equal(patched.snapshot.paths[0]?.wirePartNumber, "M22759/16-22");
+    assert.equal(patched.snapshot.paths[0]?.length, 12);
+    assert.equal(patched.snapshot.paths[0]?.notes, "keep me");
+    assert.equal(patched.snapshot.pinMappings[0]?.id, "m1");
+    assert.equal(patched.snapshot.pinMappings[0]?.toConnectorId, "c2");
+    assert.equal(patched.snapshot.pinMappings[0]?.toPinId, "pin-b");
+  } finally {
+    await app.close();
+  }
+});
+
 test("submit-for-quote enforces latest validation pass precondition", async () => {
   const app = buildTestApp();
 

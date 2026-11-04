@@ -98,6 +98,11 @@ export interface DesignSnapshot {
     fromConnectorId: string;
     toConnectorId: string;
     pathType: string;
+    /** Set on rows owned by the wirelist, including rows whose cells are blank. */
+    wirelistManaged?: boolean;
+    /** Conn-Pin text shown in the wirelist. Kept even when the canvas node is gone. */
+    fromLocation?: string;
+    toLocation?: string;
     length?: number;
     sleeving?: "none" | "expandable_sleeving" | "wire_braid_under_expandable_sleeving";
     wireComponentId?: string;

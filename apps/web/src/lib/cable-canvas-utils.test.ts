@@ -24,6 +24,7 @@ import {
   removeConnectorAndRelatedPaths
 } from "./cable-canvas-utils";
 import { buildNextCanvasId, buildNextConnectorReference, buildNextWireName } from "./cable-canvas-ids";
+import { buildConnectorPositionLookup, snapshotToWirelistRows, verifyWirelistLocation } from "./wirelist-utils";
 
 function hashCanvasSnapshot(snapshot: RevisionDto["snapshot"]): string {
   return createHash("sha256").update(JSON.stringify(snapshot)).digest("hex");
@@ -365,6 +366,133 @@ describe("cable-canvas-utils", () => {
     });
     expect(next.pinMappings).toHaveLength(1);
     expect(next.pinMappings[0]).toMatchObject({ id: "m1", pathId: "p-wire" });
+  });
+
+  it("does not change wirelist rows when canvas connectors, pins, junctions, or cables are deleted", () => {
+    const baseline = {
+      connectors: [
+        { id: "c1", reference: "J1", pins: [{ id: "pin-a", number: "1" }] },
+        { id: "c2", reference: "J2", pins: [{ id: "pin-b", number: "4" }] }
+      ],
+      junctions: [{ id: "j1", location: { x: 1, y: 2 }, label: "Splice-A", junctionType: "splice" }],
+      paths: [
+        {
+          id: "p-derived",
+          pathType: "wire",
+          wirelistManaged: true,
+          runNumber: 1,
+          wireName: "wire1",
+          fromConnectorId: "c1",
+          toConnectorId: "c2",
+          fromContact: "CNT-1",
+          toContact: "CNT-4",
+          wirePartNumber: "M22759/16-22",
+          length: 12,
+          notes: "keep me"
+        },
+        {
+          id: "p-junction",
+          pathType: "wire",
+          wirelistManaged: true,
+          runNumber: 2,
+          wireName: "wire2",
+          fromConnectorId: "c1",
+          toConnectorId: "j1"
+        },
+        {
+          id: "p-custom",
+          pathType: "wire",
+          wirelistManaged: true,
+          runNumber: 3,
+          wireName: "wire3",
+          fromConnectorId: "c2",
+          toConnectorId: "c1",
+          fromLocation: "OLD-J2 - 9",
+          toLocation: "OLD-J1 - 3",
+          fromContact: "KEEP"
+        },
+        {
+          id: "p-blank",
+          pathType: "wire",
+          wirelistManaged: true,
+          runNumber: 4,
+          wireName: "wire4",
+          fromConnectorId: "",
+          toConnectorId: ""
+        },
+        {
+          id: "p-cable",
+          pathType: "cable",
+          fromConnectorId: "c1",
+          toConnectorId: "c2",
+          wireName: "cable1",
+          length: 5
+        }
+      ],
+      pinMappings: [
+        {
+          id: "m-derived",
+          pathId: "p-derived",
+          fromConnectorId: "c1",
+          fromPinId: "pin-a",
+          toConnectorId: "c2",
+          toPinId: "pin-b",
+          mappingType: "one_to_one" as const
+        }
+      ],
+      bundles: [{ id: "b1", name: "bundle", pathIds: ["p-cable", "p-derived"] }],
+      annotations: [{ id: "a1", text: "note" }]
+    } as RevisionDto["snapshot"];
+
+    const rowsBefore = snapshotToWirelistRows(baseline);
+    expect(rowsBefore.map((row) => row.fromLocation)).toEqual(["J1 - 1", "J1", "OLD-J2 - 9", ""]);
+    expect(rowsBefore.map((row) => row.toLocation)).toEqual(["J2 - 4", "Splice-A", "OLD-J1 - 3", ""]);
+
+    const canvasAfterDelete = {
+      connectors: [{ ...baseline.connectors[0], pins: [] }],
+      junctions: [],
+      paths: [],
+      positions: { c1: { x: 10, y: 20 } }
+    };
+    const first = buildSnapshotFromCanvas(baseline, canvasAfterDelete);
+    const second = buildSnapshotFromCanvas(first, canvasAfterDelete);
+
+    expect(first.connectors.map((connector) => connector.id)).toEqual(["c1"]);
+    expect(first.junctions).toEqual([]);
+    expect(first.paths.some((path) => path.id === "p-cable")).toBe(false);
+    expect(snapshotToWirelistRows(first)).toEqual(rowsBefore);
+    expect(snapshotToWirelistRows(second)).toEqual(rowsBefore);
+    expect(hashCanvasSnapshot(second)).toBe(hashCanvasSnapshot(first));
+    expect(first.paths.find((path) => path.id === "p-derived")).toMatchObject({
+      fromLocation: "J1 - 1",
+      toLocation: "J2 - 4",
+      fromContact: "CNT-1",
+      toContact: "CNT-4",
+      wirePartNumber: "M22759/16-22",
+      length: 12,
+      notes: "keep me"
+    });
+    expect(first.paths.find((path) => path.id === "p-custom")).toMatchObject({
+      fromLocation: "OLD-J2 - 9",
+      toLocation: "OLD-J1 - 3",
+      fromContact: "KEEP"
+    });
+    expect(first.pinMappings).toEqual(baseline.pinMappings);
+    expect(first.annotations).toEqual(baseline.annotations);
+
+    const positions = buildConnectorPositionLookup(first.connectors);
+    expect(verifyWirelistLocation("J2 - 4", positions)).toMatchObject({
+      state: "invalid",
+      message: "Connector name does not exist"
+    });
+    expect(verifyWirelistLocation("J1 - 1", positions)).toMatchObject({
+      state: "partial",
+      message: "Connector position not correct"
+    });
+    expect(verifyWirelistLocation("Splice-A", positions)).toMatchObject({
+      state: "invalid",
+      message: "Connector name does not exist"
+    });
   });
 
   it("builds connector pair totals through junction paths", () => {

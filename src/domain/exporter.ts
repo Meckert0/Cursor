@@ -166,6 +166,8 @@ function toWirelistRows(artifact: JsonObject): Array<Array<string | number>> {
     labelPartNumber?: string;
     labelText?: string;
     notes?: string;
+    fromLocation?: string;
+    toLocation?: string;
   }>;
   const connectorById = new Map(connectors.map((connector) => [connector.id, connector.reference]));
   const pinMappings = (artifact.pinMappings ?? []) as Array<{ pathId: string }>;
@@ -175,9 +177,15 @@ function toWirelistRows(artifact: JsonObject): Array<Array<string | number>> {
     const runNumber = Number.isInteger(wirePath.runNumber) && (wirePath.runNumber ?? 0) > 0 ? wirePath.runNumber! : index + 1;
     const fromReference = connectorById.get(wirePath.fromConnectorId) ?? wirePath.fromConnectorId;
     const toReference = connectorById.get(wirePath.toConnectorId) ?? wirePath.toConnectorId;
+    const fromLocation = wirePath.fromLocation?.trim()
+      ? wirePath.fromLocation
+      : formatLocation(fromReference, wirePath.fromContact ?? "");
+    const toLocation = wirePath.toLocation?.trim()
+      ? wirePath.toLocation
+      : formatLocation(toReference, wirePath.toContact ?? "");
     return [
       runNumber,
-      formatLocation(fromReference, wirePath.fromContact ?? ""),
+      fromLocation,
       wirePath.fromContact ?? "",
       wirePath.fromSignalDescription ?? "",
       wirePath.wireAwg ?? "",
@@ -185,7 +193,7 @@ function toWirelistRows(artifact: JsonObject): Array<Array<string | number>> {
       wirePath.length !== undefined ? String(wirePath.length) : "",
       wirePath.wireColor ?? "",
       wirePath.wireGroup ?? "",
-      formatLocation(toReference, wirePath.toContact ?? ""),
+      toLocation,
       wirePath.toContact ?? "",
       wirePath.toSignalDescription ?? "",
       wirePath.labelPartNumber ?? "",

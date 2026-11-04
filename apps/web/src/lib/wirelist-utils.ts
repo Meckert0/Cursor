@@ -440,6 +440,65 @@ export function snapshotToWirelistRows(snapshot: RevisionDto["snapshot"]): Wirel
   });
 }
 
+function wirelistRowsMatch(left: WirelistRow[], right: WirelistRow[]): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function lockDisplayedWirelistLocations<T extends { fromLocation?: string; toLocation?: string }>(
+  path: T,
+  row: WirelistRow | undefined
+): T {
+  if (!row) {
+    return path;
+  }
+  const hasStoredFrom = path.fromLocation !== undefined && path.fromLocation !== "";
+  const hasStoredTo = path.toLocation !== undefined && path.toLocation !== "";
+  const fromLocation = !hasStoredFrom && row.fromLocation ? row.fromLocation : undefined;
+  const toLocation = !hasStoredTo && row.toLocation ? row.toLocation : undefined;
+  if (!fromLocation && !toLocation) {
+    return path;
+  }
+  return {
+    ...path,
+    ...(fromLocation ? { fromLocation } : {}),
+    ...(toLocation ? { toLocation } : {})
+  };
+}
+
+/**
+ * Canvas edits may delete connectors, junctions, cables, pins, and modules.
+ * Wirelist cells stay as the user last saw them, including Conn-Pin text that
+ * names something now missing. The wirelist verifier reports those mismatches.
+ */
+export function preserveWirelistAcrossCanvasEdit(
+  baseline: RevisionDto["snapshot"],
+  next: RevisionDto["snapshot"]
+): RevisionDto["snapshot"] {
+  const beforeRows = snapshotToWirelistRows(baseline);
+  if (wirelistRowsMatch(beforeRows, snapshotToWirelistRows(next))) {
+    return next;
+  }
+
+  const { wireRunPaths } = partitionSnapshotPaths(baseline.paths, baseline.pinMappings);
+  const beforeById = new Map(beforeRows.map((row) => [row.id, row]));
+  const lockedWireRuns = wireRunPaths.map((path) =>
+    lockDisplayedWirelistLocations(path, beforeById.get(path.id))
+  );
+  const wireIds = new Set(lockedWireRuns.map((path) => path.id));
+  const cablePaths = next.paths.filter((path) => !wireIds.has(path.id));
+  const paths = mergeSnapshotPaths(cablePaths, lockedWireRuns);
+  const pinMappings = [
+    ...next.pinMappings.filter((mapping) => !wireIds.has(mapping.pathId)),
+    ...baseline.pinMappings.filter((mapping) => wireIds.has(mapping.pathId))
+  ];
+
+  return {
+    ...next,
+    paths,
+    pinMappings
+  };
+}
+
 export function nextWireRowId(usedIds: Iterable<string>): string {
   const used = new Set(usedIds);
   let next = 1;

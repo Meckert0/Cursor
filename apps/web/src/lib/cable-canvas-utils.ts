@@ -7,6 +7,7 @@ import {
   partitionSnapshotPaths,
   pinMappedPathIds
 } from "./path-roles";
+import { preserveWirelistAcrossCanvasEdit } from "./wirelist-utils";
 
 type NodePosition = {
   x: number;
@@ -89,7 +90,10 @@ export function buildSnapshotFromCanvas(
   const mergedPaths = mergeSnapshotPaths(cablePaths, wireRunPaths);
   const pathIds = new Set(mergedPaths.map((path) => path.id));
 
-  return {
+  // Wire runs are copied from the baseline. preserveWirelistAcrossCanvasEdit
+  // then freezes Conn-Pin text that was only derived from a connector, pin,
+  // or junction the canvas just deleted, so the wirelist grid does not change.
+  return preserveWirelistAcrossCanvasEdit(baseline, {
     ...baseline,
     connectors: input.connectors.map((connector) => ({
       ...connector,
@@ -109,7 +113,7 @@ export function buildSnapshotFromCanvas(
       pathIds: bundle.pathIds.filter((pathId) => pathIds.has(pathId))
     })),
     annotations: baseline.annotations
-  };
+  });
 }
 
 export function writeCanvasLocalDraft(revisionId: string, draft: CanvasLocalDraft): void {

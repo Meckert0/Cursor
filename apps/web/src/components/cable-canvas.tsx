@@ -1650,7 +1650,6 @@ export function CableCanvas({
               });
               return (
                 <g key={path.id} data-cable-section={path.id}>
-                  {sleeveOutline}
                   <line
                     x1={path.x1}
                     y1={path.y1}
@@ -1670,6 +1669,7 @@ export function CableCanvas({
                       onPointerDown={selectPath}
                     />
                   ))}
+                  {sleeveOutline}
                 </g>
               );
             }
@@ -1679,7 +1679,6 @@ export function CableCanvas({
             ].filter(Boolean);
             return (
               <g key={path.id} data-cable-section={path.id}>
-                {sleeveOutline}
                 <line
                   x1={path.x1}
                   y1={path.y1}
@@ -1688,6 +1687,7 @@ export function CableCanvas({
                   className={classNames.length > 0 ? classNames.join(" ") : undefined}
                   onPointerDown={selectPath}
                 />
+                {sleeveOutline}
               </g>
             );
           })}

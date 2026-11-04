@@ -501,10 +501,14 @@ export function formatCableSectionCanvasLabel(input: {
 }
 
 /**
- * Gap between the painted sleeve and the single rectangle drawn around it.
- * The rectangle frames the whole cable, outside the stroke, dashes, and braid.
+ * Extra space outside the painted sleeve. Zero keeps the rectangle on the
+ * sleeve edge. The stroke is inset by half its width so that outer edge
+ * lands on the design instead of past it.
  */
-export const CABLE_SLEEVE_OUTLINE_MARGIN = 4;
+export const CABLE_SLEEVE_OUTLINE_MARGIN = 0;
+
+/** Matches `.cableSleeveOutline` stroke-width in cable-canvas.module.css. */
+export const CABLE_SLEEVE_OUTLINE_STROKE = 1;
 
 export type CableSleeveOutline = {
   x: number;
@@ -554,8 +558,9 @@ export function buildCableSleeveOutline(input: {
   const safeLength = Number.isFinite(length) ? length : 0;
   const centerX = (input.x1 + input.x2) / 2;
   const centerY = (input.y1 + input.y2) / 2;
-  const along = safeLength + 2 * (endExtension + margin);
-  const across = 2 * (halfAcross + margin);
+  const edgeInset = CABLE_SLEEVE_OUTLINE_STROKE / 2;
+  const along = Math.max(0, safeLength + 2 * (endExtension + margin - edgeInset));
+  const across = Math.max(0, 2 * (halfAcross + margin - edgeInset));
   const angle = safeLength > 0 ? (Math.atan2(dy, dx) * 180) / Math.PI : 0;
   return {
     x: centerX - along / 2,

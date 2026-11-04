@@ -591,7 +591,7 @@ describe("cable-canvas-utils", () => {
     expect(Math.abs(short[0]!.x2)).toBeCloseTo(8);
   });
 
-  it("frames a cable with one rectangle outside the painted sleeve", () => {
+  it("frames a cable with one rectangle on the edge of the painted sleeve", () => {
     const plain = buildCableSleeveOutline({
       x1: 0,
       y1: 10,
@@ -602,8 +602,8 @@ describe("cable-canvas-utils", () => {
     expect(plain.angle).toBe(0);
     expect(plain.centerX).toBe(40);
     expect(plain.centerY).toBe(10);
-    expect(plain.width).toBe(80 + 2 * (3 + 4));
-    expect(plain.height).toBe(2 * (3 + 4));
+    expect(plain.width).toBe(80 + 2 * (3 - 0.5));
+    expect(plain.height).toBe(2 * (3 - 0.5));
     expect(plain.x).toBeCloseTo(40 - plain.width / 2);
     expect(plain.y).toBeCloseTo(10 - plain.height / 2);
 
@@ -616,8 +616,8 @@ describe("cable-canvas-utils", () => {
       selected: true
     });
     expect(expandable.angle).toBeCloseTo(90);
-    expect(expandable.width).toBe(100 + 2 * 4);
-    expect(expandable.height).toBe(2 * (8 + 4));
+    expect(expandable.width).toBe(100 - 1);
+    expect(expandable.height).toBe(16 - 1);
 
     const braid = buildCableSleeveOutline({
       x1: 0,
@@ -627,9 +627,9 @@ describe("cable-canvas-utils", () => {
       sleeving: "wire_braid_under_expandable_sleeving"
     });
     expect(braid.angle).toBeCloseTo((Math.atan2(40, 30) * 180) / Math.PI);
-    expect(braid.width).toBeCloseTo(50 + 2 * (2 + 4));
-    expect(braid.height).toBeCloseTo(2 * (6 + 2 + 4));
-    expect(braid.height).toBeGreaterThan(12);
+    expect(braid.width).toBeCloseTo(50 + 2 * (2 - 0.5));
+    expect(braid.height).toBeCloseTo(2 * (6 + 2 - 0.5));
+    expect(braid.height).toBeLessThan(12 + 4);
   });
 
   it("formats endpoint totals with connector names and length only", () => {

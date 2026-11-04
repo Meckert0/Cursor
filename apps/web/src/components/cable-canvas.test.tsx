@@ -131,8 +131,10 @@ describe("CableCanvas cable sections", () => {
     const expandableOutline = sections[0]?.querySelector("rect");
     expect(expandableOutline?.getAttribute("class")).toContain(styles.cableSleeveOutline);
     expect(expandableOutline?.getAttribute("transform")).toBe("rotate(0 180 68)");
-    expect(Number(expandableOutline?.getAttribute("width"))).toBeGreaterThan(200);
-    expect(Number(expandableOutline?.getAttribute("height"))).toBeGreaterThan(16);
+    expect(Number(expandableOutline?.getAttribute("width"))).toBeCloseTo(199);
+    expect(Number(expandableOutline?.getAttribute("height"))).toBeCloseTo(15);
+    const outlineNodes = sections[0]?.querySelectorAll("line, rect");
+    expect(outlineNodes?.[outlineNodes.length - 1]?.tagName).toBe("rect");
     const plain = sections[1]?.querySelectorAll("line");
     expect(plain).toHaveLength(1);
     expect(plain?.[0]?.getAttribute("class")).toBeNull();

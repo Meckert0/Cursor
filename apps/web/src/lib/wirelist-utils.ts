@@ -2,9 +2,7 @@ import type { LibraryComponentDto, RevisionDto } from "./api";
 import {
   expandConnectorsForDetails,
   findSlotByReference,
-  namespacedPinId,
-  parseNamespacedPinId,
-  slotForPinId
+  namespacedPinId
 } from "./connector-frames";
 import {
   mergeSnapshotPaths,
@@ -305,32 +303,6 @@ export function resolveWirelistEndpoint(
   return { nodeId: connectorRef, pinId: "", kind: "unresolved" };
 }
 
-function formatEndpointFromMapping(
-  connectorId: string,
-  pinId: string,
-  connectorById: Map<string, SnapshotConnector>,
-  junctionById: Map<string, SnapshotJunction>
-): string {
-  const connector = connectorById.get(connectorId);
-  if (connector) {
-    const slot = slotForPinId(connector, pinId);
-    if (slot) {
-      const parsed = parseNamespacedPinId(pinId);
-      const pin =
-        slot.pins.find((entry) => entry.id === parsed?.pinId) ??
-        connector.pins.find((entry) => entry.id === pinId);
-      return formatWirelistLocation(slot.reference, pin?.number ?? parsed?.pinId ?? pinId);
-    }
-    const pin = connector.pins.find((entry) => entry.id === pinId);
-    return formatWirelistLocation(connector.reference, pin?.number ?? pinId);
-  }
-  const junction = junctionById.get(connectorId);
-  if (junction) {
-    return junction.label?.trim() || junction.id;
-  }
-  return connectorId;
-}
-
 type HeaderResolution = {
   resolved: Partial<Record<WirelistTemplateHeader | "Sleeving", string>>;
   missing: WirelistTemplateHeader[];
@@ -367,126 +339,54 @@ function getValue(
 }
 
 export function snapshotToWirelistRows(snapshot: RevisionDto["snapshot"]): WirelistRow[] {
-  const connectorById = new Map(snapshot.connectors.map((connector) => [connector.id, connector]));
-  const junctionById = new Map((snapshot.junctions ?? []).map((junction) => [junction.id, junction]));
-  const pinMappingByPathId = new Map(snapshot.pinMappings.map((mapping) => [mapping.pathId, mapping]));
   const { wireRunPaths } = partitionSnapshotPaths(snapshot.paths, snapshot.pinMappings);
 
-  return wireRunPaths.map((path, index) => {
-    const mapping = pinMappingByPathId.get(path.id);
-    let fromLocation = formatEndpointFromMapping(path.fromConnectorId, "", connectorById, junctionById);
-    let toLocation = formatEndpointFromMapping(path.toConnectorId, "", connectorById, junctionById);
-
-    if (mapping) {
-      const forward =
-        mapping.fromConnectorId === path.fromConnectorId && mapping.toConnectorId === path.toConnectorId;
-      const reverse =
-        mapping.fromConnectorId === path.toConnectorId && mapping.toConnectorId === path.fromConnectorId;
-      if (forward) {
-        fromLocation = formatEndpointFromMapping(
-          mapping.fromConnectorId,
-          mapping.fromPinId,
-          connectorById,
-          junctionById
-        );
-        toLocation = formatEndpointFromMapping(
-          mapping.toConnectorId,
-          mapping.toPinId,
-          connectorById,
-          junctionById
-        );
-      } else if (reverse) {
-        fromLocation = formatEndpointFromMapping(
-          mapping.toConnectorId,
-          mapping.toPinId,
-          connectorById,
-          junctionById
-        );
-        toLocation = formatEndpointFromMapping(
-          mapping.fromConnectorId,
-          mapping.fromPinId,
-          connectorById,
-          junctionById
-        );
-      }
-    }
-
-    const storedFromLocation = path.fromLocation;
-    const storedToLocation = path.toLocation;
-    const hasStoredFrom = storedFromLocation !== undefined && storedFromLocation !== "";
-    const hasStoredTo = storedToLocation !== undefined && storedToLocation !== "";
-
-    return {
-      id: path.id,
-      runNumber: String(path.runNumber ?? index + 1),
-      fromLocation: hasStoredFrom ? storedFromLocation : fromLocation,
-      fromContact: path.fromContact ?? "",
-      fromSignalDescription: path.fromSignalDescription ?? "",
-      wireAwg: path.wireAwg ?? "",
-      wirePartNumber: path.wirePartNumber ?? "",
-      length: typeof path.length === "number" ? String(path.length) : "",
-      wireColor: path.wireColor ?? "",
-      wireGroup: path.wireGroup ?? "",
-      toLocation: hasStoredTo ? storedToLocation : toLocation,
-      toContact: path.toContact ?? "",
-      toSignalDescription: path.toSignalDescription ?? "",
-      labelPartNumber: path.labelPartNumber ?? "",
-      labelText: path.labelText ?? "",
-      notes: path.notes ?? "",
-      wireName: path.wireName ?? `wire${index + 1}`,
-      sleeving: path.sleeving ?? "none",
-      wireComponentId: path.wireComponentId ?? ""
-    };
-  });
+  return wireRunPaths.map((path, index) => ({
+    id: path.id,
+    runNumber: String(path.runNumber ?? index + 1),
+    fromLocation: path.fromLocation ?? "",
+    fromContact: path.fromContact ?? "",
+    fromSignalDescription: path.fromSignalDescription ?? "",
+    wireAwg: path.wireAwg ?? "",
+    wirePartNumber: path.wirePartNumber ?? "",
+    length: typeof path.length === "number" ? String(path.length) : "",
+    wireColor: path.wireColor ?? "",
+    wireGroup: path.wireGroup ?? "",
+    toLocation: path.toLocation ?? "",
+    toContact: path.toContact ?? "",
+    toSignalDescription: path.toSignalDescription ?? "",
+    labelPartNumber: path.labelPartNumber ?? "",
+    labelText: path.labelText ?? "",
+    notes: path.notes ?? "",
+    wireName: path.wireName ?? `wire${index + 1}`,
+    sleeving: path.sleeving ?? "none",
+    wireComponentId: path.wireComponentId ?? ""
+  }));
 }
 
 function wirelistRowsMatch(left: WirelistRow[], right: WirelistRow[]): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-function lockDisplayedWirelistLocations<T extends { fromLocation?: string; toLocation?: string }>(
-  path: T,
-  row: WirelistRow | undefined
-): T {
-  if (!row) {
-    return path;
-  }
-  const hasStoredFrom = path.fromLocation !== undefined && path.fromLocation !== "";
-  const hasStoredTo = path.toLocation !== undefined && path.toLocation !== "";
-  const fromLocation = !hasStoredFrom && row.fromLocation ? row.fromLocation : undefined;
-  const toLocation = !hasStoredTo && row.toLocation ? row.toLocation : undefined;
-  if (!fromLocation && !toLocation) {
-    return path;
-  }
-  return {
-    ...path,
-    ...(fromLocation ? { fromLocation } : {}),
-    ...(toLocation ? { toLocation } : {})
-  };
-}
-
 /**
  * Canvas edits may delete connectors, junctions, cables, pins, and modules.
- * Wirelist cells stay as the user last saw them, including Conn-Pin text that
- * names something now missing. The wirelist verifier reports those mismatches.
+ * Stored wirelist text stays exactly as entered. If that text would change,
+ * the original wire-run paths and their pin mappings are restored. Nothing
+ * here writes a connector or position into a cell. The verifier reports a
+ * missing connector or position.
  */
 export function preserveWirelistAcrossCanvasEdit(
   baseline: RevisionDto["snapshot"],
   next: RevisionDto["snapshot"]
 ): RevisionDto["snapshot"] {
-  const beforeRows = snapshotToWirelistRows(baseline);
-  if (wirelistRowsMatch(beforeRows, snapshotToWirelistRows(next))) {
+  if (wirelistRowsMatch(snapshotToWirelistRows(baseline), snapshotToWirelistRows(next))) {
     return next;
   }
 
   const { wireRunPaths } = partitionSnapshotPaths(baseline.paths, baseline.pinMappings);
-  const beforeById = new Map(beforeRows.map((row) => [row.id, row]));
-  const lockedWireRuns = wireRunPaths.map((path) =>
-    lockDisplayedWirelistLocations(path, beforeById.get(path.id))
-  );
-  const wireIds = new Set(lockedWireRuns.map((path) => path.id));
+  const wireIds = new Set(wireRunPaths.map((path) => path.id));
   const cablePaths = next.paths.filter((path) => !wireIds.has(path.id));
-  const paths = mergeSnapshotPaths(cablePaths, lockedWireRuns);
+  const paths = mergeSnapshotPaths(cablePaths, wireRunPaths);
   const pinMappings = [
     ...next.pinMappings.filter((mapping) => !wireIds.has(mapping.pathId)),
     ...baseline.pinMappings.filter((mapping) => wireIds.has(mapping.pathId))

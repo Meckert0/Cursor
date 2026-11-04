@@ -207,4 +207,34 @@ describe("connector contact groups", () => {
       }
     ]);
   });
+
+  it("names a one-slot frame module after the connector", () => {
+    const connectors: RevisionDto["snapshot"]["connectors"] = [
+      {
+        id: "c1",
+        reference: "J1",
+        partNumber: "ITA-1",
+        libraryComponentId: "frame-1",
+        pins: [],
+        slots: [
+          {
+            slotId: "A",
+            reference: "J1A",
+            partNumber: "MOD-A",
+            libraryComponentId: "mod-a",
+            pins: [{ id: "1", number: "1" }]
+          }
+        ]
+      }
+    ];
+    const catalog = [
+      module(
+        { pinCount: 2, contactFamily1: "TP", gender: "ITA" },
+        { id: "mod-a", partNumber: "MOD-A", side: "ITA", description: "Only module" }
+      )
+    ];
+    expect(buildConnectorDetailsRows(connectors, catalog)[0]?.modules[0]?.label).toBe(
+      "J1 — MOD-A — Only module"
+    );
+  });
 });

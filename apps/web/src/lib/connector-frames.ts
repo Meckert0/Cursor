@@ -47,12 +47,31 @@ export function slotIdsForFrame(attributes: FrameAttributesLike | undefined): st
   return Array.from({ length: capacity }, (_, index) => String.fromCharCode(65 + index));
 }
 
-export function defaultSlotReference(canvasReference: string, slotId: string): string {
+export function defaultSlotReference(canvasReference: string, slotId: string, slotCount = 2): string {
+  if (slotCount === 1) {
+    return canvasReference;
+  }
   return `${canvasReference}${slotId}`;
 }
 
-export function isDefaultSlotReference(reference: string, canvasReference: string, slotId: string): boolean {
-  return reference === defaultSlotReference(canvasReference, slotId);
+export function isDefaultSlotReference(
+  reference: string,
+  canvasReference: string,
+  slotId: string,
+  slotCount = 2
+): boolean {
+  return reference === defaultSlotReference(canvasReference, slotId, slotCount);
+}
+
+/** A one-slot frame's module is addressed by the connector name. */
+export function slotModuleName(
+  connector: { reference: string; slots?: readonly unknown[] },
+  slot: { reference: string }
+): string {
+  if ((connector.slots?.length ?? 0) === 1) {
+    return connector.reference;
+  }
+  return slot.reference;
 }
 
 export function namespacedPinId(slotId: string, pinId: string): string {
@@ -82,10 +101,10 @@ export function flattenFramePins(slots: ConnectorSlot[]): ConnectorPin[] {
   });
 }
 
-export function emptySlot(canvasReference: string, slotId: string): ConnectorSlot {
+export function emptySlot(canvasReference: string, slotId: string, slotCount = 2): ConnectorSlot {
   return {
     slotId,
-    reference: defaultSlotReference(canvasReference, slotId),
+    reference: defaultSlotReference(canvasReference, slotId, slotCount),
     pins: []
   };
 }
@@ -95,8 +114,18 @@ export function buildSlotsForFrame(
   slotIds: string[],
   previousSlots: ConnectorSlot[] = []
 ): ConnectorSlot[] {
+  const slotCount = slotIds.length;
   const previousById = new Map(previousSlots.map((slot) => [slot.slotId, slot]));
-  return slotIds.map((slotId) => previousById.get(slotId) ?? emptySlot(canvasReference, slotId));
+  return slotIds.map((slotId) => {
+    const previous = previousById.get(slotId);
+    if (!previous) {
+      return emptySlot(canvasReference, slotId, slotCount);
+    }
+    if (slotCount === 1) {
+      return { ...previous, reference: canvasReference };
+    }
+    return previous;
+  });
 }
 
 export function retargetSlotReferences(
@@ -104,11 +133,34 @@ export function retargetSlotReferences(
   oldCanvasReference: string,
   newCanvasReference: string
 ): ConnectorSlot[] {
+  const slotCount = slots.length;
   return slots.map((slot) => {
-    if (!isDefaultSlotReference(slot.reference, oldCanvasReference, slot.slotId)) {
+    if (slotCount === 1) {
+      return { ...slot, reference: newCanvasReference };
+    }
+    if (!isDefaultSlotReference(slot.reference, oldCanvasReference, slot.slotId, slotCount)) {
       return slot;
     }
-    return { ...slot, reference: defaultSlotReference(newCanvasReference, slot.slotId) };
+    return { ...slot, reference: defaultSlotReference(newCanvasReference, slot.slotId, slotCount) };
+  });
+}
+
+export function normalizeSingleSlotReferences<T extends { reference: string; slots?: ConnectorSlot[] }>(
+  connectors: T[]
+): T[] {
+  return connectors.map((connector) => {
+    const slots = connector.slots;
+    if (!slots || slots.length !== 1) {
+      return connector;
+    }
+    const slot = slots[0];
+    if (!slot || slot.reference === connector.reference) {
+      return connector;
+    }
+    return {
+      ...connector,
+      slots: [{ ...slot, reference: connector.reference }]
+    };
   });
 }
 
@@ -227,7 +279,7 @@ export function expandConnectorsForDetails(connectors: SnapshotConnector[]): Log
       result.push({
         canvasId: connector.id,
         slotId: slot.slotId,
-        reference: slot.reference,
+        reference: slotModuleName(connector, slot),
         partNumber: slot.partNumber,
         libraryComponentId: slot.libraryComponentId,
         pins: slot.pins,
@@ -242,7 +294,7 @@ export function expandConnectorsForDetails(connectors: SnapshotConnector[]): Log
 }
 
 export function findSlotByReference<
-  TConnector extends { slots?: Array<{ slotId: string; reference: string }> }
+  TConnector extends { reference?: string; slots?: Array<{ slotId: string; reference: string }> }
 >(
   connectors: TConnector[],
   reference: string
@@ -254,6 +306,15 @@ export function findSlotByReference<
   for (const connector of connectors) {
     for (const slot of connector.slots ?? []) {
       if (slot.reference.trim().toLowerCase() === needle) {
+        return { connector, slot };
+      }
+    }
+  }
+  for (const connector of connectors) {
+    const slots = connector.slots ?? [];
+    if (slots.length === 1 && (connector.reference ?? "").trim().toLowerCase() === needle) {
+      const slot = slots[0];
+      if (slot) {
         return { connector, slot };
       }
     }

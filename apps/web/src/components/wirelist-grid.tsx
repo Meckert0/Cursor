@@ -298,14 +298,6 @@ export function WirelistGrid({
     () => buildConnectorPositionLookup(connectorSource, connectorCatalog),
     [connectorSource, connectorCatalog]
   );
-  const locationOptions = useMemo(
-    () =>
-      connectorSource.flatMap((connector) => {
-        const positions = connectorPositions.get(connector.reference.trim().toLowerCase());
-        return positions ? Array.from(positions, (position) => `${connector.reference} - ${position}`) : [];
-      }),
-    [connectorSource, connectorPositions]
-  );
   const nodeIds = useMemo(() => buildWirelistNodeIds(effectiveSnapshot), [effectiveSnapshot]);
   const columnsCounted = useMemo(
     () => (columnsCountedOpen ? buildColumnsCounted(rows) : null),
@@ -871,7 +863,6 @@ export function WirelistGrid({
                 </td>
                 <td className={verifierCellClass(fromCheck.state)} title={fromCheck.message ?? undefined}>
                   <input
-                    list="wirelist-location-options"
                     value={row.fromLocation}
                     data-row-index={rowIndex}
                     data-cell-key="fromLocation"
@@ -976,7 +967,6 @@ export function WirelistGrid({
                 </td>
                 <td className={verifierCellClass(toCheck.state)} title={toCheck.message ?? undefined}>
                   <input
-                    list="wirelist-location-options"
                     value={row.toLocation}
                     data-row-index={rowIndex}
                     data-cell-key="toLocation"
@@ -1058,11 +1048,6 @@ export function WirelistGrid({
             })}
           </tbody>
         </table>
-        <datalist id="wirelist-location-options">
-          {locationOptions.map((option) => (
-            <option key={option} value={option} />
-          ))}
-        </datalist>
       </div>
       {columnsCounted ? <WirelistColumnsCountedPanel counted={columnsCounted} /> : null}
     </section>

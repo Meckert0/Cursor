@@ -1,5 +1,5 @@
 import type { LibraryComponentDto, RevisionDto } from "./api";
-import { isFrameHousingConnector, isSlotPopulated } from "./connector-frames";
+import { isFrameHousingConnector, isSlotPopulated, slotModuleName } from "./connector-frames";
 import { displayPartType } from "./part-fields";
 
 type SnapshotConnector = RevisionDto["snapshot"]["connectors"][number];
@@ -203,7 +203,7 @@ export function buildConnectorDetailsRows(
         });
         return moduleLine({
           id: slot.slotId,
-          name: connectorDisplayName(slot.reference, slot.slotId),
+          name: connectorDisplayName(slotModuleName(connector, slot), slot.slotId),
           partNumber: slot.partNumber,
           component,
           pins: slot.pins

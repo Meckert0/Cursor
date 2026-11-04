@@ -194,4 +194,46 @@ describe("CableCanvas cable sections", () => {
     expect(input).toHaveValue("8");
     expect(screen.queryByTestId("cable-label-p2")).not.toBeInTheDocument();
   });
+
+  it("hides the slot name field when a frame has one slot", () => {
+    const frameSnapshot = snapshot();
+    frameSnapshot.connectors = [
+      {
+        id: "c1",
+        reference: "J1",
+        partNumber: "FRAME-1",
+        pins: [],
+        location: { x: 20, y: 40 },
+        slots: [{ slotId: "A", reference: "J1A", pins: [] }]
+      },
+      {
+        id: "c2",
+        reference: "J2",
+        partNumber: "FRAME-2",
+        pins: [],
+        location: { x: 220, y: 40 },
+        slots: [
+          { slotId: "A", reference: "J2A", pins: [] },
+          { slotId: "B", reference: "J2B", pins: [] }
+        ]
+      }
+    ];
+    render(
+      <CableCanvas
+        revisionId="rev-single-slot"
+        snapshot={frameSnapshot}
+        snapshotHash="hash"
+        connectorCatalog={[]}
+        quickAddConnectorAction={async () => ({ ok: true, connectorCatalog: [] })}
+      />
+    );
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: /J1/ }));
+    expect(screen.queryByLabelText("Slot A module name")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Define slot A module" })).toBeInTheDocument();
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: /J2/ }));
+    expect(screen.getByLabelText("Slot A module name")).toHaveValue("J2A");
+    expect(screen.getByLabelText("Slot B module name")).toHaveValue("J2B");
+  });
 });

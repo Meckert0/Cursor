@@ -452,3 +452,60 @@ test("buildBom emits a frame housing plus each populated slot module", () => {
   assert.ok(bom.lines.some((line) => line.category === "backshell" && line.designRefs.includes("J1A")));
 });
 
+test("buildBom names a one-slot frame module after the connector", () => {
+  const revision = fullyAccessorizedRevision();
+  revision.snapshot.connectors = [
+    {
+      id: "c1",
+      reference: "J1",
+      partNumber: "ITA-1SLOT",
+      libraryComponentId: "cmp-frame-001",
+      pins: [{ id: "A:1", number: "1" }],
+      slots: [
+        {
+          slotId: "A",
+          reference: "J1A",
+          partNumber: "MOD-A",
+          libraryComponentId: "cmp-mod-a",
+          pins: [{ id: "1", number: "1" }],
+          backshellPartNumber: "BS-EMI-15",
+          backshellLibraryComponentId: "cmp-backshell-15"
+        }
+      ]
+    }
+  ];
+  revision.snapshot.paths = [];
+  const lookup = createLibraryLookup([
+    makePart({
+      id: "cmp-frame-001",
+      category: "frame",
+      family: "iCon",
+      partNumber: "ITA-1SLOT",
+      description: "One-slot ITA",
+      partType: "ITA",
+      attributes: { moduleCapacity: 1, slotIds: ["A"] }
+    }),
+    makePart({
+      id: "cmp-mod-a",
+      category: "module",
+      family: "iCon",
+      partNumber: "MOD-A",
+      description: "Only module",
+      attributes: { pinIds: ["1"] }
+    }),
+    makePart({
+      id: "cmp-backshell-15",
+      category: "backshell",
+      family: "EMI",
+      partNumber: "BS-EMI-15",
+      description: "backshell"
+    })
+  ]);
+  const bom = buildBom(revision, lookup);
+  const moduleLine = bom.lines.find((line) => line.category === "module" && line.partNumber === "MOD-A");
+  assert.deepEqual(moduleLine?.designRefs, ["J1"]);
+  const backshellLine = bom.lines.find((line) => line.category === "backshell");
+  assert.ok(backshellLine?.designRefs.includes("J1"));
+  assert.equal(backshellLine?.designRefs.includes("J1A"), false);
+});
+

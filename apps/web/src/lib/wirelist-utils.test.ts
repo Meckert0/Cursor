@@ -96,8 +96,8 @@ describe("wirelist-utils", () => {
     expect(rows[0]).toMatchObject({
       id: "p1",
       runNumber: "1",
-      fromLocation: "J1",
-      toLocation: "J2",
+      fromLocation: "",
+      toLocation: "",
       length: "10",
       wirePartNumber: "PN-22-WHT",
       sleeving: "none"
@@ -327,7 +327,7 @@ describe("wirelist-utils", () => {
     const records = wirelistRowsToTemplateRecords(rows);
     expect(records[0]).toMatchObject({
       "Run #": 1,
-      "From Location (Conn - Pin)": "J1",
+      "From Location (Conn - Pin)": "",
       "Wire/Patchcord P/N": "PN-22-WHT",
       "Label Text": "WIRE-1"
     });
@@ -411,9 +411,10 @@ describe("frame slot wirelist names", () => {
     annotations: []
   };
 
-  it("formats and resolves slot module names as distinct connectors", () => {
+  it("resolves slot module names as distinct connectors without filling cells", () => {
     const rows = snapshotToWirelistRows(frameSnapshot);
-    expect(rows[0]?.fromLocation).toBe("J1A - 1");
+    expect(rows[0]?.fromLocation).toBe("");
+    expect(rows[0]?.toLocation).toBe("");
     expect(resolveWirelistEndpoint("J1A - 1", frameSnapshot)).toEqual({
       nodeId: "c1",
       pinId: "A:1",
@@ -422,6 +423,63 @@ describe("frame slot wirelist names", () => {
     expect(resolveWirelistEndpoint("J1B - 1", frameSnapshot).pinId).toBe("B:1");
     expect(buildWirelistNodeIds(frameSnapshot)).toEqual(expect.arrayContaining(["J1A", "J1B", "J2", "c1"]));
     expect(buildWirelistNodeIds(frameSnapshot)).not.toContain("J1");
+  });
+
+  it("addresses a one-slot frame by the connector name", () => {
+    const singleSlot = {
+      connectors: [
+        {
+          id: "c1",
+          reference: "J1",
+          partNumber: "ITA-1",
+          libraryComponentId: "frame-1",
+          pins: [{ id: "A:1", number: "1" }],
+          slots: [
+            {
+              slotId: "A",
+              reference: "J1A",
+              partNumber: "MOD-A",
+              libraryComponentId: "mod-a",
+              pins: [{ id: "1", number: "1" }]
+            }
+          ]
+        }
+      ],
+      paths: [
+        {
+          id: "p1",
+          runNumber: 1,
+          fromConnectorId: "c1",
+          toConnectorId: "",
+          pathType: "wire" as const
+        }
+      ],
+      pinMappings: [
+        {
+          id: "m1",
+          pathId: "p1",
+          fromConnectorId: "c1",
+          fromPinId: "A:1",
+          toConnectorId: "",
+          toPinId: "",
+          mappingType: "one_to_one" as const
+        }
+      ],
+      bundles: [],
+      annotations: []
+    };
+    expect(snapshotToWirelistRows(singleSlot)[0]?.fromLocation).toBe("");
+    expect(resolveWirelistEndpoint("J1 - 1", singleSlot)).toEqual({
+      nodeId: "c1",
+      pinId: "A:1",
+      kind: "connector"
+    });
+    const positions = buildConnectorPositionLookup(singleSlot.connectors);
+    expect(verifyWirelistLocation("J1 - 1", positions)).toMatchObject({ state: "valid", message: null });
+    expect(verifyWirelistLocation("J1A - 1", positions)).toMatchObject({
+      state: "invalid",
+      message: "Connector name does not exist"
+    });
   });
 
   it("round-trips a slot location into a namespaced pin mapping", () => {
@@ -548,7 +606,7 @@ describe("pin mapping save/load round-trip", () => {
     expect(reloaded[0]?.toLocation).toBe("");
   });
 
-  it("renders Conn-Pin from an existing pin mapping on load", () => {
+  it("leaves location cells blank when only a pin mapping is stored", () => {
     const withMapping = {
       ...snapshot,
       pinMappings: [
@@ -564,8 +622,8 @@ describe("pin mapping save/load round-trip", () => {
       ]
     };
     const rows = snapshotToWirelistRows(withMapping);
-    expect(rows[0]?.fromLocation).toBe("J1 - 3");
-    expect(rows[0]?.toLocation).toBe("J2 - A1");
+    expect(rows[0]?.fromLocation).toBe("");
+    expect(rows[0]?.toLocation).toBe("");
   });
 
   it("reuses existing mapping ids and clears mappings when pins are removed", () => {

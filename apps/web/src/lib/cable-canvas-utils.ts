@@ -7,6 +7,7 @@ import {
   partitionSnapshotPaths,
   pinMappedPathIds
 } from "./path-roles";
+import { normalizeSingleSlotReferences } from "./connector-frames";
 import { preserveWirelistAcrossCanvasEdit } from "./wirelist-utils";
 
 type NodePosition = {
@@ -90,15 +91,17 @@ export function buildSnapshotFromCanvas(
   const mergedPaths = mergeSnapshotPaths(cablePaths, wireRunPaths);
   const pathIds = new Set(mergedPaths.map((path) => path.id));
 
-  // Wire runs are copied from the baseline. preserveWirelistAcrossCanvasEdit
-  // then freezes Conn-Pin text that was only derived from a connector, pin,
-  // or junction the canvas just deleted, so the wirelist grid does not change.
+  // Wire runs are copied from the baseline. If a canvas edit would still
+  // change a wirelist row, preserveWirelistAcrossCanvasEdit puts the original
+  // wire-run paths back. It does not write location text.
   return preserveWirelistAcrossCanvasEdit(baseline, {
     ...baseline,
-    connectors: input.connectors.map((connector) => ({
-      ...connector,
-      location: input.positions[connector.id] ?? connector.location
-    })),
+    connectors: normalizeSingleSlotReferences(
+      input.connectors.map((connector) => ({
+        ...connector,
+        location: input.positions[connector.id] ?? connector.location
+      }))
+    ),
     junctions: input.junctions.map((junction) => ({
       ...junction,
       location: input.positions[junction.id] ?? junction.location
@@ -342,12 +345,14 @@ export function formatConnectorPinsLabel(connector: {
 }
 
 export function normalizeUnassignedConnectors(connectors: Connector[]): Connector[] {
-  return connectors.map((connector) => {
-    if (connector.partNumber) {
-      return connector;
-    }
-    return { ...connector, pins: [] };
-  });
+  return normalizeSingleSlotReferences(
+    connectors.map((connector) => {
+      if (connector.partNumber) {
+        return connector;
+      }
+      return { ...connector, pins: [] };
+    })
+  );
 }
 
 export function normalizePathsWithWireDefaults(

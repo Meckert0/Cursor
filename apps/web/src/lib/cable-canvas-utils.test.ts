@@ -445,8 +445,8 @@ describe("cable-canvas-utils", () => {
     } as RevisionDto["snapshot"];
 
     const rowsBefore = snapshotToWirelistRows(baseline);
-    expect(rowsBefore.map((row) => row.fromLocation)).toEqual(["J1 - 1", "J1", "OLD-J2 - 9", ""]);
-    expect(rowsBefore.map((row) => row.toLocation)).toEqual(["J2 - 4", "Splice-A", "OLD-J1 - 3", ""]);
+    expect(rowsBefore.map((row) => row.fromLocation)).toEqual(["", "", "OLD-J2 - 9", ""]);
+    expect(rowsBefore.map((row) => row.toLocation)).toEqual(["", "", "OLD-J1 - 3", ""]);
 
     const canvasAfterDelete = {
       connectors: [{ ...baseline.connectors[0], pins: [] }],
@@ -464,14 +464,14 @@ describe("cable-canvas-utils", () => {
     expect(snapshotToWirelistRows(second)).toEqual(rowsBefore);
     expect(hashCanvasSnapshot(second)).toBe(hashCanvasSnapshot(first));
     expect(first.paths.find((path) => path.id === "p-derived")).toMatchObject({
-      fromLocation: "J1 - 1",
-      toLocation: "J2 - 4",
       fromContact: "CNT-1",
       toContact: "CNT-4",
       wirePartNumber: "M22759/16-22",
       length: 12,
       notes: "keep me"
     });
+    expect(first.paths.find((path) => path.id === "p-derived")?.fromLocation).toBeUndefined();
+    expect(first.paths.find((path) => path.id === "p-derived")?.toLocation).toBeUndefined();
     expect(first.paths.find((path) => path.id === "p-custom")).toMatchObject({
       fromLocation: "OLD-J2 - 9",
       toLocation: "OLD-J1 - 3",
@@ -493,6 +493,72 @@ describe("cable-canvas-utils", () => {
       state: "invalid",
       message: "Connector name does not exist"
     });
+  });
+
+  it("names a one-slot frame module after the connector and keeps multi-slot names", () => {
+    const empty = {
+      connectors: [],
+      junctions: [],
+      paths: [],
+      pinMappings: [],
+      bundles: [],
+      annotations: []
+    } as RevisionDto["snapshot"];
+    const single = buildSnapshotFromCanvas(empty, {
+      connectors: [
+        {
+          id: "c1",
+          reference: "J1",
+          partNumber: "FRAME-1",
+          pins: [{ id: "A:1", number: "1" }],
+          slots: [
+            {
+              slotId: "A",
+              reference: "J1A",
+              partNumber: "MOD-A",
+              pins: [{ id: "1", number: "1" }]
+            }
+          ]
+        }
+      ],
+      junctions: [],
+      paths: [],
+      positions: {}
+    });
+    expect(single.connectors[0]?.slots?.[0]).toMatchObject({
+      reference: "J1",
+      partNumber: "MOD-A"
+    });
+
+    const multi = buildSnapshotFromCanvas(empty, {
+      connectors: [
+        {
+          id: "c1",
+          reference: "J1",
+          partNumber: "FRAME-2",
+          pins: [],
+          slots: [
+            { slotId: "A", reference: "J1A", pins: [] },
+            { slotId: "B", reference: "Custom-B", pins: [] }
+          ]
+        }
+      ],
+      junctions: [],
+      paths: [],
+      positions: {}
+    });
+    expect(multi.connectors[0]?.slots?.map((slot) => slot.reference)).toEqual(["J1A", "Custom-B"]);
+
+    const loaded = normalizeUnassignedConnectors([
+      {
+        id: "c1",
+        reference: "P1",
+        partNumber: "FRAME-1",
+        pins: [],
+        slots: [{ slotId: "A", reference: "P1A", pins: [] }]
+      }
+    ]);
+    expect(loaded[0]?.slots?.[0]?.reference).toBe("P1");
   });
 
   it("builds connector pair totals through junction paths", () => {

@@ -1,6 +1,6 @@
 import type { LibraryCategory, PartAlias, PartWithAttributes } from "./library.js";
 import { isSleeveTubeBraidPart, isWirePart } from "./library.js";
-import { isFrameHousingConnector, isSlotPopulated } from "./connector-frames.js";
+import { isFrameHousingConnector, isSlotPopulated, slotModuleName } from "./connector-frames.js";
 import { isWireRunPath, pinMappedPathIds } from "./path-roles.js";
 import type { DesignSnapshot, Revision } from "./types.js";
 
@@ -351,8 +351,9 @@ export function buildBom(revision: Revision, lookup: LibraryLookup): BomResult {
         if (!isSlotPopulated(slot)) {
           continue;
         }
+        const moduleReference = slotModuleName(connector, slot);
         emitConnectorPartLine(aggregates, {
-          designRef: slot.reference,
+          designRef: moduleReference,
           partNumber: slot.partNumber,
           libraryComponentId: slot.libraryComponentId,
           categories: ["module", "contact"],
@@ -360,7 +361,7 @@ export function buildBom(revision: Revision, lookup: LibraryLookup): BomResult {
           lookup
         });
         emitAccessoryLine(aggregates, {
-          connectorReference: slot.reference,
+          connectorReference: moduleReference,
           category: "backshell",
           partNumber: slot.backshellPartNumber,
           libraryComponentId: slot.backshellLibraryComponentId,
@@ -368,7 +369,7 @@ export function buildBom(revision: Revision, lookup: LibraryLookup): BomResult {
           missingLabel: "Backshell"
         });
         emitAccessoryLine(aggregates, {
-          connectorReference: slot.reference,
+          connectorReference: moduleReference,
           category: "strain-relief",
           partNumber: slot.strainReliefPartNumber,
           libraryComponentId: slot.strainReliefLibraryComponentId,

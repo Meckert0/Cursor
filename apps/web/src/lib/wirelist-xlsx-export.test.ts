@@ -72,7 +72,9 @@ describe("wirelist-xlsx-export", () => {
         toSignalDescription: "DST",
         labelPartNumber: "LBL-1",
         labelText: "W1",
-        notes: "Roundtrip"
+        notes: "Roundtrip",
+        fromLocation: "J1",
+        toLocation: "J2"
       }
     ],
     pinMappings: [],

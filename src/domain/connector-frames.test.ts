@@ -9,6 +9,7 @@ import {
   modulesAllowedForFrameSlot,
   namespacedPinId,
   normalizeCatalogSide,
+  normalizeSingleSlotReferences,
   parseNamespacedPinId,
   retargetSlotReferences,
   slotIdsForFrame,
@@ -177,4 +178,42 @@ test("buildSlotsForFrame keeps matching previous slots", () => {
   assert.equal(next[0]?.reference, "Keep-A");
   assert.equal(next[0]?.partNumber, "MOD-A");
   assert.equal(next[1]?.reference, "J1B");
+});
+
+test("a single slot uses the connector name", () => {
+  assert.equal(defaultSlotReference("J1", "A", 1), "J1");
+  const built = buildSlotsForFrame("J1", ["A"]);
+  assert.equal(built[0]?.reference, "J1");
+  assert.deepEqual(retargetSlotReferences(built, "J1", "P1"), [{ slotId: "A", reference: "P1", pins: [] }]);
+  const previous: ConnectorSlot[] = [
+    { slotId: "A", reference: "J1A", partNumber: "MOD-A", pins: [{ id: "1", number: "1" }] }
+  ];
+  const rebuilt = buildSlotsForFrame("J1", ["A"], previous);
+  assert.equal(rebuilt[0]?.reference, "J1");
+  assert.equal(rebuilt[0]?.partNumber, "MOD-A");
+  assert.deepEqual(rebuilt[0]?.pins, [{ id: "1", number: "1" }]);
+  const normalized = normalizeSingleSlotReferences([
+    {
+      reference: "J1",
+      slots: previous
+    }
+  ]);
+  assert.equal(normalized[0]?.slots?.[0]?.reference, "J1");
+});
+
+test("expandConnectorsForDetails names a one-slot module after the connector", () => {
+  const connectors: SnapshotConnector[] = [
+    {
+      id: "c1",
+      reference: "J1",
+      partNumber: "ITA-1",
+      libraryComponentId: "frame-1",
+      pins: [{ id: "A:1", number: "1" }],
+      slots: [{ slotId: "A", reference: "J1A", partNumber: "MOD-A", pins: [{ id: "1", number: "1" }] }]
+    }
+  ];
+  assert.deepEqual(
+    expandConnectorsForDetails(connectors).map((entry) => entry.reference),
+    ["J1"]
+  );
 });

@@ -1299,26 +1299,30 @@ export function CableCanvas({
                     );
                     return (
                       <div key={slot.slotId} className={styles.slotBlock}>
-                        <label>
-                          Slot {slot.slotId} name
-                          <input
-                            className={styles.slotNameInput}
-                            value={slotNameDrafts[slot.slotId] ?? slot.reference}
-                            disabled={readOnly}
-                            onChange={(event) =>
-                              setSlotNameDrafts((previous) => ({
-                                ...previous,
-                                [slot.slotId]: event.target.value
-                              }))
-                            }
-                            onBlur={(event) => commitSlotName(slot.slotId, event.target.value)}
-                            placeholder={`e.g. ${selectedConnector.reference}${slot.slotId}`}
-                            aria-label={`Slot ${slot.slotId} module name`}
-                          />
-                        </label>
-                        {slotNameErrors[slot.slotId] ? (
-                          <span className={styles.quickAddError}>{slotNameErrors[slot.slotId]}</span>
-                        ) : null}
+                        {(selectedConnector.slots?.length ?? 0) === 1 ? null : (
+                          <>
+                            <label>
+                              Slot {slot.slotId} name
+                              <input
+                                className={styles.slotNameInput}
+                                value={slotNameDrafts[slot.slotId] ?? slot.reference}
+                                disabled={readOnly}
+                                onChange={(event) =>
+                                  setSlotNameDrafts((previous) => ({
+                                    ...previous,
+                                    [slot.slotId]: event.target.value
+                                  }))
+                                }
+                                onBlur={(event) => commitSlotName(slot.slotId, event.target.value)}
+                                placeholder={`e.g. ${selectedConnector.reference}${slot.slotId}`}
+                                aria-label={`Slot ${slot.slotId} module name`}
+                              />
+                            </label>
+                            {slotNameErrors[slot.slotId] ? (
+                              <span className={styles.quickAddError}>{slotNameErrors[slot.slotId]}</span>
+                            ) : null}
+                          </>
+                        )}
                         {slotModuleDefined ? (
                           <button
                             type="button"

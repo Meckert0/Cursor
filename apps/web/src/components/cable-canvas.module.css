@@ -371,6 +371,34 @@
   stroke-width: 8;
 }
 
+.lines line.sleevingExpandable {
+  stroke-width: 12;
+  stroke-dasharray: 8 4;
+  stroke-linecap: butt;
+}
+
+.lines line.sleevingExpandable.selectedLine {
+  stroke: #2563eb;
+  stroke-width: 16;
+}
+
+.lines line.sleevingBraid {
+  stroke-width: 4;
+  stroke-linecap: round;
+  cursor: pointer;
+}
+
+.lines line.sleevingBraid.selectedLine {
+  stroke: #2563eb;
+  stroke-width: 5;
+}
+
+.lines line.braidHit {
+  stroke: transparent;
+  stroke-width: 16;
+  cursor: pointer;
+}
+
 .lines line.previewLine {
   stroke: #60a5fa;
   stroke-width: 6;

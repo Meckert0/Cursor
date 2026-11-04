@@ -114,6 +114,9 @@ describe("CableCanvas cable sections", () => {
     expect(canvasCss).toContain("background: rgba(239, 246, 255, 0.94);");
     expect(canvasCss).toContain("stroke-width: 6;");
     expect(canvasCss).toContain("stroke-width: 8;");
+    expect(canvasCss).toContain("stroke-width: 12;");
+    expect(canvasCss).toContain("stroke-dasharray: 8 4;");
+    expect(canvasCss).toContain("stroke-width: 16;");
 
     const lines = document.querySelectorAll('[data-testid="cable-canvas"] svg line');
     expect(lines).toHaveLength(2);
@@ -121,7 +124,42 @@ describe("CableCanvas cable sections", () => {
     expect(lines[0]?.getAttribute("y1")).toBe("68");
     expect(lines[0]?.getAttribute("x2")).toBe("280");
     expect(lines[0]?.getAttribute("class")).toContain(styles.selectedLine);
+    expect(lines[0]?.getAttribute("class")).toContain(styles.sleevingExpandable);
     expect(lines[1]?.getAttribute("class")).toBeNull();
+  });
+
+  it("draws braid-under-sleeving cables as overlapping crosses at twice the thickness", () => {
+    const braidSnapshot = snapshot();
+    braidSnapshot.paths = [
+      {
+        id: "p-braid",
+        wireName: "cable-braid",
+        fromConnectorId: "c1",
+        toConnectorId: "c2",
+        pathType: "cable",
+        length: 10,
+        sleeving: "wire_braid_under_expandable_sleeving"
+      }
+    ];
+    render(
+      <CableCanvas
+        revisionId="rev-cable-braid"
+        snapshot={braidSnapshot}
+        snapshotHash="hash"
+        connectorCatalog={[]}
+        quickAddConnectorAction={async () => ({ ok: true, connectorCatalog: [] })}
+        readOnly
+      />
+    );
+
+    const braidLines = [...document.querySelectorAll('[data-testid="cable-canvas"] svg line')].filter((line) =>
+      line.getAttribute("class")?.includes(styles.sleevingBraid)
+    );
+    expect(braidLines.length).toBeGreaterThan(4);
+    expect(braidLines.length % 2).toBe(0);
+    expect(braidLines[0]?.getAttribute("class")).toContain(styles.selectedLine);
+    const ys = braidLines.flatMap((line) => [Number(line.getAttribute("y1")), Number(line.getAttribute("y2"))]);
+    expect(Math.max(...ys) - Math.min(...ys)).toBeCloseTo(16);
   });
 
   it("keeps the length editor centered on the cable", () => {

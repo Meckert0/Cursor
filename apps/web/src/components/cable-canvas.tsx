@@ -11,6 +11,7 @@ import {
 import {
   buildConnectorPinsFromComponent,
   filterAllowedAccessoryOptionsForModule,
+  buildCableBraidCrosses,
   formatCableSectionCanvasLabel,
   formatConnectorPinsLabel,
   loadInitialCanvasDraft,
@@ -1609,21 +1610,63 @@ export function CableCanvas({
       ) : null}
       <div className={styles.canvas} ref={canvasRef} data-testid="cable-canvas" onPointerDown={handleCanvasBackgroundPointerDown}>
         <svg className={styles.lines} aria-hidden>
-          {paths.map((path) => (
-            <line
-              key={path.id}
-              x1={path.x1}
-              y1={path.y1}
-              x2={path.x2}
-              y2={path.y2}
-              className={selectedEntity?.type === "path" && selectedEntity.id === path.id ? styles.selectedLine : undefined}
-              onPointerDown={(event) => {
-                event.stopPropagation();
-                setSelectedPathId(path.id);
-                setSelectedEntity({ type: "path", id: path.id });
-              }}
-            />
-          ))}
+          {paths.map((path) => {
+            const pathEntry = pathsState.find((entry) => entry.id === path.id);
+            const sleeving = pathEntry?.sleeving ?? "none";
+            const selected = selectedEntity?.type === "path" && selectedEntity.id === path.id;
+            const selectPath = (event: ReactPointerEvent<SVGLineElement>) => {
+              event.stopPropagation();
+              setSelectedPathId(path.id);
+              setSelectedEntity({ type: "path", id: path.id });
+            };
+            if (sleeving === "wire_braid_under_expandable_sleeving") {
+              const crosses = buildCableBraidCrosses({
+                x1: path.x1,
+                y1: path.y1,
+                x2: path.x2,
+                y2: path.y2,
+                width: selected ? 16 : 12
+              });
+              return (
+                <g key={path.id}>
+                  <line
+                    x1={path.x1}
+                    y1={path.y1}
+                    x2={path.x2}
+                    y2={path.y2}
+                    className={styles.braidHit}
+                    onPointerDown={selectPath}
+                  />
+                  {crosses.map((segment, index) => (
+                    <line
+                      key={`${path.id}-braid-${index}`}
+                      x1={segment.x1}
+                      y1={segment.y1}
+                      x2={segment.x2}
+                      y2={segment.y2}
+                      className={selected ? `${styles.sleevingBraid} ${styles.selectedLine}` : styles.sleevingBraid}
+                      onPointerDown={selectPath}
+                    />
+                  ))}
+                </g>
+              );
+            }
+            const classNames = [
+              sleeving === "expandable_sleeving" ? styles.sleevingExpandable : "",
+              selected ? styles.selectedLine : ""
+            ].filter(Boolean);
+            return (
+              <line
+                key={path.id}
+                x1={path.x1}
+                y1={path.y1}
+                x2={path.x2}
+                y2={path.y2}
+                className={classNames.length > 0 ? classNames.join(" ") : undefined}
+                onPointerDown={selectPath}
+              />
+            );
+          })}
           {connectPreview ? (
             <line
               x1={connectPreview.x1}

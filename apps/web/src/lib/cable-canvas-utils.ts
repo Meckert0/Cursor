@@ -500,6 +500,51 @@ export function formatCableSectionCanvasLabel(input: {
   return `${input.wireName} - ${length} in | ${getSleevingLabel(input.sleeving)} | ${formatBundleDiameterLabel(input.bundleDiameterIn)}`;
 }
 
+/**
+ * Crossing strokes for a braid-under-sleeving cable. Each X meets the next so
+ * the pattern is a chain of criss-crosses. `width` is the band across the
+ * cable, in pixels.
+ */
+export function buildCableBraidCrosses(input: {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  width: number;
+  spacing?: number;
+}): Array<{ x1: number; y1: number; x2: number; y2: number }> {
+  const dx = input.x2 - input.x1;
+  const dy = input.y2 - input.y1;
+  const length = Math.hypot(dx, dy);
+  if (!(length > 0) || !(input.width > 0)) {
+    return [];
+  }
+  const spacing = input.spacing && input.spacing > 0 ? input.spacing : 16;
+  const count = Math.max(1, Math.round(length / spacing));
+  const pitch = length / count;
+  const ux = dx / length;
+  const uy = dy / length;
+  const px = -uy;
+  const py = ux;
+  const halfAcross = input.width / 2;
+  const segments: Array<{ x1: number; y1: number; x2: number; y2: number }> = [];
+  for (let index = 0; index < count; index += 1) {
+    const t = (index + 0.5) * pitch;
+    const arm = Math.min(pitch * 0.5, t, length - t);
+    const cx = input.x1 + ux * t;
+    const cy = input.y1 + uy * t;
+    const ax = ux * arm;
+    const ay = uy * arm;
+    const bx = px * halfAcross;
+    const by = py * halfAcross;
+    segments.push(
+      { x1: cx - ax - bx, y1: cy - ay - by, x2: cx + ax + bx, y2: cy + ay + by },
+      { x1: cx - ax + bx, y1: cy - ay + by, x2: cx + ax - bx, y2: cy + ay - by }
+    );
+  }
+  return segments;
+}
+
 export function formatEndpointTotalLabel(input: {
   fromReference?: string;
   toReference?: string;

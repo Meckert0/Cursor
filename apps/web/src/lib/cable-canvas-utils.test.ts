@@ -8,6 +8,7 @@ import {
   buildDefaultPositions,
   buildSnapshotFromCanvas,
   buildUniqueWireSections,
+  buildCableBraidCrosses,
   bundleDiameterInches,
   formatBundleDiameterLabel,
   formatCableSectionCanvasLabel,
@@ -563,6 +564,30 @@ describe("cable-canvas-utils", () => {
         bundleDiameterIn: 0.2
       })
     ).toBe("cable2 - 0 in | wire braid under expandable sleeving | bundle dia 0.2 in");
+  });
+
+  it("builds overlapping braid crosses that stay on the cable and span its width", () => {
+    const crosses = buildCableBraidCrosses({ x1: 0, y1: 10, x2: 80, y2: 10, width: 12, spacing: 8 });
+    expect(crosses).toHaveLength(20);
+    const first = crosses[0];
+    const second = crosses[1];
+    expect(first).toBeDefined();
+    expect(second).toBeDefined();
+    expect(first!.y1).toBeCloseTo(4);
+    expect(first!.y2).toBeCloseTo(16);
+    expect(second!.y1).toBeCloseTo(16);
+    expect(second!.y2).toBeCloseTo(4);
+    expect(Math.min(first!.x1, first!.x2)).toBeGreaterThanOrEqual(0);
+    expect(Math.max(first!.x1, first!.x2)).toBeLessThanOrEqual(80);
+    const last = crosses[crosses.length - 1];
+    expect(Math.max(last!.x1, last!.x2)).toBeLessThanOrEqual(80);
+
+    const vertical = buildCableBraidCrosses({ x1: 5, y1: 0, x2: 5, y2: 0, width: 12 });
+    expect(vertical).toEqual([]);
+    const short = buildCableBraidCrosses({ x1: 0, y1: 0, x2: 0, y2: 6, width: 16 });
+    expect(short).toHaveLength(2);
+    expect(Math.abs(short[0]!.x1)).toBeCloseTo(8);
+    expect(Math.abs(short[0]!.x2)).toBeCloseTo(8);
   });
 
   it("formats endpoint totals with connector names and length only", () => {

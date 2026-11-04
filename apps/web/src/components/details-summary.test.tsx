@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { cleanup, render, screen, within } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
 import type { LibraryComponentDto, RevisionDto } from "@/lib/api";
 import { bundleDiameterInches, formatBundleDiameterLabel } from "@/lib/cable-canvas-utils";
 import { DetailsSummary } from "./details-summary";
@@ -29,6 +29,11 @@ function module(
     attributes
   };
 }
+
+afterEach(() => {
+  cleanup();
+  window.localStorage.clear();
+});
 
 describe("DetailsSummary", () => {
   it("shows module part numbers, a blank bundle diameter, and connector names on endpoint totals", () => {
@@ -93,25 +98,69 @@ describe("DetailsSummary", () => {
       />
     );
 
-    expect(screen.getByText("J1 — 510103 — Signal module")).toBeInTheDocument();
-    expect(screen.getByText("J2")).toBeInTheDocument();
-    const slotModule = screen.getByText("J2A — MOD-A — Power and signal");
-    const slotContacts = slotModule.closest("li")?.querySelectorAll(":scope > ul > li");
-    expect(slotContacts).toHaveLength(2);
-    expect(slotContacts?.[0]).toHaveTextContent("16 TP ITA");
-    expect(slotContacts?.[1]).toHaveTextContent("19 MC ITA");
-    expect(screen.getAllByText("16 TP ITA")).toHaveLength(2);
-    expect(screen.queryByText("J2A — MOD-A: 16 TP ITA")).not.toBeInTheDocument();
+    const modules = screen.getAllByRole("article");
+    expect(modules.map((module) => module.getAttribute("aria-label"))).toEqual(["Module J1", "Module J2"]);
+    const j1 = within(modules[0]);
+    expect(j1.getByText("510103")).toBeInTheDocument();
+    expect(j1.getByText("Signal module")).toBeInTheDocument();
+    expect(j1.getByText("16 TP ITA")).toBeInTheDocument();
+    expect(j1.getByText("410120")).toBeInTheDocument();
+    expect(j1.getByText("SR-1")).toBeInTheDocument();
+    const j2a = within(modules[1]);
+    expect(j2a.getByText("MOD-A")).toBeInTheDocument();
+    expect(j2a.getByText("J2 — ITA-2 — slot A")).toBeInTheDocument();
+    expect(j2a.getByText("16 TP ITA, 19 MC ITA")).toBeInTheDocument();
+    expect(j2a.getByText("BS-9")).toBeInTheDocument();
+    expect(j2a.getByText("No compatible contacts in the library for this module.")).toBeInTheDocument();
     expect(
       screen.getByText("cable1: c_canvas_1 -> c_canvas_2, 24 in, expandable sleeving, bundle dia —")
     ).toBeInTheDocument();
     expect(screen.getByText("J1 -> J2: 24 in")).toBeInTheDocument();
     expect(screen.queryByText(/c_canvas_1\)/)).not.toBeInTheDocument();
     expect(screen.queryByText(/\d+ sections?/)).not.toBeInTheDocument();
-    expect(screen.queryByText("ITA-2")).not.toBeInTheDocument();
-    expect(screen.queryByText("410120")).not.toBeInTheDocument();
-    expect(screen.queryByText("SR-1")).not.toBeInTheDocument();
-    expect(screen.queryByText("BS-9")).not.toBeInTheDocument();
+  });
+
+  it("shows a compatible contact table with AWG ranges next to each module", () => {
+    const contactPart = (id: string, partNumber: string, attributes: Record<string, unknown>): LibraryComponentDto => ({
+      ...module(partNumber, id, `Contact ${partNumber}`, attributes),
+      category: "contact",
+      partType: undefined
+    });
+    const snapshot = {
+      connectors: [
+        { id: "c2", reference: "J2", partNumber: "MOD-2", libraryComponentId: "mod-2", pins: [] },
+        { id: "c1", reference: "J1", partNumber: "MOD-1", libraryComponentId: "mod-1", pins: [] }
+      ],
+      junctions: [],
+      paths: [],
+      pinMappings: [],
+      bundles: [],
+      annotations: []
+    } as RevisionDto["snapshot"];
+
+    render(
+      <DetailsSummary
+        revisionId="rev-compat"
+        snapshot={snapshot}
+        connectorCatalog={[module("MOD-1", "mod-1"), module("MOD-2", "mod-2")]}
+        contactCatalog={[
+          contactPart("cnt-22", "CNT-22", { acceptedAwgMin: 22, acceptedAwgMax: 26 }),
+          contactPart("cnt-16", "CNT-16", { acceptedAwgMin: 16, acceptedAwgMax: 20 })
+        ]}
+        contactRelationships={[
+          { parentPartId: "mod-1", compatibleParts: ["CNT-22"], parentPositions: ["1", "2"], status: "allowed" }
+        ]}
+        moduleContactCompat={[{ modulePartId: "mod-2", contactPartId: "cnt-16", status: "review" }]}
+      />
+    );
+
+    const modules = screen.getAllByRole("article");
+    expect(modules.map((module) => module.getAttribute("aria-label"))).toEqual(["Module J1", "Module J2"]);
+    const j1Rows = within(screen.getByRole("table", { name: "Compatible contacts for J1" })).getAllByRole("row");
+    expect(j1Rows[0]).toHaveTextContent("Contact P/NDescriptionAWG rangePositionsStatus");
+    expect(j1Rows[1]).toHaveTextContent("CNT-22Contact CNT-2222-26 AWG1, 2Allowed");
+    const j2Rows = within(screen.getByRole("table", { name: "Compatible contacts for J2" })).getAllByRole("row");
+    expect(j2Rows[1]).toHaveTextContent("CNT-16Contact CNT-1616-20 AWGAllReview");
   });
 
   it("fills each cable section bundle diameter from the wirelist and sizes the sleeving", () => {

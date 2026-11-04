@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
+import { ConnectorModulesSection } from "@/components/connector-modules-section";
 import { WirelistGrid } from "@/components/wirelist-grid";
 import {
   getHarness,
@@ -203,6 +204,16 @@ export default async function HarnessWirelistPage({
             importWirelistAction={importWirelistAction}
             exportWirelistAction={exportWirelistAction}
             saveWirelistAction={saveWirelistAction}
+          />
+        </section>
+        <section className={styles.card}>
+          <ConnectorModulesSection
+            revisionId={revision.id}
+            snapshot={revision.snapshot}
+            connectorCatalog={connectorCatalog}
+            contactCatalog={contactCatalog}
+            moduleContactCompat={moduleContactCompat}
+            contactRelationships={contactRelationships}
           />
         </section>
       </main>

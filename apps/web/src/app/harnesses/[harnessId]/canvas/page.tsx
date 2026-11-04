@@ -8,6 +8,7 @@ import {
   ingestLibraryComponents,
   listLibraryComponents,
   listModuleBackshellCompat,
+  listModuleContactCompat,
   listModuleStrainReliefCompat,
   listPartRelationships,
   updateHarness,
@@ -60,7 +61,10 @@ export default async function HarnessCanvasPage({
     sleeveCatalog,
     moduleBackshellCompat,
     moduleStrainReliefCompat,
-    moduleAllowedRelationships
+    moduleAllowedRelationships,
+    contactCatalog,
+    moduleContactCompat,
+    contactRelationships
   ] = await Promise.all([
     loadConnectorCatalog(),
     listLibraryComponents({
@@ -81,7 +85,13 @@ export default async function HarnessCanvasPage({
     }),
     listModuleBackshellCompat(),
     listModuleStrainReliefCompat(),
-    listPartRelationships({ relationshipType: "MODULE_ALLOWED" })
+    listPartRelationships({ relationshipType: "MODULE_ALLOWED" }),
+    listLibraryComponents({
+      category: "contact",
+      isActive: true
+    }),
+    listModuleContactCompat(),
+    listPartRelationships({ relationshipType: "CONTACT_ALLOWED" })
   ]);
 
   async function quickAddConnectorAction(formData: FormData) {
@@ -232,6 +242,9 @@ export default async function HarnessCanvasPage({
             moduleAllowedRelationships={moduleAllowedRelationships}
             wireCatalog={wireCatalog}
             sleeveCatalog={sleeveCatalog}
+            contactCatalog={contactCatalog}
+            moduleContactCompat={moduleContactCompat}
+            contactRelationships={contactRelationships}
             quickAddConnectorAction={quickAddConnectorAction}
             saveCanvasAction={saveCanvasSnapshotAction}
             readOnly={isReadOnly}

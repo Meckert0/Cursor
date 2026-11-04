@@ -41,6 +41,7 @@ import {
   usedConnectorReferences,
   type FrameModuleRelationship
 } from "@/lib/connector-frames";
+import type { ContactCompatRow, ContactRelationshipRow } from "@/lib/connector-contact-groups";
 import { isWireRunPath } from "@/lib/path-roles";
 import {
   useCanvasHistory,
@@ -86,6 +87,9 @@ export function CableCanvas({
   moduleAllowedRelationships = [],
   wireCatalog = [],
   sleeveCatalog = [],
+  contactCatalog,
+  moduleContactCompat,
+  contactRelationships,
   quickAddConnectorAction,
   saveCanvasAction,
   readOnly = false
@@ -105,6 +109,9 @@ export function CableCanvas({
   moduleAllowedRelationships?: FrameModuleRelationship[];
   wireCatalog?: LibraryComponentDto[];
   sleeveCatalog?: LibraryComponentDto[];
+  contactCatalog?: LibraryComponentDto[];
+  moduleContactCompat?: ContactCompatRow[];
+  contactRelationships?: ContactRelationshipRow[];
   quickAddConnectorAction: (formData: FormData) => Promise<{
     ok: boolean;
     notice?: string;
@@ -1900,6 +1907,9 @@ export function CableCanvas({
             connectorCatalog={connectorCatalogState}
             wireCatalog={wireCatalog}
             sleeveCatalog={sleeveCatalog}
+            contactCatalog={contactCatalog}
+            moduleContactCompat={moduleContactCompat}
+            contactRelationships={contactRelationships}
           />
         ) : null}
       </section>

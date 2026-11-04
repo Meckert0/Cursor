@@ -1,7 +1,14 @@
 import Link from "next/link";
 import { DetailsPurchasingBom } from "@/components/details-purchasing-bom";
 import { DetailsSummary } from "@/components/details-summary";
-import { getHarness, getRevision, getRevisionBom, listLibraryComponents } from "@/lib/api";
+import {
+  getHarness,
+  getRevision,
+  getRevisionBom,
+  listLibraryComponents,
+  listModuleContactCompat,
+  listPartRelationships
+} from "@/lib/api";
 import { requireSignedInUser } from "@/lib/auth";
 import styles from "./page.module.css";
 
@@ -15,7 +22,16 @@ export default async function HarnessDetailsPage({
   await requireSignedInUser();
   const { harnessId } = await params;
   const harness = await getHarness(harnessId);
-  const [detail, connectorCatalog, wireCatalog, sleeveCatalog, bom] = await Promise.all([
+  const [
+    detail,
+    connectorCatalog,
+    wireCatalog,
+    sleeveCatalog,
+    bom,
+    contactCatalog,
+    moduleContactCompat,
+    contactRelationships
+  ] = await Promise.all([
     getRevision(harness.currentRevisionId),
     listLibraryComponents({
       category: "module",
@@ -29,7 +45,13 @@ export default async function HarnessDetailsPage({
       category: "sleeve-tube-braid",
       isActive: true
     }),
-    getRevisionBom(harness.currentRevisionId)
+    getRevisionBom(harness.currentRevisionId),
+    listLibraryComponents({
+      category: "contact",
+      isActive: true
+    }),
+    listModuleContactCompat(),
+    listPartRelationships({ relationshipType: "CONTACT_ALLOWED" })
   ]);
 
   return (
@@ -51,6 +73,9 @@ export default async function HarnessDetailsPage({
           connectorCatalog={connectorCatalog}
           wireCatalog={wireCatalog}
           sleeveCatalog={sleeveCatalog}
+          contactCatalog={contactCatalog}
+          moduleContactCompat={moduleContactCompat}
+          contactRelationships={contactRelationships}
         />
         <DetailsPurchasingBom revisionId={detail.id} snapshot={detail.snapshot} />
 

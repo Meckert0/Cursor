@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { LibraryComponentDto, RevisionDto } from "./api";
 import {
-  buildConnectorDetailsRows,
+  buildConnectorModuleEntries,
   displayConnectorGender,
+  formatContactAwgRange,
   formatContactGroupLabel,
   readModuleContactGroups
 } from "./connector-contact-groups";
@@ -25,6 +26,14 @@ function module(attributes: Record<string, unknown>, extra?: Partial<LibraryComp
     side: extra?.side,
     partType: extra?.partType ?? "MODULE",
     attributes
+  };
+}
+
+function contact(partNumber: string, attributes: Record<string, unknown>, description?: string): LibraryComponentDto {
+  return {
+    ...module(attributes, { id: `contact-${partNumber}`, partNumber, description: description ?? `Contact ${partNumber}` }),
+    category: "contact",
+    partType: undefined
   };
 }
 
@@ -89,11 +98,20 @@ describe("connector contact groups", () => {
     expect(formatContactGroupLabel({ pinCount: 9, contactType: "", gender: "" })).toBe("9");
   });
 
-  it("shows the module part number beside the connector name", () => {
+  it("formats contact AWG ranges from accepted min and max, AWG text, or gauges", () => {
+    expect(formatContactAwgRange(contact("C-1", { acceptedAwgMin: 26, acceptedAwgMax: 22 }))).toBe("22-26 AWG");
+    expect(formatContactAwgRange(contact("C-2", { acceptedAwgMin: 20, acceptedAwgMax: 20 }))).toBe("20 AWG");
+    expect(formatContactAwgRange(contact("C-3", { awg: "16-20" }))).toBe("16-20 AWG");
+    expect(formatContactAwgRange(contact("C-4", { acceptedGauges: ["22", "24"] }))).toBe("22, 24 AWG");
+    expect(formatContactAwgRange(contact("C-5", {}))).toBe("");
+    expect(formatContactAwgRange(undefined)).toBe("");
+  });
+
+  it("lists every canvas module sorted by designator with its connector info", () => {
     const connectors: RevisionDto["snapshot"]["connectors"] = [
       {
-        id: "c_canvas_1",
-        reference: "J1",
+        id: "c10",
+        reference: "J10",
         partNumber: "510103",
         backshellPartNumber: "410120",
         strainReliefPartNumber: "SR-1",
@@ -101,140 +119,149 @@ describe("connector contact groups", () => {
           { id: "1", number: "1" },
           { id: "2", number: "2" }
         ]
-      }
+      },
+      {
+        id: "c2",
+        reference: "J2",
+        partNumber: "ITA-2",
+        pins: [],
+        slots: [
+          {
+            slotId: "B",
+            reference: "J2B",
+            pins: []
+          },
+          {
+            slotId: "A",
+            reference: "J2A",
+            partNumber: "MOD-A",
+            libraryComponentId: "mod-a",
+            backshellPartNumber: "BS-9",
+            pins: [{ id: "1", number: "1" }]
+          }
+        ]
+      },
+      {
+        id: "c1",
+        reference: "P1",
+        partNumber: "ITA-1",
+        pins: [],
+        slots: [{ slotId: "A", reference: "P1A", partNumber: "MOD-B", libraryComponentId: "mod-b", pins: [] }]
+      },
+      { id: "c3", reference: "J3", pins: [] }
     ];
     const catalog = [
       module(
         { pinCount: 16, contactFamily1: "TP", pinCount2: 19, contactFamily2: "MC", gender: "ITA" },
         { id: "mod-510", partNumber: "510103", side: "ITA", description: "Signal and power" }
-      )
+      ),
+      module({ pinCount: 2, contactFamily1: "MC" }, { id: "mod-a", partNumber: "MOD-A", side: "RECEIVER", description: "Coax pair" }),
+      module({ pinCount: 4, contactFamily1: "TP" }, { id: "mod-b", partNumber: "MOD-B", description: "Only module" })
     ];
 
-    expect(buildConnectorDetailsRows(connectors, catalog)).toEqual([
-      {
-        id: "c_canvas_1",
-        modules: [
-          {
-            id: "c_canvas_1",
-            label: "J1 — 510103 — Signal and power",
-            contacts: ["16 TP ITA", "19 MC ITA"]
-          }
-        ]
-      }
-    ]);
+    const entries = buildConnectorModuleEntries({ connectors, connectorCatalog: catalog });
+    expect(entries.map((entry) => entry.designator)).toEqual(["J2A", "J2B", "J3", "J10", "P1"]);
+    expect(entries[0]).toMatchObject({
+      designator: "J2A",
+      partNumber: "MOD-A",
+      description: "Coax pair",
+      gender: "RCV",
+      contactGroups: ["2 MC RCV"],
+      frame: { reference: "J2", partNumber: "ITA-2", slotId: "A" },
+      backshellPartNumber: "BS-9",
+      strainReliefPartNumber: "",
+      moduleDefined: true
+    });
+    expect(entries[1]).toMatchObject({ designator: "J2B", partNumber: "", moduleDefined: false, contactGroups: [] });
+    expect(entries[2]).toMatchObject({ designator: "J3", partNumber: "", moduleDefined: false });
+    expect(entries[3]).toMatchObject({
+      designator: "J10",
+      partNumber: "510103",
+      description: "Signal and power",
+      contactGroups: ["16 TP ITA", "19 MC ITA"],
+      backshellPartNumber: "410120",
+      strainReliefPartNumber: "SR-1"
+    });
+    expect(entries[3]?.frame).toBeUndefined();
+    expect(entries[4]).toMatchObject({
+      designator: "P1",
+      partNumber: "MOD-B",
+      frame: { reference: "P1", partNumber: "ITA-1", slotId: "A" }
+    });
   });
 
   it("uses the catalog module part number when the snapshot omits it", () => {
-    const connectors: RevisionDto["snapshot"]["connectors"] = [
-      {
-        id: "c1",
-        reference: "J1",
-        libraryComponentId: "mod-1",
-        pins: [{ id: "1", number: "1" }]
-      }
-    ];
+    const entries = buildConnectorModuleEntries({
+      connectors: [{ id: "c1", reference: "J1", libraryComponentId: "mod-1", pins: [{ id: "1", number: "1" }] }],
+      connectorCatalog: [module({ pinCount: 2, contactFamily1: "MC" }, { description: "Mini coax" })]
+    });
+    expect(entries[0]).toMatchObject({ partNumber: "MOD-1", description: "Mini coax", contactGroups: ["2 MC"] });
+  });
 
-    expect(buildConnectorDetailsRows(connectors, [module({ pinCount: 2, contactFamily1: "MC" }, { description: "Mini coax" })])).toEqual([
-      {
-        id: "c1",
-        modules: [
-          {
-            id: "c1",
-            label: "J1 — MOD-1 — Mini coax",
-            contacts: ["2 MC"]
-          }
-        ]
-      }
+  it("lists compatible contacts with AWG range and positions from contact relationships", () => {
+    const entries = buildConnectorModuleEntries({
+      connectors: [{ id: "c1", reference: "J1", partNumber: "MOD-1", libraryComponentId: "mod-1", pins: [] }],
+      connectorCatalog: [module({ pinCount: 4, contactFamily1: "TP" })],
+      contactCatalog: [
+        contact("CNT-22", { acceptedAwgMin: 22, acceptedAwgMax: 26 }, "Pin, size 22"),
+        contact("CNT-16", { acceptedAwgMin: 16, acceptedAwgMax: 20 }, "Pin, size 16"),
+        contact("CNT-BAD", { acceptedAwgMin: 12, acceptedAwgMax: 14 })
+      ],
+      contactRelationships: [
+        { parentPartId: "mod-1", compatibleParts: ["CNT-22"], parentPositions: ["10", "2"], status: "allowed" },
+        { parentPartId: "mod-1", compatibleParts: ["CNT-22"], parentPositions: ["3"], status: "allowed" },
+        { parentPartId: "mod-1", compatibleParts: ["CNT-16", "CNT-MISSING"], parentPositions: [], status: "review" },
+        { parentPartId: "mod-1", compatibleParts: ["CNT-BAD"], parentPositions: [], status: "forbidden" },
+        { parentPartId: "mod-2", compatibleParts: ["CNT-22"], parentPositions: [], status: "allowed" }
+      ],
+      moduleContactCompat: [{ modulePartId: "mod-1", contactPartId: "contact-CNT-BAD", status: "allowed" }]
+    });
+
+    expect(entries[0]?.compatibleContacts).toEqual([
+      { partNumber: "CNT-16", description: "Pin, size 16", awgRange: "16-20 AWG", positions: "All", status: "review" },
+      { partNumber: "CNT-22", description: "Pin, size 22", awgRange: "22-26 AWG", positions: "2, 3, 10", status: "allowed" },
+      { partNumber: "CNT-MISSING", description: "", awgRange: "", positions: "All", status: "review" }
     ]);
   });
 
-  it("groups frame slot modules under the same connector", () => {
-    const connectors: RevisionDto["snapshot"]["connectors"] = [
-      {
-        id: "c1",
-        reference: "J1",
-        partNumber: "ITA-2",
-        libraryComponentId: "frame-1",
-        pins: [],
-        slots: [
-          {
-            slotId: "A",
-            reference: "J1A",
-            partNumber: "MOD-A",
-            libraryComponentId: "mod-a",
-            pins: [
-              { id: "1", number: "1" },
-              { id: "2", number: "2" }
-            ]
-          },
-          {
-            slotId: "B",
-            reference: "J1B",
-            partNumber: "MOD-B",
-            libraryComponentId: "mod-b",
-            pins: [{ id: "1", number: "1" }]
-          }
-        ]
-      }
-    ];
-    const catalog = [
-      module(
-        { pinCount: 16, contactFamily1: "TP", pinCount2: 19, contactFamily2: "MC", gender: "ITA" },
-        { id: "mod-a", partNumber: "MOD-A", side: "ITA", description: "Power and signal" }
-      ),
-      module(
-        { pinCount: 2, contactFamily1: "MC" },
-        { id: "mod-b", partNumber: "MOD-B", side: "ITA", description: "Coax pair" }
-      )
-    ];
-
-    expect(buildConnectorDetailsRows(connectors, catalog)).toEqual([
-      {
-        id: "c1",
-        housing: "J1",
-        modules: [
-          {
-            id: "A",
-            label: "J1A — MOD-A — Power and signal",
-            contacts: ["16 TP ITA", "19 MC ITA"]
-          },
-          {
-            id: "B",
-            label: "J1B — MOD-B — Coax pair",
-            contacts: ["2 MC ITA"]
-          }
-        ]
-      }
+  it("falls back to module-contact compatibility rows when a module has no relationships", () => {
+    const entries = buildConnectorModuleEntries({
+      connectors: [
+        {
+          id: "c1",
+          reference: "J1",
+          partNumber: "ITA-1",
+          pins: [],
+          slots: [{ slotId: "A", reference: "J1", partNumber: "MOD-1", pins: [] }]
+        }
+      ],
+      connectorCatalog: [module({ pinCount: 4, contactFamily1: "TP" })],
+      contactCatalog: [contact("CNT-20", { awg: "20" }), contact("CNT-X", {})],
+      moduleContactCompat: [
+        { modulePartId: "mod-1", contactPartId: "contact-CNT-20", status: "allowed" },
+        { modulePartId: "mod-1", contactPartId: "contact-CNT-X", status: "forbidden" }
+      ]
+    });
+    expect(entries[0]?.designator).toBe("J1");
+    expect(entries[0]?.compatibleContacts).toEqual([
+      { partNumber: "CNT-20", description: "Contact CNT-20", awgRange: "20 AWG", positions: "All", status: "allowed" }
     ]);
   });
 
   it("names a one-slot frame module after the connector", () => {
-    const connectors: RevisionDto["snapshot"]["connectors"] = [
-      {
-        id: "c1",
-        reference: "J1",
-        partNumber: "ITA-1",
-        libraryComponentId: "frame-1",
-        pins: [],
-        slots: [
-          {
-            slotId: "A",
-            reference: "J1A",
-            partNumber: "MOD-A",
-            libraryComponentId: "mod-a",
-            pins: [{ id: "1", number: "1" }]
-          }
-        ]
-      }
-    ];
-    const catalog = [
-      module(
-        { pinCount: 2, contactFamily1: "TP", gender: "ITA" },
-        { id: "mod-a", partNumber: "MOD-A", side: "ITA", description: "Only module" }
-      )
-    ];
-    expect(buildConnectorDetailsRows(connectors, catalog)[0]?.modules[0]?.label).toBe(
-      "J1 — MOD-A — Only module"
-    );
+    const entries = buildConnectorModuleEntries({
+      connectors: [
+        {
+          id: "c1",
+          reference: "J1",
+          partNumber: "ITA-1",
+          libraryComponentId: "frame-1",
+          pins: [],
+          slots: [{ slotId: "A", reference: "J1A", partNumber: "MOD-A", libraryComponentId: "mod-a", pins: [] }]
+        }
+      ],
+      connectorCatalog: []
+    });
+    expect(entries[0]?.designator).toBe("J1");
   });
 });

@@ -501,6 +501,74 @@ export function formatCableSectionCanvasLabel(input: {
 }
 
 /**
+ * Gap between the painted sleeve and the single rectangle drawn around it.
+ * The rectangle frames the whole cable, outside the stroke, dashes, and braid.
+ */
+export const CABLE_SLEEVE_OUTLINE_MARGIN = 4;
+
+export type CableSleeveOutline = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** Degrees for an SVG rotate() around centerX/centerY. */
+  angle: number;
+  centerX: number;
+  centerY: number;
+};
+
+/**
+ * Outer half-size of the painted sleeve, in CSS pixels. These match the
+ * stroke widths in cable-canvas.module.css, including round-cap overhang
+ * and the braid stroke that extends past the cross geometry.
+ */
+function sleevePaintExtent(sleeving: SleevingValue, selected: boolean): { halfAcross: number; endExtension: number } {
+  if (sleeving === "expandable_sleeving") {
+    const stroke = selected ? 16 : 12;
+    return { halfAcross: stroke / 2, endExtension: 0 };
+  }
+  if (sleeving === "wire_braid_under_expandable_sleeving") {
+    const band = selected ? 16 : 12;
+    const stroke = selected ? 5 : 4;
+    return { halfAcross: band / 2 + stroke / 2, endExtension: stroke / 2 };
+  }
+  const stroke = selected ? 8 : 6;
+  return { halfAcross: stroke / 2, endExtension: stroke / 2 };
+}
+
+/** One axis-aligned rectangle in cable-local space, rotated onto the cable. */
+export function buildCableSleeveOutline(input: {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  sleeving: SleevingValue;
+  selected?: boolean;
+  margin?: number;
+}): CableSleeveOutline {
+  const margin = input.margin ?? CABLE_SLEEVE_OUTLINE_MARGIN;
+  const { halfAcross, endExtension } = sleevePaintExtent(input.sleeving, Boolean(input.selected));
+  const dx = input.x2 - input.x1;
+  const dy = input.y2 - input.y1;
+  const length = Math.hypot(dx, dy);
+  const safeLength = Number.isFinite(length) ? length : 0;
+  const centerX = (input.x1 + input.x2) / 2;
+  const centerY = (input.y1 + input.y2) / 2;
+  const along = safeLength + 2 * (endExtension + margin);
+  const across = 2 * (halfAcross + margin);
+  const angle = safeLength > 0 ? (Math.atan2(dy, dx) * 180) / Math.PI : 0;
+  return {
+    x: centerX - along / 2,
+    y: centerY - across / 2,
+    width: along,
+    height: across,
+    angle,
+    centerX: Number.isFinite(centerX) ? centerX : 0,
+    centerY: Number.isFinite(centerY) ? centerY : 0
+  };
+}
+
+/**
  * Crossing strokes for a braid-under-sleeving cable. Each X meets the next so
  * the pattern is a chain of criss-crosses. `width` is the band across the
  * cable, in pixels.

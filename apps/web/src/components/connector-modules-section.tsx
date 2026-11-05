@@ -80,7 +80,7 @@ function CompatibilityTable({ entry }: { entry: ConnectorModuleEntry }) {
                 ) : null}
               </td>
               <td>{row.awgRange || "—"}</td>
-              <td>{formatContactPositionList(row.positions)}</td>
+              <td>{formatContactPositionList(row.positions, entry.pinPositions)}</td>
             </tr>
           ));
           if (!showDescriptionOnce) {

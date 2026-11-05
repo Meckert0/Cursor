@@ -116,7 +116,7 @@ describe("connector contact groups", () => {
     expect(formatContactPositionList("A, B")).toBe("A–B");
     expect(formatContactPositionList("A, C")).toBe("A, C");
     expect(formatContactPositionList("AA, AB, AC, AE")).toBe("AA–AC, AE");
-    expect(formatContactPositionList("A1, A2, A3, A4, B1")).toBe("A1–A4, B1");
+    expect(formatContactPositionList("A1, A2, A3, A4, B1")).toBe("A1–B1");
     expect(formatContactPositionList("A3, A1, A2, A4")).toBe("A1–A4");
     expect(formatContactPositionList("1A, 2A, 3A, 5A")).toBe("1A–3A, 5A");
     expect(formatContactPositionList("A-1, A-2, A-3")).toBe("A-1–A-3");
@@ -130,7 +130,28 @@ describe("connector contact groups", () => {
           ...Array.from({ length: 80 }, (_, index) => `A${index + 1}`)
         ].join(", ")
       )
-    ).toBe("A1–A80, B1–B80");
+    ).toBe("A1–B80");
+  });
+
+  it("uses one alphanumeric range across complete rows and keeps gaps visible", () => {
+    const positions = ["A", "B", "C", "D"].flatMap((letter) =>
+      Array.from({ length: 40 }, (_, index) => `${letter}${index + 1}`)
+    );
+    expect(formatContactPositionList([...positions].reverse().join(", "))).toBe("A1–D40");
+    expect(formatContactPositionList(positions.filter((position) => position !== "A20").join(", "))).toBe(
+      "A1–A19, A21–D40"
+    );
+    expect(formatContactPositionList(positions.filter((position) => position !== "A40").join(", "))).toBe(
+      "A1–A39, B1–D40"
+    );
+    expect(formatContactPositionList(positions.filter((position) => !position.startsWith("B")).join(", "))).toBe(
+      "A1–A40, C1–D40"
+    );
+    expect(formatContactPositionList("A1, A2, B1, B2", positions)).toBe("A1–A2, B1–B2");
+    expect(formatContactPositionList("Z1, Z2, AA1, AA2, AB1, AB2")).toBe("Z1–AB2");
+    expect(formatContactPositionList("a1, a2, b1, b2, b2")).toBe("a1–b2");
+    expect(formatContactPositionList("A-1, A-2, B-1, B-2")).toBe("A-1–B-2");
+    expect(formatContactPositionList("A01, A02, B01, B02")).toBe("A01, A02, B01, B02");
   });
 
   it("groups contacts that share a description onto one part-number list", () => {

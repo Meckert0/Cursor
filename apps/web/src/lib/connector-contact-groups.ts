@@ -213,6 +213,8 @@ export type ConnectorModuleEntry = {
   strainReliefPartNumber: string;
   /** False when the canvas has no part selected for this module. */
   moduleDefined: boolean;
+  /** Full module layout, used to keep omitted positions visible as gaps in ranges. */
+  pinPositions: string[];
   compatibleContacts: CompatibleContact[];
 };
 
@@ -221,21 +223,32 @@ const POSITION_COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitiv
 type PositionSeries = {
   key: string;
   n: number;
-  display: (value: number) => string;
+  bank?: { key: string; row: number };
 };
 
 function unpaddedInteger(digits: string): number | undefined {
-  if (!/^\d+$/.test(digits) || String(Number(digits)) !== digits) {
+  if (!/^\d+$/.test(digits) || !Number.isSafeInteger(Number(digits)) || String(Number(digits)) !== digits) {
     return undefined;
   }
   return Number(digits);
+}
+
+function letterRow(prefix: string): number | undefined {
+  if (!/^([A-Z]+|[a-z]+)$/.test(prefix)) {
+    return undefined;
+  }
+  let row = 0;
+  for (const letter of prefix.toUpperCase()) {
+    row = row * 26 + letter.charCodeAt(0) - 64;
+  }
+  return Number.isSafeInteger(row) ? row : undefined;
 }
 
 /** A run of positions that share a prefix or suffix and increase by one, such as A1–A12 or 1A–4A. */
 function positionSeries(token: string): PositionSeries | undefined {
   const integer = unpaddedInteger(token);
   if (integer !== undefined) {
-    return { key: "n", n: integer, display: (value) => String(value) };
+    return { key: "n", n: integer };
   }
 
   const prefixNumber = /^([A-Za-z]+)([-_.]?)(\d+)$/.exec(token);
@@ -244,10 +257,13 @@ function positionSeries(token: string): PositionSeries | undefined {
     if (value !== undefined) {
       const prefix = prefixNumber[1] ?? "";
       const separator = prefixNumber[2] ?? "";
+      const row = letterRow(prefix);
       return {
         key: `p:${prefix}:${separator}`,
         n: value,
-        display: (next) => `${prefix}${separator}${next}`
+        bank: row !== undefined && value > 0
+          ? { key: `${separator}:${prefix === prefix.toUpperCase() ? "U" : "L"}`, row }
+          : undefined
       };
     }
   }
@@ -260,8 +276,7 @@ function positionSeries(token: string): PositionSeries | undefined {
       const suffix = numberSuffix[3] ?? "";
       return {
         key: `s:${separator}:${suffix}`,
-        n: value,
-        display: (next) => `${next}${separator}${suffix}`
+        n: value
       };
     }
   }
@@ -274,8 +289,7 @@ function positionSeries(token: string): PositionSeries | undefined {
       const letterCase = last === last.toUpperCase() ? "U" : "L";
       return {
         key: `a:${prefix}:${letterCase}`,
-        n: letter,
-        display: (next) => prefix + String.fromCharCode((letterCase === "U" ? 65 : 97) + next)
+        n: letter
       };
     }
   }
@@ -283,41 +297,55 @@ function positionSeries(token: string): PositionSeries | undefined {
   return undefined;
 }
 
-/** Collapse a position list so a narrow column can show "1–12" or "A1–A160" instead of every position. */
-export function formatContactPositionList(positions: string): string {
+/** Collapse consecutive positions, including row rollovers such as A40 → B1, into one range. */
+export function formatContactPositionList(positions: string, modulePositions: readonly string[] = []): string {
   if (positions === "All") {
     return positions;
   }
-  const tokens = positions
-    .split(",")
-    .map((token) => token.trim())
-    .filter((token) => token.length > 0)
-    .sort(POSITION_COLLATOR.compare);
+  const tokens = Array.from(new Set(positions.split(",").map((token) => token.trim()).filter(Boolean)))
+    .map((token) => ({ token, series: positionSeries(token) }))
+    .sort((left, right) => {
+      const leftBank = left.series?.bank;
+      const rightBank = right.series?.bank;
+      if (leftBank && rightBank && leftBank.key === rightBank.key) {
+        return leftBank.row - rightBank.row || left.series!.n - right.series!.n;
+      }
+      return POSITION_COLLATOR.compare(left.token, right.token);
+    });
+  // Use the full module's row width when known: A1–A20 must not jump to B1 if A21–A40 exist.
+  const rowWidths = new Map<string, number>();
+  for (const series of [...tokens.map((token) => token.series), ...modulePositions.map(positionSeries)]) {
+    if (series?.bank) {
+      rowWidths.set(series.bank.key, Math.max(rowWidths.get(series.bank.key) ?? 0, series.n));
+    }
+  }
   const groups: string[] = [];
   let index = 0;
   while (index < tokens.length) {
-    const startToken = tokens[index] ?? "";
-    const start = positionSeries(startToken);
+    const startToken = tokens[index]!.token;
+    const start = tokens[index]!.series;
     if (!start) {
       groups.push(startToken);
       index += 1;
       continue;
     }
-    let end = start.n;
+    let end = start;
+    let endToken = startToken;
     let next = index + 1;
     while (next < tokens.length) {
-      const candidate = positionSeries(tokens[next] ?? "");
-      if (candidate && candidate.key === start.key && candidate.n === end) {
-        next += 1;
-        continue;
-      }
-      if (!candidate || candidate.key !== start.key || candidate.n !== end + 1) {
+      const candidate = tokens[next]!.series;
+      const sameRow = candidate && candidate.key === end.key && candidate.n === end.n + 1;
+      const nextRow = candidate?.bank && end.bank && candidate.bank.key === end.bank.key &&
+        candidate.bank.row === end.bank.row + 1 && candidate.n === 1 &&
+        end.n === rowWidths.get(end.bank.key);
+      if (!candidate || (!sameRow && !nextRow)) {
         break;
       }
-      end = candidate.n;
+      end = candidate;
+      endToken = tokens[next]!.token;
       next += 1;
     }
-    groups.push(end === start.n ? startToken : `${start.display(start.n)}–${start.display(end)}`);
+    groups.push(endToken === startToken ? startToken : `${startToken}–${endToken}`);
     index = next;
   }
   return groups.join(", ");
@@ -476,6 +504,12 @@ export function buildConnectorModuleEntries(input: {
       backshellPartNumber: module.backshellPartNumber?.trim() ?? "",
       strainReliefPartNumber: module.strainReliefPartNumber?.trim() ?? "",
       moduleDefined: Boolean(partNumber || module.libraryComponentId),
+      pinPositions: [
+        ...module.pins.map((pin) => pin.number),
+        ...(Array.isArray(component?.attributes?.pinIds)
+          ? component.attributes.pinIds.filter((pin): pin is string => typeof pin === "string")
+          : [])
+      ],
       compatibleContacts: compatibleContactsForModule(
         module.libraryComponentId?.trim() || component?.id,
         contactCatalog,

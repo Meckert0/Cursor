@@ -9,7 +9,13 @@ import {
   getSleevingLabel,
   readCanvasDraftSnapshot
 } from "@/lib/cable-canvas-utils";
-import { cableSectionBundleDiameters, selectSleeveForBundleDiameter } from "@/lib/bundle-diameter";
+import { cableSectionBundleDiameters } from "@/lib/bundle-diameter";
+import {
+  buildCableSectionMaterials,
+  CABLE_MATERIAL_LABELS,
+  formatMaterialLength,
+  totalCableSectionMaterials
+} from "@/lib/cable-section-materials";
 import type { ContactCompatRow, ContactRelationshipRow } from "@/lib/connector-contact-groups";
 import type { LibraryComponentDto, RevisionDto } from "@/lib/api";
 import { ConnectorModulesSection } from "./connector-modules-section";
@@ -96,6 +102,11 @@ export function DetailsSummary({
       }),
     [connectors, junctions, paths]
   );
+  const materialSections = useMemo(
+    () => buildCableSectionMaterials({ sections: uniqueWireSections, bundleDiameters: bundleDiameterBySection, sleeveCatalog }),
+    [uniqueWireSections, bundleDiameterBySection, sleeveCatalog]
+  );
+  const materialTotals = useMemo(() => totalCableSectionMaterials(materialSections), [materialSections]);
 
   return (
     <div className={styles.summaryGrid}>
@@ -112,24 +123,42 @@ export function DetailsSummary({
         <h3>Cable sections</h3>
         <ul>
           {uniqueWireSections.length === 0 ? <li>No cable sections yet.</li> : null}
-          {uniqueWireSections.map((section) => {
-            const bundleDiameter = bundleDiameterBySection.get(section.pathId) ?? null;
-            const sleeve = selectSleeveForBundleDiameter({
-              sleeving: section.sleeving,
-              bundleDiameterIn: bundleDiameter,
-              sleeves: sleeveCatalog
-            });
+          {materialSections.map((section) => {
             return (
               <li key={section.pathId}>
-                {section.wireName}: {section.fromNodeId}
-                {" -> "}
-                {section.toNodeId}, {section.lengthFt} in, {getSleevingLabel(section.sleeving)},{" "}
-                {formatBundleDiameterLabel(bundleDiameter)}
-                {sleeve ? `, size ${sleeve.partNumber}` : ""}
+                <div>
+                  {section.wireName}: {section.fromNodeId}
+                  {" -> "}
+                  {section.toNodeId}, {section.lengthFt} in, {getSleevingLabel(section.sleeving)},{" "}
+                  {formatBundleDiameterLabel(section.bundleDiameterIn)}
+                </div>
+                {section.materials.map((material) => (
+                  <div key={material.kind} className={styles.materialLine}>
+                    {CABLE_MATERIAL_LABELS[material.kind]}:{" "}
+                    {material.part?.partNumber ?? (section.bundleDiameterIn === null ? "diameter unavailable" : "no matching size")}
+                    {` (${formatMaterialLength(section.lengthFt)})`}
+                  </div>
+                ))}
               </li>
             );
           })}
         </ul>
+        <div className={styles.materialTotals}>
+          <h4>Cable section totals</h4>
+          <ul aria-label="Material totals by part number">
+            {materialTotals.parts.map((part) => (
+              <li key={`${part.kind}:${part.partNumber}`}>
+                {CABLE_MATERIAL_LABELS[part.kind]} {part.partNumber ?? "(unresolved size)"}: {formatMaterialLength(part.lengthIn)}
+              </li>
+            ))}
+          </ul>
+          <ul aria-label="Cable section length totals" className={styles.lengthTotals}>
+            <li>Total cable length: {formatMaterialLength(materialTotals.cableLengthIn)}</li>
+            <li>Expandable sleeving total: {formatMaterialLength(materialTotals.byMaterial.expandable_sleeving)}</li>
+            <li>Wire braid total: {formatMaterialLength(materialTotals.byMaterial.wire_braid)}</li>
+            <li><strong>Total material length: {formatMaterialLength(materialTotals.materialLengthIn)}</strong></li>
+          </ul>
+        </div>
       </section>
         <section className={styles.summaryPanel}>
           <h3>Endpoint totals</h3>

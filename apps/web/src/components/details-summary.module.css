@@ -31,3 +31,23 @@
   color: #334155;
   font-size: 12px;
 }
+
+.materialLine {
+  margin-top: 3px;
+}
+
+.materialTotals {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid #dbe2ef;
+}
+
+.materialTotals h4 {
+  margin: 0 0 8px;
+  color: #1e293b;
+  font-size: 13px;
+}
+
+.summaryPanel .lengthTotals {
+  margin-top: 8px;
+}

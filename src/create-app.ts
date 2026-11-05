@@ -34,6 +34,7 @@ import { MemoryStore } from "./infra/store/memory-store.js";
 import { PostgresStore } from "./infra/store/postgres-store.js";
 import type { Store } from "./infra/store/store.js";
 import { ensureWireDiameterCatalog } from "./domain/wire-diameter-catalog.js";
+import { ensureSleeveDiameterCatalog } from "./domain/sleeve-diameter-catalog.js";
 import { ExportQueueService } from "./services/export-queue.js";
 import { runMaintenance } from "./services/maintenance.js";
 import type { FastifyInstance } from "fastify";
@@ -118,6 +119,11 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Created
     console.info(
       `Wire diameter catalog: inserted ${wireCatalog.inserted}, updated diameters on ${wireCatalog.updated}.`
     );
+  }
+
+  const sleeveCatalog = await ensureSleeveDiameterCatalog(store);
+  if (sleeveCatalog.inserted > 0 || sleeveCatalog.updated > 0) {
+    console.info(`Sleeve/tube/braid catalog: inserted ${sleeveCatalog.inserted}, updated ranges on ${sleeveCatalog.updated}.`);
   }
 
   if (redisUrl) {

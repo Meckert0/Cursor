@@ -298,6 +298,7 @@ type SleeveSizeRangeRow = {
   part_id: string;
   min_dia: number;
   max_dia: number;
+  min_inclusive: boolean;
   related_part_id: string | null;
 };
 
@@ -772,6 +773,7 @@ function mapSleeveTubeBraidAttributes(
     sizeRanges: sizeRanges.map((sizeRange) => ({
       minDia: sizeRange.min_dia,
       maxDia: sizeRange.max_dia,
+      minInclusive: sizeRange.min_inclusive,
       relatedPartId: optionalString(sizeRange.related_part_id)
     }))
   };
@@ -1332,9 +1334,9 @@ export class PostgresStore implements Store {
         await client.query(`DELETE FROM sleeve_size_ranges WHERE part_id = $1`, [partId]);
         for (const sizeRange of attrs.sizeRanges ?? []) {
           await client.query(
-            `INSERT INTO sleeve_size_ranges (part_id, min_dia, max_dia, related_part_id)
-             VALUES ($1, $2, $3, $4)`,
-            [partId, sizeRange.minDia, sizeRange.maxDia, sizeRange.relatedPartId ?? null]
+            `INSERT INTO sleeve_size_ranges (part_id, min_dia, max_dia, min_inclusive, related_part_id)
+             VALUES ($1, $2, $3, $4, $5)`,
+            [partId, sizeRange.minDia, sizeRange.maxDia, sizeRange.minInclusive ?? true, sizeRange.relatedPartId ?? null]
           );
         }
         return;

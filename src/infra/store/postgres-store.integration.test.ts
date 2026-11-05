@@ -18,6 +18,7 @@ test(
     const backshellId = `pg-bs-${suffix}`;
     const strainId = `pg-sr-${suffix}`;
     const frameId = `pg-frm-${suffix}`;
+    const sleeveId = `pg-slv-${suffix}`;
 
     try {
       // Ensure parts schema exists (migration 027).
@@ -27,6 +28,17 @@ test(
         requestedByUserId: "pg-test",
         dryRun: false,
         items: [
+          {
+            id: sleeveId,
+            category: "sleeve-tube-braid",
+            family: "expandable_sleeving",
+            partNumber: `SLV-${suffix}`,
+            description: "Exclusive lower diameter bound",
+            isActive: true,
+            isReviewed: false,
+            stockStatus: "unknown",
+            attributes: { sizeRanges: [{ minDia: 0.75, maxDia: 1.75, minInclusive: false }] }
+          },
           {
             id: moduleId,
             category: "module",
@@ -98,7 +110,7 @@ test(
           }
         ]
       });
-      assert.equal(ingest.summary.committed, 6);
+      assert.equal(ingest.summary.committed, 7);
 
       const listed = await store.listLibraryComponents({
         requestingUserId: "pg-test",
@@ -106,6 +118,9 @@ test(
         canViewInactive: true
       });
       assert.ok(listed.some((part) => part.id === moduleId));
+      const sleeve = listed.find((part) => part.id === sleeveId);
+      assert.ok(sleeve?.category === "sleeve-tube-braid");
+      assert.equal(sleeve.attributes.sizeRanges?.[0].minInclusive, false);
 
       const updated = await store.updateLibraryComponent({
         componentId: wireId,
@@ -212,6 +227,7 @@ test(
       assert.equal(await store.deleteLibraryComponent({ componentId: backshellId }), true);
       assert.equal(await store.deleteLibraryComponent({ componentId: strainId }), true);
       assert.equal(await store.deleteLibraryComponent({ componentId: frameId }), true);
+      assert.equal(await store.deleteLibraryComponent({ componentId: sleeveId }), true);
     } finally {
       await pool.end();
     }

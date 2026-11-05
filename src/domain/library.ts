@@ -34,6 +34,8 @@ export interface ModuleContactPosition {
 export interface SleeveSizeRange {
   minDia: number;
   maxDia: number;
+  /** Existing ranges include the minimum unless explicitly marked exclusive. */
+  minInclusive?: boolean;
   relatedPartId?: string;
 }
 

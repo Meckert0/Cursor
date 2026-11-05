@@ -36,6 +36,55 @@ afterEach(() => {
 });
 
 describe("DetailsSummary", () => {
+  it("shows both braid layers and refreshes part totals with live canvas lengths", () => {
+    const connectors: RevisionDto["snapshot"]["connectors"] = [
+      { id: "c1", reference: "J1", pins: [] },
+      { id: "c2", reference: "J2", pins: [] }
+    ];
+    const junctions = [{ id: "jx", location: { x: 0, y: 0 } }];
+    const cables: RevisionDto["snapshot"]["paths"] = [
+      { id: "braided", wireName: "cable1", fromConnectorId: "c1", toConnectorId: "jx", pathType: "cable", length: 12,
+        sleeving: "wire_braid_under_expandable_sleeving" },
+      { id: "sleeved", wireName: "cable2", fromConnectorId: "jx", toConnectorId: "c2", pathType: "cable", length: 6,
+        sleeving: "expandable_sleeving" }
+    ];
+    const snapshot = {
+      connectors, junctions,
+      paths: [...cables, { id: "wire-run", fromConnectorId: "c1", toConnectorId: "c2", pathType: "wire",
+        wirelistManaged: true, wireComponentId: "wire", length: 1000 }],
+      pinMappings: [], bundles: [], annotations: []
+    } as RevisionDto["snapshot"];
+    const sleeveCatalog: LibraryComponentDto[] = [
+      { ...module("875010", "sleeve", "Sleeving", { sizeRanges: [{ minDia: 0, maxDia: 0.75 }] }),
+        category: "sleeve-tube-braid", family: "expandable_sleeving" },
+      { ...module("875012", "braid", "Braid", { sizeRanges: [{ minDia: 0, maxDia: 0.38 }] }),
+        category: "sleeve-tube-braid", family: "wire_braid" },
+      { ...module("875000", "tube", "Tubing", { sizeRanges: [{ minDia: 0, maxDia: 1 }] }),
+        category: "sleeve-tube-braid", family: "shrink_tubing" }
+    ];
+    const wireCatalog: LibraryComponentDto[] = [
+      { ...module("WIRE", "wire", "Wire", { awg: "8", color: "Black", overallDia: 0.3 }), category: "wire" }
+    ];
+    const { rerender } = render(
+      <DetailsSummary revisionId="live-materials" snapshot={snapshot} sleeveCatalog={sleeveCatalog} wireCatalog={wireCatalog} />
+    );
+    expect(screen.getByText("Expandable sleeving: 875010 (12 in)")).toBeInTheDocument();
+    expect(screen.getByText("Wire braid: 875012 (12 in)")).toBeInTheDocument();
+    expect(screen.getByLabelText("Material totals by part number")).toHaveTextContent("Expandable sleeving 875010: 18 in");
+    expect(screen.getByText("Total cable length: 18 in")).toBeInTheDocument();
+    expect(screen.getByText("Total material length: 30 in")).toBeInTheDocument();
+    expect(screen.queryByText(/875000|Shrink tubing/)).not.toBeInTheDocument();
+
+    rerender(
+      <DetailsSummary revisionId="live-materials" snapshot={snapshot} connectors={connectors} junctions={junctions}
+        paths={[{ ...cables[0], length: 20 }, cables[1]]} sleeveCatalog={sleeveCatalog} wireCatalog={wireCatalog} />
+    );
+    expect(screen.getByText("Wire braid: 875012 (20 in)")).toBeInTheDocument();
+    expect(screen.getByLabelText("Material totals by part number")).toHaveTextContent("Expandable sleeving 875010: 26 in");
+    expect(screen.getByText("Total cable length: 26 in")).toBeInTheDocument();
+    expect(screen.getByText("Total material length: 46 in")).toBeInTheDocument();
+  });
+
   it("shows module part numbers, a blank bundle diameter, and connector names on endpoint totals", () => {
     const snapshot = {
       connectors: [
@@ -321,8 +370,16 @@ describe("DetailsSummary", () => {
       />
     );
 
-    expect(screen.getByText(`section1: c1 -> jx, 12 in, expandable sleeving, ${trunkDiameter}, size SLV-L`)).toBeInTheDocument();
-    expect(screen.getByText(`section2: jx -> c2, 6 in, expandable sleeving, ${branchDiameter}, size SLV-S`)).toBeInTheDocument();
+    expect(screen.getByText(`section1: c1 -> jx, 12 in, expandable sleeving, ${trunkDiameter}`)).toBeInTheDocument();
+    expect(screen.getByText("Expandable sleeving: SLV-L (12 in)")).toBeInTheDocument();
+    expect(screen.getByText(`section2: jx -> c2, 6 in, expandable sleeving, ${branchDiameter}`)).toBeInTheDocument();
+    expect(screen.getByText("Expandable sleeving: SLV-S (6 in)")).toBeInTheDocument();
     expect(screen.getByText(`section3: jx -> c3, 6 in, no sleeving, ${branchDiameter}`)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Cable section totals" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Material totals by part number")).toHaveTextContent("Expandable sleeving SLV-L: 12 in");
+    expect(screen.getByText("Total cable length: 24 in")).toBeInTheDocument();
+    expect(screen.getByText("Expandable sleeving total: 18 in")).toBeInTheDocument();
+    expect(screen.getByText("Total material length: 18 in")).toBeInTheDocument();
+    expect(screen.queryByText(/Shrink tubing/)).not.toBeInTheDocument();
   });
 });

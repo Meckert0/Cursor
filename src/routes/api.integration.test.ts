@@ -26,6 +26,37 @@ function buildTestApp() {
   });
 }
 
+test("library ingest preserves exclusive sleeve diameter minimums", async () => {
+  const app = buildTestApp();
+  await app.ready();
+  const headers = { "x-user-id": "sleeve-editor", "x-role": "owner" };
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/library/components/ingest",
+      headers,
+      payload: { items: [{
+        id: "exclusive-sleeve",
+        category: "sleeve-tube-braid",
+        family: "expandable_sleeving",
+        partNumber: "875011",
+        description: "Expandable sleeving over 0.75 through 1.75 in",
+        isActive: true,
+        isReviewed: false,
+        stockStatus: "unknown",
+        attributes: { sizeRanges: [{ minDia: 0.75, maxDia: 1.75, minInclusive: false }] }
+      }] }
+    });
+    assert.equal(response.statusCode, 201);
+    assert.equal(response.json().summary.committed, 1);
+    const read = await app.inject({ method: "GET", url: "/v1/library/components/exclusive-sleeve", headers });
+    assert.equal(read.statusCode, 200);
+    assert.deepEqual(read.json().attributes.sizeRanges, [{ minDia: 0.75, maxDia: 1.75, minInclusive: false }]);
+  } finally {
+    await app.close();
+  }
+});
+
 async function waitForExportCompletion(
   app: ReturnType<typeof buildApp>,
   exportId: string

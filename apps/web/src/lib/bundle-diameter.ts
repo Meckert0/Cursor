@@ -237,6 +237,7 @@ export function cableSectionBundleDiameters(input: {
 type SleeveRange = {
   minDia: number;
   maxDia: number;
+  minInclusive: boolean;
 };
 
 function readSleeveSizeRanges(attributes: Record<string, unknown> | null | undefined): SleeveRange[] {
@@ -260,7 +261,7 @@ function readSleeveSizeRanges(attributes: Record<string, unknown> | null | undef
     ) {
       continue;
     }
-    ranges.push({ minDia, maxDia });
+    ranges.push({ minDia, maxDia, minInclusive: (entry as { minInclusive?: unknown }).minInclusive !== false });
   }
   return ranges;
 }
@@ -287,15 +288,16 @@ export function selectSleeveForBundleDiameter(input: {
   if (!Number.isFinite(input.bundleDiameterIn) || input.bundleDiameterIn <= 0) {
     return null;
   }
-  const style = input.sleeving.trim().toLowerCase();
+  const normalizeFamily = (value: string) => value.trim().toLowerCase().replace(/[\s-]+/g, "_");
+  const style = normalizeFamily(input.sleeving);
   const diameter = input.bundleDiameterIn;
   let best: { id: string; partNumber: string; span: number; maxDia: number } | null = null;
   for (const part of input.sleeves) {
-    if (part.category !== "sleeve-tube-braid" || part.family.trim().toLowerCase() !== style) {
+    if (part.category !== "sleeve-tube-braid" || normalizeFamily(part.family) !== style) {
       continue;
     }
     for (const range of readSleeveSizeRanges(part.attributes)) {
-      if (diameter < range.minDia || diameter > range.maxDia) {
+      if (diameter < range.minDia || (!range.minInclusive && diameter === range.minDia) || diameter > range.maxDia) {
         continue;
       }
       const span = range.maxDia - range.minDia;

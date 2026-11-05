@@ -34,6 +34,7 @@ const moduleContactPositionSchema = z.object({
 const sleeveSizeRangeSchema = z.object({
   minDia: z.number(),
   maxDia: z.number(),
+  minInclusive: z.boolean().optional(),
   relatedPartId: z.string().optional()
 });
 

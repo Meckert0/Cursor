@@ -35,6 +35,23 @@ With the default SQLite + file-artifact setup, durable state lives in:
 - `artifacts/` (export files when `ARTIFACT_STORAGE_BACKEND=file`)
 
 Copy those paths to back up or move a local install.
+
+### Diameter catalogs and cable section totals
+
+API startup adds the supplied wire diameter catalog and seven sleeve/tube/braid
+parts to the item database without duplicating part numbers. Covering ranges live
+in `src/domain/sleeve-diameter-catalog.ts`; descriptions include the acceptable
+diameters in inches. Ranges preserve exclusive lower bounds and inclusive upper
+bounds. PostgreSQL installations must apply migration
+`031_sleeve_range_boundaries.sql` with `npm run migrate` before running this version.
+
+The Details cable section rows size expandable sleeving and wire braid from the
+calculated wire bundle diameter. A section with braid under sleeving uses the
+section length of each material. Totals below the rows group lengths by part
+number and material and show total cable length and combined material length.
+Sections with missing diameters or no matching size keep their material length
+under an unresolved size rather than receiving a guessed part number. Tubing
+ranges are stored for later use; tubing quantities are not calculated yet.
 ## What is implemented
 
 - Fastify API with versioned routes under `/v1`
@@ -58,7 +75,7 @@ Copy those paths to back up or move a local install.
 - Lock/unlock workflow with Redis support (required on Vercel; falls back to memory lock manager only for local development)
 - Revision validation with ruleset/mode-gated topology, electrical, compatibility, and manufacturability checks; submit/state transitions require a non-stale validation of the current snapshot
 - Library catalog, ingest/moderation, and admin console APIs
-- Parts-model catalog (`parts` + typed category extensions + aliases + compatibility junctions); catalog starts empty (no starter seed) — ingest items via admin or API; data persists when using sqlite/postgres
+- Parts-model catalog (`parts` + typed category extensions + aliases + compatibility junctions); supplied wire and covering diameter catalogs load at startup — ingest other items via admin or API; data persists when using sqlite/postgres
 - PostgreSQL migrations in `db/migrations/` (including `027_parts_model.sql` and `028_parts_model_cpq_readiness.sql`)
 
 ## Quick start
@@ -103,7 +120,7 @@ Copy those paths to back up or move a local install.
 
 2. Apply all migrations in `db/migrations/` to your database (includes auth tables, parts model `027`, and CPQ readiness `028`).
 
-3. Start server. The app validates DB connectivity at startup. The item catalog starts empty until you ingest or create parts (no automatic starter seed). Hosted Vercel environments skip startup recovery/retention; run `npm run maintenance` or wait for cron.
+3. Start server. The app validates DB connectivity and adds the supplied wire and covering diameter catalogs at startup. Ingest or create other parts through the admin tools or API. Hosted Vercel environments skip startup recovery/retention; run `npm run maintenance` or wait for cron.
 
 4. Optional: run SQL migrations automatically:
 

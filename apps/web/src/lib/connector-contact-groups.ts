@@ -218,7 +218,72 @@ export type ConnectorModuleEntry = {
 
 const POSITION_COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
-/** Collapse a sorted position list so a narrow column can show "1–12" instead of every number. */
+type PositionSeries = {
+  key: string;
+  n: number;
+  display: (value: number) => string;
+};
+
+function unpaddedInteger(digits: string): number | undefined {
+  if (!/^\d+$/.test(digits) || String(Number(digits)) !== digits) {
+    return undefined;
+  }
+  return Number(digits);
+}
+
+/** A run of positions that share a prefix or suffix and increase by one, such as A1–A12 or 1A–4A. */
+function positionSeries(token: string): PositionSeries | undefined {
+  const integer = unpaddedInteger(token);
+  if (integer !== undefined) {
+    return { key: "n", n: integer, display: (value) => String(value) };
+  }
+
+  const prefixNumber = /^([A-Za-z]+)([-_.]?)(\d+)$/.exec(token);
+  if (prefixNumber) {
+    const value = unpaddedInteger(prefixNumber[3] ?? "");
+    if (value !== undefined) {
+      const prefix = prefixNumber[1] ?? "";
+      const separator = prefixNumber[2] ?? "";
+      return {
+        key: `p:${prefix}:${separator}`,
+        n: value,
+        display: (next) => `${prefix}${separator}${next}`
+      };
+    }
+  }
+
+  const numberSuffix = /^(\d+)([-_.]?)([A-Za-z]+)$/.exec(token);
+  if (numberSuffix) {
+    const value = unpaddedInteger(numberSuffix[1] ?? "");
+    if (value !== undefined) {
+      const separator = numberSuffix[2] ?? "";
+      const suffix = numberSuffix[3] ?? "";
+      return {
+        key: `s:${separator}:${suffix}`,
+        n: value,
+        display: (next) => `${next}${separator}${suffix}`
+      };
+    }
+  }
+
+  if (/^[A-Za-z]+$/.test(token)) {
+    const prefix = token.slice(0, -1);
+    const last = token.slice(-1);
+    const letter = last.toUpperCase().charCodeAt(0) - 65;
+    if (letter >= 0 && letter <= 25 && (last === last.toUpperCase() || last === last.toLowerCase())) {
+      const letterCase = last === last.toUpperCase() ? "U" : "L";
+      return {
+        key: `a:${prefix}:${letterCase}`,
+        n: letter,
+        display: (next) => prefix + String.fromCharCode((letterCase === "U" ? 65 : 97) + next)
+      };
+    }
+  }
+
+  return undefined;
+}
+
+/** Collapse a position list so a narrow column can show "1–12" or "A1–A160" instead of every position. */
 export function formatContactPositionList(positions: string): string {
   if (positions === "All") {
     return positions;
@@ -226,27 +291,67 @@ export function formatContactPositionList(positions: string): string {
   const tokens = positions
     .split(",")
     .map((token) => token.trim())
-    .filter((token) => token.length > 0);
+    .filter((token) => token.length > 0)
+    .sort(POSITION_COLLATOR.compare);
   const groups: string[] = [];
   let index = 0;
   while (index < tokens.length) {
-    const start = Number(tokens[index]);
-    const numeric = Number.isInteger(start) && String(start) === tokens[index];
-    if (!numeric) {
-      groups.push(tokens[index] ?? "");
+    const startToken = tokens[index] ?? "";
+    const start = positionSeries(startToken);
+    if (!start) {
+      groups.push(startToken);
       index += 1;
       continue;
     }
-    let end = start;
+    let end = start.n;
     let next = index + 1;
-    while (next < tokens.length && Number(tokens[next]) === end + 1 && String(end + 1) === tokens[next]) {
-      end += 1;
+    while (next < tokens.length) {
+      const candidate = positionSeries(tokens[next] ?? "");
+      if (candidate && candidate.key === start.key && candidate.n === end) {
+        next += 1;
+        continue;
+      }
+      if (!candidate || candidate.key !== start.key || candidate.n !== end + 1) {
+        break;
+      }
+      end = candidate.n;
       next += 1;
     }
-    groups.push(end === start ? (tokens[index] ?? "") : `${tokens[index]}–${end}`);
+    groups.push(end === start.n ? startToken : `${start.display(start.n)}–${start.display(end)}`);
     index = next;
   }
   return groups.join(", ");
+}
+
+export type CompatibleContactGroup = {
+  description: string;
+  rows: Array<{ partNumbers: string[]; awgRange: string; positions: string }>;
+};
+
+/** One description for every contact that shares it. Part numbers that also share AWG and positions share a row. */
+export function groupCompatibleContacts(contacts: CompatibleContact[]): CompatibleContactGroup[] {
+  const groups = new Map<string, CompatibleContactGroup>();
+  for (const contact of contacts) {
+    const description = contact.description.trim();
+    const group = groups.get(description) ?? { description, rows: [] };
+    const existing = group.rows.find((row) => row.awgRange === contact.awgRange && row.positions === contact.positions);
+    if (existing) {
+      existing.partNumbers.push(contact.partNumber);
+    } else {
+      group.rows.push({
+        partNumbers: [contact.partNumber],
+        awgRange: contact.awgRange,
+        positions: contact.positions
+      });
+    }
+    groups.set(description, group);
+  }
+  for (const group of groups.values()) {
+    for (const row of group.rows) {
+      row.partNumbers.sort(POSITION_COLLATOR.compare);
+    }
+  }
+  return Array.from(groups.values());
 }
 
 function compatibleContactsForModule(

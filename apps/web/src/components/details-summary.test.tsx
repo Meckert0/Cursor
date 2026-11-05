@@ -167,6 +167,54 @@ describe("DetailsSummary", () => {
     expect(j2Rows[1]).not.toHaveTextContent("Review");
   });
 
+  it("lists part numbers once under a shared description and ranges alphanumeric positions", () => {
+    const contactPart = (
+      id: string,
+      partNumber: string,
+      description: string,
+      attributes: Record<string, unknown>
+    ): LibraryComponentDto => ({
+      ...module(partNumber, id, description, attributes),
+      category: "contact",
+      partType: undefined
+    });
+    const positions = [...Array.from({ length: 4 }, (_, index) => `A${index + 1}`), "B1", ...Array.from({ length: 160 }, (_, index) => `C${index + 1}`)];
+    const snapshot = {
+      connectors: [{ id: "c1", reference: "J1", partNumber: "MOD-1", libraryComponentId: "mod-1", pins: [] }],
+      junctions: [],
+      paths: [],
+      pinMappings: [],
+      bundles: [],
+      annotations: []
+    } as RevisionDto["snapshot"];
+
+    render(
+      <DetailsSummary
+        revisionId="rev-grouped"
+        snapshot={snapshot}
+        connectorCatalog={[module("MOD-1", "mod-1")]}
+        contactCatalog={[
+          contactPart("cnt-a", "CNT-A", "Socket crimp", { acceptedAwgMin: 22, acceptedAwgMax: 26 }),
+          contactPart("cnt-b", "CNT-B", "Socket crimp", { acceptedAwgMin: 22, acceptedAwgMax: 26 }),
+          contactPart("cnt-c", "CNT-C", "Power crimp", { acceptedAwgMin: 12, acceptedAwgMax: 12 })
+        ]}
+        contactRelationships={[
+          { parentPartId: "mod-1", compatibleParts: ["CNT-B", "CNT-A"], parentPositions: positions, status: "allowed" },
+          { parentPartId: "mod-1", compatibleParts: ["CNT-C"], parentPositions: ["1"], status: "allowed" }
+        ]}
+      />
+    );
+
+    const rows = within(screen.getByRole("table", { name: "Compatible contacts for J1" })).getAllByRole("row");
+    expect(rows.map((row) => row.textContent)).toEqual([
+      "ContactAWGPos",
+      "Socket crimp",
+      "CNT-A, CNT-B22-26 AWGA1–A4, B1, C1–C160",
+      "CNT-C Power crimp12 AWG1"
+    ]);
+    expect(screen.getAllByText("Socket crimp")).toHaveLength(1);
+  });
+
   it("fills each cable section bundle diameter from the wirelist and sizes the sleeving", () => {
     const wirePart = (id: string, partNumber: string, overallDia: number): LibraryComponentDto => ({
       id,

@@ -6,6 +6,7 @@ import {
   formatContactAwgRange,
   formatContactGroupLabel,
   formatContactPositionList,
+  groupCompatibleContacts,
   readModuleContactGroups
 } from "./connector-contact-groups";
 
@@ -112,7 +113,47 @@ describe("connector contact groups", () => {
     expect(formatContactPositionList("All")).toBe("All");
     expect(formatContactPositionList("1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12")).toBe("1–12");
     expect(formatContactPositionList("2, 3, 10")).toBe("2–3, 10");
-    expect(formatContactPositionList("A, B")).toBe("A, B");
+    expect(formatContactPositionList("A, B")).toBe("A–B");
+    expect(formatContactPositionList("A, C")).toBe("A, C");
+    expect(formatContactPositionList("AA, AB, AC, AE")).toBe("AA–AC, AE");
+    expect(formatContactPositionList("A1, A2, A3, A4, B1")).toBe("A1–A4, B1");
+    expect(formatContactPositionList("A3, A1, A2, A4")).toBe("A1–A4");
+    expect(formatContactPositionList("1A, 2A, 3A, 5A")).toBe("1A–3A, 5A");
+    expect(formatContactPositionList("A-1, A-2, A-3")).toBe("A-1–A-3");
+    expect(formatContactPositionList(Array.from({ length: 160 }, (_, index) => `A${index + 1}`).join(", "))).toBe(
+      "A1–A160"
+    );
+    expect(
+      formatContactPositionList(
+        [
+          ...Array.from({ length: 80 }, (_, index) => `B${index + 1}`),
+          ...Array.from({ length: 80 }, (_, index) => `A${index + 1}`)
+        ].join(", ")
+      )
+    ).toBe("A1–A80, B1–B80");
+  });
+
+  it("groups contacts that share a description onto one part-number list", () => {
+    expect(
+      groupCompatibleContacts([
+        { partNumber: "C2", description: "Socket", awgRange: "22-26 AWG", positions: "1, 2", status: "allowed" },
+        { partNumber: "C1", description: "Socket", awgRange: "22-26 AWG", positions: "1, 2", status: "allowed" },
+        { partNumber: "C3", description: "Socket", awgRange: "16-20 AWG", positions: "A1, A2, A3", status: "review" },
+        { partNumber: "D1", description: "Power", awgRange: "12 AWG", positions: "All", status: "allowed" }
+      ])
+    ).toEqual([
+      {
+        description: "Socket",
+        rows: [
+          { partNumbers: ["C1", "C2"], awgRange: "22-26 AWG", positions: "1, 2" },
+          { partNumbers: ["C3"], awgRange: "16-20 AWG", positions: "A1, A2, A3" }
+        ]
+      },
+      {
+        description: "Power",
+        rows: [{ partNumbers: ["D1"], awgRange: "12 AWG", positions: "All" }]
+      }
+    ]);
   });
 
   it("lists every canvas module sorted by designator with its connector info", () => {

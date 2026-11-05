@@ -85,9 +85,19 @@
   font-weight: 600;
 }
 
-.compatTable td:nth-child(n + 2),
-.compatTable th:nth-child(n + 2) {
+.compatTable td:nth-child(2),
+.compatTable th:nth-child(2) {
   white-space: nowrap;
+}
+
+.compatTable td:nth-child(3) {
+  overflow-wrap: anywhere;
+}
+
+.descriptionRow td {
+  padding-top: 3px;
+  color: #64748b;
+  font-weight: 400;
 }
 
 .contactDesc {

@@ -6,6 +6,7 @@ import { readCanvasDraftSnapshot } from "@/lib/cable-canvas-utils";
 import {
   buildConnectorModuleEntries,
   formatContactPositionList,
+  groupCompatibleContacts,
   type ConnectorModuleEntry,
   type ContactCompatRow,
   type ContactRelationshipRow
@@ -67,16 +68,31 @@ function CompatibilityTable({ entry }: { entry: ConnectorModuleEntry }) {
         </tr>
       </thead>
       <tbody>
-        {entry.compatibleContacts.map((contact) => (
-          <tr key={contact.partNumber}>
-            <td>
-              {contact.partNumber}
-              {contact.description ? <span className={styles.contactDesc}> {contact.description}</span> : null}
-            </td>
-            <td>{contact.awgRange || "—"}</td>
-            <td>{formatContactPositionList(contact.positions)}</td>
-          </tr>
-        ))}
+        {groupCompatibleContacts(entry.compatibleContacts).flatMap((group) => {
+          const partCount = group.rows.reduce((sum, row) => sum + row.partNumbers.length, 0);
+          const showDescriptionOnce = group.description.length > 0 && partCount > 1;
+          const contactRows = group.rows.map((row) => (
+            <tr key={`${group.description}:${row.partNumbers.join("|")}:${row.awgRange}:${row.positions}`}>
+              <td>
+                {row.partNumbers.join(", ")}
+                {!showDescriptionOnce && group.description ? (
+                  <span className={styles.contactDesc}> {group.description}</span>
+                ) : null}
+              </td>
+              <td>{row.awgRange || "—"}</td>
+              <td>{formatContactPositionList(row.positions)}</td>
+            </tr>
+          ));
+          if (!showDescriptionOnce) {
+            return contactRows;
+          }
+          return [
+            <tr key={`${group.description}:label`} className={styles.descriptionRow}>
+              <td colSpan={3}>{group.description}</td>
+            </tr>,
+            ...contactRows
+          ];
+        })}
       </tbody>
     </table>
   );

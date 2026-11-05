@@ -203,7 +203,7 @@ export default async function HarnessCanvasPage({
   return (
     <div className={styles.page}>
       <main className={styles.main}>
-        <PageHeader className={styles.header}>
+        <PageHeader className={styles.header} user={signedInUser}>
           <h1>Harness Canvas</h1>
           <p>{pageDescriptions.harnessHeaderDescription}</p>
           <div className={styles.actions}>

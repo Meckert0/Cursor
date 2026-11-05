@@ -11,6 +11,7 @@ import type { LockManager } from "./infra/locks/lock-manager.js";
 import type { Store } from "./infra/store/store.js";
 import type { AuthStore } from "./infra/auth/auth-store.js";
 import { hashSessionToken, parseCookieHeader } from "./auth/session.js";
+import { resolveAccountRole } from "./auth/admin.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerDesignRoutes } from "./routes/designs.js";
 import { registerE2eHookRoutes } from "./routes/e2e-hooks.js";
@@ -103,7 +104,7 @@ export function buildApp(deps: {
       id: user.id,
       email: user.email,
       role: user.role,
-      accountRole: user.accountRole,
+      accountRole: resolveAccountRole(user),
       createdAt: user.createdAt
     };
   });

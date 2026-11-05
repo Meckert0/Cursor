@@ -15,7 +15,7 @@ export default async function LibraryPage({
     stockStatus?: string;
   }>;
 }) {
-  await requireSignedInUser();
+  const signedInUser = await requireSignedInUser();
   const query = await searchParams;
   const category = LIBRARY_ITEM_CATEGORIES.find((itemCategory) => itemCategory === query.category);
   const stockStatus =
@@ -34,7 +34,7 @@ export default async function LibraryPage({
   return (
     <div className={styles.page}>
       <main className={styles.main}>
-        <PageHeader className={styles.header}>
+        <PageHeader className={styles.header} user={signedInUser}>
           <h1>Library catalog</h1>
           <p>Search and filter all item categories.</p>
           <Link href="/">Back to projects</Link>

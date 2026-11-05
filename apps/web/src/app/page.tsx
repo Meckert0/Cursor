@@ -2,10 +2,10 @@ import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { PageHeader } from "@/components/page-header";
+import { requireSignedInUser } from "@/lib/auth";
 import {
   createProject,
   deleteProject,
-  getCurrentUser,
   getHealth,
   getPageDescriptions,
   listProjectHarnesses,
@@ -95,11 +95,7 @@ async function HomeView(input: {
     healthStatus = "error";
   }
 
-  try {
-    await getCurrentUser();
-  } catch {
-    redirect("/login");
-  }
+  const signedInUser = await requireSignedInUser();
 
   try {
     projects = await input.projectsPromise;
@@ -129,7 +125,7 @@ async function HomeView(input: {
   return (
     <div className={styles.page}>
       <main className={styles.main}>
-        <PageHeader className={styles.header}>
+        <PageHeader className={styles.header} user={signedInUser}>
           <h1>Cable Design Tool Frontend (MVP)</h1>
           <p>{projectsHeaderDescription}</p>
           <div className={styles.headerActions}>

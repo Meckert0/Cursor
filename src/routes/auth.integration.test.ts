@@ -7,6 +7,7 @@ import { MemoryAuthStore } from "../infra/auth/memory-auth-store.js";
 import { FileArtifactStorage } from "../infra/storage/file-artifact-storage.js";
 import { PassthroughArtifactDownloadUrlResolver } from "../infra/storage/artifact-download-url-resolver.js";
 import { ExportQueueService } from "../services/export-queue.js";
+import { createSessionToken, hashPassword, hashSessionToken } from "../auth/session.js";
 
 process.env.ENABLE_LEGACY_HEADER_AUTH = "true";
 
@@ -210,6 +211,71 @@ test("registration assigns account roles by email rule", async () => {
     });
     assert.equal(adminRegister.statusCode, 201);
     assert.equal(adminRegister.json().user.accountRole, "admin");
+  } finally {
+    await app.close();
+  }
+});
+
+test("existing configured admin receives admin access without maintenance or another login", async () => {
+  const app = buildTestApp();
+  try {
+    const user = await app.authStore.createUser({
+      username: "existing-admin",
+      email: "meckert@vpc.com",
+      passwordHash: await hashPassword("pass1234!"),
+      role: "owner",
+      accountRole: "regular"
+    });
+    const token = createSessionToken();
+    await app.authStore.createSession({
+      userId: user.id,
+      tokenHash: hashSessionToken(token),
+      expiresAt: new Date(Date.now() + 60_000).toISOString()
+    });
+    const headers = { cookie: `cdt_session=${encodeURIComponent(token)}` };
+    const me = await app.inject({ method: "GET", url: "/v1/auth/me", headers });
+    assert.equal(me.statusCode, 200);
+    assert.equal(me.json().user.accountRole, "admin");
+
+    const adminUsers = await app.inject({ method: "GET", url: "/v1/admin/users", headers });
+    assert.equal(adminUsers.statusCode, 200);
+    assert.equal(adminUsers.json().items.find((item: { id: string }) => item.id === user.id)?.accountRole, "admin");
+
+    const login = await app.inject({
+      method: "POST",
+      url: "/v1/auth/login",
+      payload: { email: "meckert@vpc.com", password: "pass1234!" }
+    });
+    assert.equal(login.statusCode, 200);
+    assert.equal(login.json().user.accountRole, "admin");
+  } finally {
+    await app.close();
+  }
+});
+
+test("stored admin accounts retain admin access outside the configured email list", async () => {
+  const app = buildTestApp();
+  try {
+    await app.authStore.createUser({
+      username: "stored-admin",
+      email: "stored-admin@example.com",
+      passwordHash: await hashPassword("pass1234!"),
+      role: "owner",
+      accountRole: "admin"
+    });
+    const login = await app.inject({
+      method: "POST",
+      url: "/v1/auth/login",
+      payload: { email: "stored-admin@example.com", password: "pass1234!" }
+    });
+    assert.equal(login.statusCode, 200);
+    assert.equal(login.json().user.accountRole, "admin");
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/admin/users",
+      headers: { cookie: `cdt_session=${encodeURIComponent(login.json().sessionToken)}` }
+    });
+    assert.equal(response.statusCode, 200);
   } finally {
     await app.close();
   }

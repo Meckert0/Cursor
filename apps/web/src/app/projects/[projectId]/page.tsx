@@ -94,7 +94,7 @@ export default async function ProjectPage({
     error?: string;
   }>;
 }) {
-  await requireSignedInUser();
+  const signedInUser = await requireSignedInUser();
   const { projectId } = await params;
   const { error } = await searchParams;
   const harnessesPromise = listProjectHarnesses(projectId);
@@ -120,7 +120,7 @@ export default async function ProjectPage({
   return (
     <div className={styles.page}>
       <main className={styles.main}>
-        <PageHeader className={styles.header}>
+        <PageHeader className={styles.header} user={signedInUser}>
           <h1>Project workspace</h1>
           <p>{projectsHeaderDescription}</p>
           <p>Project ID: {projectId}</p>

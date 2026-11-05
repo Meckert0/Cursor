@@ -36,7 +36,7 @@ export default async function HarnessWirelistPage({
     harnessId: string;
   }>;
 }) {
-  await requireSignedInUser();
+  const signedInUser = await requireSignedInUser();
   const { harnessId } = await params;
   const harness = await getHarness(harnessId);
   const revision = await getRevision(harness.currentRevisionId);
@@ -181,7 +181,7 @@ export default async function HarnessWirelistPage({
   return (
     <div className={styles.page}>
       <main className={styles.main}>
-        <PageHeader className={styles.header}>
+        <PageHeader className={styles.header} user={signedInUser}>
           <h1>Wirelist</h1>
           <p>
             Harness <strong>{harness.name}</strong>. Spreadsheet edits autosave into revision snapshot data used by Details.

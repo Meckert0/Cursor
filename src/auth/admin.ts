@@ -1,3 +1,5 @@
+import type { AccountRole } from "../domain/auth.js";
+
 const DEFAULT_ADMIN_EMAILS = ["meckert@vpc.com"];
 
 export function getAdminEmails(): string[] {
@@ -14,4 +16,9 @@ export function getAdminEmails(): string[] {
 export function isAdminEmail(email: string): boolean {
   const normalized = email.trim().toLowerCase();
   return getAdminEmails().includes(normalized);
+}
+
+/** Honor configured admin grants immediately, including accounts saved before the grant existed. */
+export function resolveAccountRole(user: { email: string; accountRole: AccountRole }): AccountRole {
+  return user.accountRole === "admin" || isAdminEmail(user.email) ? "admin" : "regular";
 }

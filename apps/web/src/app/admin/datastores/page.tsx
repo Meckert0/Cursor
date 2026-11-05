@@ -87,7 +87,7 @@ export default async function AdminDatastoresPage({
     error?: string;
   }>;
 }) {
-  await requireAdminUser();
+  const signedInUser = await requireAdminUser();
   const { category, family, enteredByUserId, notice, error } = await searchParams;
   const queue = await listLibraryReviewQueue({
     category,
@@ -98,7 +98,7 @@ export default async function AdminDatastoresPage({
   return (
     <div className={styles.page}>
       <main className={styles.main}>
-        <PageHeader className={styles.header}>
+        <PageHeader className={styles.header} user={signedInUser}>
           <h1>Datastore Admin Console (Phase 7)</h1>
           <p>Review queue for unreviewed library entries. Reviewed entries become globally visible.</p>
           <p>

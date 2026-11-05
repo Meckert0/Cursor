@@ -1,16 +1,18 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { getCurrentUser } from "@/lib/api";
+import type { AuthUserDto } from "@/lib/api";
 import styles from "./page-header.module.css";
 
-export async function PageHeader({ children, className }: { children: ReactNode; className?: string }) {
-  const auth = await getCurrentUser().catch(() => null);
-
+export function PageHeader({ children, className, user }: {
+  children: ReactNode;
+  className?: string;
+  user: AuthUserDto;
+}) {
   return (
     <header className={className}>
       <div className={styles.layout}>
         <div className={styles.content}>{children}</div>
-        {auth?.user.accountRole === "admin" ? (
+        {user.accountRole === "admin" ? (
           <Link href="/admin" className={styles.adminLink}>
             Admin console
           </Link>

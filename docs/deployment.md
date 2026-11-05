@@ -109,6 +109,8 @@ Export recovery, due retries, artifact retention, and `ADMIN_EMAILS` role sync r
 - Vercel Cron: `GET /v1/internal/maintenance` once per day at 04:00 UTC (both API projects; Hobby may fire anytime in that hour)
 - Ops: `npm run maintenance` (uses `DATABASE_URL` and the same create-app wiring)
 
+Configured admin emails are honored immediately for existing accounts and active sessions. Maintenance synchronizes the stored role records.
+
 Interrupted exports stay `processing` until they are older than `EXPORT_STALE_PROCESSING_MS` (default 5 minutes), then the next maintenance run requeues them. With a daily cron that can be up to ~24 hours unless you trigger maintenance manually.
 
 `/v1/metrics` is in-process and per function instance; it is not cluster-wide.

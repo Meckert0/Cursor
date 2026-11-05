@@ -427,7 +427,7 @@ export default async function AdminOverviewPage({ searchParams }: { searchParams
   return (
     <div className={styles.page}>
       <main className={styles.main}>
-        <PageHeader className={styles.header}>
+        <PageHeader className={styles.header} user={signedInUser}>
           <h1>Admin console</h1>
           <p>Full visibility across users, projects, harness canvases, and library inventory.</p>
           <div className={styles.actionButtons}>

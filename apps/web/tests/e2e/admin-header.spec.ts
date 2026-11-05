@@ -10,6 +10,8 @@ import {
 async function expectAdminShortcut(page: Page, visible: boolean) {
   const header = page.locator("main > header");
   await expect(header).toBeVisible();
+  await expect(page.locator("main > :first-child")).toHaveJSProperty("tagName", "HEADER");
+  await expect(header.getByRole("heading", { level: 1 })).toBeVisible();
   const shortcut = header.getByRole("link", { name: "Admin console", exact: true });
   if (!visible) {
     await expect(shortcut).toHaveCount(0);

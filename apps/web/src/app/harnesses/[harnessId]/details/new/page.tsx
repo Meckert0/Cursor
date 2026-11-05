@@ -20,7 +20,7 @@ export default async function HarnessDetailsPage({
     harnessId: string;
   }>;
 }) {
-  await requireSignedInUser();
+  const signedInUser = await requireSignedInUser();
   const { harnessId } = await params;
   const harness = await getHarness(harnessId);
   const [
@@ -58,7 +58,7 @@ export default async function HarnessDetailsPage({
   return (
     <div className={styles.page}>
       <main className={styles.main}>
-        <PageHeader className={styles.header}>
+        <PageHeader className={styles.header} user={signedInUser}>
           <h1>Details</h1>
           <p>
             Harness <strong>{harness.name}</strong>

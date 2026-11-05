@@ -10,7 +10,7 @@ export default async function LibraryComponentDetailPage({
 }: {
   params: Promise<{ componentId: string }>;
 }) {
-  await requireSignedInUser();
+  const signedInUser = await requireSignedInUser();
   const { componentId } = await params;
   const component = await getLibraryComponent(componentId);
   const attributeFields = getPartFieldsForCategory(component.category).filter((field) => !field.isIdentity);
@@ -18,7 +18,7 @@ export default async function LibraryComponentDetailPage({
   return (
     <div className={styles.page}>
       <main className={styles.main}>
-        <PageHeader className={styles.header}>
+        <PageHeader className={styles.header} user={signedInUser}>
           <h1>{component.partNumber}</h1>
           <p>{component.description}</p>
           <div className={styles.meta}>

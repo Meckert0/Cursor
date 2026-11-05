@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { isAdminEmail } from "../auth/admin.js";
+import { isAdminEmail, resolveAccountRole } from "../auth/admin.js";
+import type { AccountRole } from "../domain/auth.js";
 import { createSessionToken, getSessionTtlMs, hashPassword, hashSessionToken, verifyPassword } from "../auth/session.js";
 import { requireAdmin, requireRole } from "../auth/rbac.js";
 
@@ -33,12 +34,12 @@ function resolveAccountRoleForEmail(email: string): "regular" | "admin" {
   return isAdminEmail(email) ? "admin" : "regular";
 }
 
-function serializeUser(user: { id: string; email: string; role: string; accountRole: string; createdAt: string }) {
+function serializeUser(user: { id: string; email: string; role: string; accountRole: AccountRole; createdAt: string }) {
   return {
     id: user.id,
     email: user.email,
     role: user.role,
-    accountRole: user.accountRole,
+    accountRole: resolveAccountRole(user),
     createdAt: user.createdAt
   };
 }

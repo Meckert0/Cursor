@@ -127,7 +127,7 @@ export default async function DetailsPage({
     error?: string;
   }>;
 }) {
-  await requireSignedInUser();
+  const signedInUser = await requireSignedInUser();
   const { detailId } = await params;
   const { validationRunId, notice, error } = await searchParams;
 
@@ -164,7 +164,7 @@ export default async function DetailsPage({
     <div className={styles.page}>
       <AutoRefresh enabled={hasPendingExports} intervalMs={3000} />
       <main className={styles.main}>
-        <PageHeader className={styles.header}>
+        <PageHeader className={styles.header} user={signedInUser}>
           <h1>Revision Workspace</h1>
           <p>
             Revision {revision.revisionNumber} ({revision.id}) for <strong>{design.name}</strong>

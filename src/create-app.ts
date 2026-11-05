@@ -60,7 +60,10 @@ let appPromise: Promise<CreatedApp> | undefined;
 
 export function getApp(options?: CreateAppOptions): Promise<CreatedApp> {
   if (!appPromise) {
-    appPromise = createApp(options);
+    appPromise = createApp(options).catch((error) => {
+      appPromise = undefined;
+      throw error;
+    });
   }
   return appPromise;
 }
@@ -114,16 +117,22 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Created
     throw new Error(`Unsupported STORE_BACKEND="${storeBackend}". Use sqlite, postgres, or memory.`);
   }
 
-  const wireCatalog = await ensureWireDiameterCatalog(store);
-  if (wireCatalog.inserted > 0 || wireCatalog.updated > 0) {
-    console.info(
-      `Wire diameter catalog: inserted ${wireCatalog.inserted}, updated diameters on ${wireCatalog.updated}.`
-    );
-  }
-
-  const sleeveCatalog = await ensureSleeveDiameterCatalog(store);
-  if (sleeveCatalog.inserted > 0 || sleeveCatalog.updated > 0) {
-    console.info(`Sleeve/tube/braid catalog: inserted ${sleeveCatalog.inserted}, updated ranges on ${sleeveCatalog.updated}.`);
+  for (const catalog of [
+    { name: "Wire diameter catalog", synchronize: () => ensureWireDiameterCatalog(store) },
+    { name: "Sleeve/tube/braid catalog", synchronize: () => ensureSleeveDiameterCatalog(store) }
+  ]) {
+    try {
+      const result = await catalog.synchronize();
+      if (result.inserted > 0 || result.updated > 0) {
+        console.info(`${catalog.name}: inserted ${result.inserted}, updated ${result.updated}.`);
+      }
+    } catch (error) {
+      // Catalog maintenance must not prevent authentication or other API routes.
+      console.warn(`${catalog.name} sync failed; API startup will continue.`, {
+        message: error instanceof Error ? error.message : "Unknown catalog error",
+        code: error && typeof error === "object" && "code" in error ? error.code : undefined
+      });
+    }
   }
 
   if (redisUrl) {

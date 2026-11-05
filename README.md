@@ -42,8 +42,11 @@ API startup adds the supplied wire diameter catalog and seven sleeve/tube/braid
 parts to the item database without duplicating part numbers. Covering ranges live
 in `src/domain/sleeve-diameter-catalog.ts`; descriptions include the acceptable
 diameters in inches. Ranges preserve exclusive lower bounds and inclusive upper
-bounds. PostgreSQL installations must apply migration
-`031_sleeve_range_boundaries.sql` with `npm run migrate` before running this version.
+bounds. PostgreSQL stores range boundaries in the existing part metadata, so
+deploying this catalog does not require migration `031_sleeve_range_boundaries.sql`.
+Databases where that migration has already run remain supported. Catalog sync
+failures are logged without preventing API startup or login, and a failed API
+initialization is retried on the next request.
 
 The Details cable section rows size expandable sleeving and wire braid from the
 calculated wire bundle diameter. A section with braid under sleeving uses the

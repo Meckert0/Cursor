@@ -52,6 +52,8 @@ const PART_COLUMNS = `id, category, family, part_number, description, is_active,
               is_archived, archived_at, archived_by_user_id, updated_at,
               part_type, side, notes, electrical_mode, extra_attributes`;
 
+const SLEEVE_RANGE_MINIMUMS_KEY = "_cdtSleeveRangeMinimums";
+
 const EMPTY_SNAPSHOT: DesignSnapshot = {
   connectors: [],
   paths: [],
@@ -298,7 +300,7 @@ type SleeveSizeRangeRow = {
   part_id: string;
   min_dia: number;
   max_dia: number;
-  min_inclusive: boolean;
+  min_inclusive?: boolean;
   related_part_id: string | null;
 };
 
@@ -610,6 +612,54 @@ function extraOrUndefined(value: unknown): Record<string, unknown> | undefined {
   return extraAttributesOrUndefined(value);
 }
 
+function publicPartExtraAttributes(row: PartRow): Record<string, unknown> {
+  const attributes = { ...asRecord(row.extra_attributes) };
+  if (row.category === "sleeve-tube-braid") {
+    delete attributes[SLEEVE_RANGE_MINIMUMS_KEY];
+  }
+  return attributes;
+}
+
+function normalizedPartAttributes(
+  category: LibraryCategory,
+  attributes: CategoryAttributesMap[LibraryCategory]
+): CategoryAttributesMap[LibraryCategory] {
+  if (category !== "sleeve-tube-braid") {
+    return attributes;
+  }
+  const sleeve = attributes as SleeveTubeBraidAttributes;
+  return {
+    ...sleeve,
+    sizeRanges: (sleeve.sizeRanges ?? []).map((range) => ({
+      minDia: range.minDia,
+      maxDia: range.maxDia,
+      minInclusive: range.minInclusive ?? true,
+      relatedPartId: range.relatedPartId
+    }))
+  };
+}
+
+function storedPartExtraAttributes(
+  category: LibraryCategory,
+  extraAttributes: Record<string, unknown>,
+  attributes: CategoryAttributesMap[LibraryCategory]
+): Record<string, unknown> {
+  if (category !== "sleeve-tube-braid") {
+    return extraAttributes;
+  }
+  // Existing databases already have this JSON column. Keep range boundaries
+  // durable without requiring a schema migration during an API deployment.
+  const sleeve = attributes as SleeveTubeBraidAttributes;
+  return {
+    ...extraAttributes,
+    [SLEEVE_RANGE_MINIMUMS_KEY]: (sleeve.sizeRanges ?? []).map((range) => ({
+      minDia: range.minDia,
+      maxDia: range.maxDia,
+      minInclusive: range.minInclusive ?? true
+    }))
+  };
+}
+
 function groupRowsByKey<T>(rows: T[], key: (row: T) => string): Map<string, T[]> {
   const grouped = new Map<string, T[]>();
   for (const row of rows) {
@@ -649,7 +699,7 @@ function mapPartRecord(row: PartRow): Omit<PartWithAttributes, "attributes"> {
     side: optionalString(row.side),
     notes: optionalString(row.notes),
     electricalMode: optionalString(row.electrical_mode),
-    extraAttributes: extraAttributesOrUndefined(row.extra_attributes)
+    extraAttributes: extraAttributesOrUndefined(publicPartExtraAttributes(row))
   };
 }
 
@@ -762,20 +812,26 @@ function mapLabelAttributes(row: LabelExtRow | undefined): LabelAttributes {
 
 function mapSleeveTubeBraidAttributes(
   row: SleeveTubeBraidExtRow | undefined,
-  sizeRanges: SleeveSizeRangeRow[]
+  sizeRanges: SleeveSizeRangeRow[],
+  extraAttributes: unknown
 ): SleeveTubeBraidAttributes {
   const base = emptyAttributesForCategory("sleeve-tube-braid") as SleeveTubeBraidAttributes;
   if (!row) {
     return base;
   }
+  const storedMinimums = asRecord(extraAttributes)[SLEEVE_RANGE_MINIMUMS_KEY];
+  const minimums = Array.isArray(storedMinimums) ? storedMinimums.map(asRecord) : [];
   return {
     ...base,
-    sizeRanges: sizeRanges.map((sizeRange) => ({
-      minDia: sizeRange.min_dia,
-      maxDia: sizeRange.max_dia,
-      minInclusive: sizeRange.min_inclusive,
-      relatedPartId: optionalString(sizeRange.related_part_id)
-    }))
+    sizeRanges: sizeRanges.map((sizeRange) => {
+      const minimum = minimums.find((entry) => entry.minDia === sizeRange.min_dia && entry.maxDia === sizeRange.max_dia);
+      return {
+        minDia: sizeRange.min_dia,
+        maxDia: sizeRange.max_dia,
+        minInclusive: typeof minimum?.minInclusive === "boolean" ? minimum.minInclusive : sizeRange.min_inclusive ?? true,
+        relatedPartId: optionalString(sizeRange.related_part_id)
+      };
+    })
   };
 }
 
@@ -866,7 +922,9 @@ function attributesForPart(
     case "label":
       return mapLabelAttributes(extensions.labels.get(row.id));
     case "sleeve-tube-braid":
-      return mapSleeveTubeBraidAttributes(extensions.sleeveTubeBraids.get(row.id), extensions.sleeveSizeRanges.get(row.id) ?? []);
+      return mapSleeveTubeBraidAttributes(
+        extensions.sleeveTubeBraids.get(row.id), extensions.sleeveSizeRanges.get(row.id) ?? [], row.extra_attributes
+      );
     case "backshell":
       return mapBackshellAttributes(extensions.backshells.get(row.id), extensions.backshellFitments.get(row.id) ?? []);
     case "strain-relief":
@@ -1334,9 +1392,9 @@ export class PostgresStore implements Store {
         await client.query(`DELETE FROM sleeve_size_ranges WHERE part_id = $1`, [partId]);
         for (const sizeRange of attrs.sizeRanges ?? []) {
           await client.query(
-            `INSERT INTO sleeve_size_ranges (part_id, min_dia, max_dia, min_inclusive, related_part_id)
-             VALUES ($1, $2, $3, $4, $5)`,
-            [partId, sizeRange.minDia, sizeRange.maxDia, sizeRange.minInclusive ?? true, sizeRange.relatedPartId ?? null]
+            `INSERT INTO sleeve_size_ranges (part_id, min_dia, max_dia, related_part_id)
+             VALUES ($1, $2, $3, $4)`,
+            [partId, sizeRange.minDia, sizeRange.maxDia, sizeRange.relatedPartId ?? null]
           );
         }
         return;
@@ -2413,10 +2471,10 @@ export class PostgresStore implements Store {
         );
         const existing = existingResult.rows[0];
         const existingPart = existing ? (await loadPartsWithAttributes(client, [existing]))[0] : null;
-        const nextAttributes = {
+        const nextAttributes = normalizedPartAttributes(item.category, {
           ...emptyAttributesForCategory(item.category),
           ...item.attributes
-        } as CategoryAttributesMap[LibraryCategory];
+        } as CategoryAttributesMap[LibraryCategory]);
         const editedReviewedEntry =
           Boolean(existing?.is_reviewed) &&
           Boolean(
@@ -2432,8 +2490,8 @@ export class PostgresStore implements Store {
                 (existing.side ?? "") !== (item.side?.trim() ?? "") ||
                 (existing.notes ?? "") !== (item.notes?.trim() ?? "") ||
                 (existing.electrical_mode ?? "") !== (item.electricalMode?.trim() ?? "") ||
-                JSON.stringify(asRecord(existing.extra_attributes)) !== JSON.stringify(item.extraAttributes ?? {}) ||
-                JSON.stringify(existingPart.attributes) !== JSON.stringify(nextAttributes))
+                JSON.stringify(publicPartExtraAttributes(existing)) !== JSON.stringify(item.extraAttributes ?? {}) ||
+                JSON.stringify(normalizedPartAttributes(existing.category, existingPart.attributes)) !== JSON.stringify(nextAttributes))
           );
         const effectiveIsReviewed = editedReviewedEntry ? false : item.isReviewed;
         const normalizedReviewedAt = effectiveIsReviewed ? new Date(item.reviewedAt ?? now.toISOString()) : null;
@@ -2489,7 +2547,7 @@ export class PostgresStore implements Store {
               item.side?.trim() || null,
               item.notes?.trim() || null,
               item.electricalMode?.trim() || null,
-              JSON.stringify(item.extraAttributes ?? {})
+              JSON.stringify(storedPartExtraAttributes(item.category, item.extraAttributes ?? {}, nextAttributes))
             ]
           );
           await this.upsertExtensionRow(client, componentId, item.category, nextAttributes);
@@ -2778,6 +2836,14 @@ export class PostgresStore implements Store {
         return null;
       }
 
+      const mergedAttributes = normalizedPartAttributes(existing.category, {
+        ...existingPart.attributes,
+        ...input.attributes
+      } as CategoryAttributesMap[LibraryCategory]);
+      const nextExtraAttributes = existing.category === "sleeve-tube-braid" || input.extraAttributes !== undefined
+        ? storedPartExtraAttributes(existing.category, input.extraAttributes ?? publicPartExtraAttributes(existing), mergedAttributes)
+        : undefined;
+
       const result = await client.query<PartRow>(
         `UPDATE parts
          SET part_number = COALESCE($1, part_number),
@@ -2825,7 +2891,7 @@ export class PostgresStore implements Store {
           input.side ?? null,
           input.notes ?? null,
           input.electricalMode ?? null,
-          input.extraAttributes === undefined ? null : JSON.stringify(input.extraAttributes)
+          nextExtraAttributes === undefined ? null : JSON.stringify(nextExtraAttributes)
         ]
       );
       if (!result.rows[0]) {
@@ -2834,10 +2900,6 @@ export class PostgresStore implements Store {
       }
 
       if (input.attributes) {
-        const mergedAttributes = {
-          ...existingPart.attributes,
-          ...input.attributes
-        } as CategoryAttributesMap[LibraryCategory];
         await this.upsertExtensionRow(client, result.rows[0].id, result.rows[0].category, mergedAttributes);
       } else if (result.rows[0].category === "wire") {
         const wireAttrs = existingPart.attributes as WireAttributes;

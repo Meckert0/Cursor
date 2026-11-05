@@ -1,7 +1,7 @@
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
-import Link from "next/link";
 import { redirect } from "next/navigation";
+import { PageHeader } from "@/components/page-header";
 import {
   createProject,
   deleteProject,
@@ -79,7 +79,6 @@ async function HomeView(input: {
   projectsPromise: ReturnType<typeof listProjects>;
   pageDescriptionsPromise: ReturnType<typeof getPageDescriptions>;
 }) {
-  let currentUser: Awaited<ReturnType<typeof getCurrentUser>>["user"] | null = null;
   let healthStatus = "unreachable";
   let healthService = "unknown";
   let healthTime = "n/a";
@@ -97,8 +96,7 @@ async function HomeView(input: {
   }
 
   try {
-    const auth = await getCurrentUser();
-    currentUser = auth.user;
+    await getCurrentUser();
   } catch {
     redirect("/login");
   }
@@ -131,20 +129,15 @@ async function HomeView(input: {
   return (
     <div className={styles.page}>
       <main className={styles.main}>
-        <div className={styles.header}>
+        <PageHeader className={styles.header}>
           <h1>Cable Design Tool Frontend (MVP)</h1>
           <p>{projectsHeaderDescription}</p>
           <div className={styles.headerActions}>
             <form action={logoutAction}>
               <button type="submit" className={styles.inlineSummary}>Log out</button>
             </form>
-            {currentUser?.accountRole === "admin" ? (
-              <Link href="/admin" className={styles.inlineSummary}>
-                Admin console
-              </Link>
-            ) : null}
           </div>
-        </div>
+        </PageHeader>
 
         <section className={`${styles.card} ${styles.projectsCard}`}>
           <h2>Projects</h2>

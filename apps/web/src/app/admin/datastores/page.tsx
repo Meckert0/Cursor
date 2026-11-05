@@ -1,3 +1,4 @@
+import { PageHeader } from "@/components/page-header";
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -97,7 +98,7 @@ export default async function AdminDatastoresPage({
   return (
     <div className={styles.page}>
       <main className={styles.main}>
-        <header className={styles.header}>
+        <PageHeader className={styles.header}>
           <h1>Datastore Admin Console (Phase 7)</h1>
           <p>Review queue for unreviewed library entries. Reviewed entries become globally visible.</p>
           <p>
@@ -105,7 +106,7 @@ export default async function AdminDatastoresPage({
           </p>
           {notice ? <p className={styles.notice}>{notice}</p> : null}
           {error ? <p className={styles.error}>{error}</p> : null}
-        </header>
+        </PageHeader>
 
         <section className={styles.card}>
           <h2>Queue filters</h2>

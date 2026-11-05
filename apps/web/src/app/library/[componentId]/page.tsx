@@ -1,3 +1,4 @@
+import { PageHeader } from "@/components/page-header";
 import Link from "next/link";
 import { getLibraryComponent } from "@/lib/api";
 import { requireSignedInUser } from "@/lib/auth";
@@ -17,7 +18,7 @@ export default async function LibraryComponentDetailPage({
   return (
     <div className={styles.page}>
       <main className={styles.main}>
-        <header className={styles.header}>
+        <PageHeader className={styles.header}>
           <h1>{component.partNumber}</h1>
           <p>{component.description}</p>
           <div className={styles.meta}>
@@ -27,7 +28,7 @@ export default async function LibraryComponentDetailPage({
             <span>{component.isActive ? "active" : "inactive"}</span>
           </div>
           <Link href="/library">Back to library</Link>
-        </header>
+        </PageHeader>
 
         <section className={styles.card}>
           <h2>Attributes</h2>

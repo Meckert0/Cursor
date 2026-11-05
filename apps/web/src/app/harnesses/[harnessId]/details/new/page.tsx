@@ -1,3 +1,4 @@
+import { PageHeader } from "@/components/page-header";
 import Link from "next/link";
 import { DetailsPurchasingBom } from "@/components/details-purchasing-bom";
 import { DetailsSummary } from "@/components/details-summary";
@@ -57,7 +58,7 @@ export default async function HarnessDetailsPage({
   return (
     <div className={styles.page}>
       <main className={styles.main}>
-        <header className={styles.header}>
+        <PageHeader className={styles.header}>
           <h1>Details</h1>
           <p>
             Harness <strong>{harness.name}</strong>
@@ -65,7 +66,7 @@ export default async function HarnessDetailsPage({
           <div className={styles.actions}>
             <Link href={`/harnesses/${harness.id}/canvas`}>Back to canvas</Link>
           </div>
-        </header>
+        </PageHeader>
 
         <DetailsSummary
           revisionId={detail.id}

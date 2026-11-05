@@ -1,3 +1,4 @@
+import { PageHeader } from "@/components/page-header";
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
@@ -426,7 +427,7 @@ export default async function AdminOverviewPage({ searchParams }: { searchParams
   return (
     <div className={styles.page}>
       <main className={styles.main}>
-        <header className={styles.header}>
+        <PageHeader className={styles.header}>
           <h1>Admin console</h1>
           <p>Full visibility across users, projects, harness canvases, and library inventory.</p>
           <div className={styles.actionButtons}>
@@ -440,7 +441,7 @@ export default async function AdminOverviewPage({ searchParams }: { searchParams
               Datastore queue
             </Link>
           </div>
-        </header>
+        </PageHeader>
 
         <section className={`${styles.card} ${styles.sectionPanel}`}>
           <details>

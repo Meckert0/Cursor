@@ -1,3 +1,4 @@
+import { PageHeader } from "@/components/page-header";
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -119,7 +120,7 @@ export default async function ProjectPage({
   return (
     <div className={styles.page}>
       <main className={styles.main}>
-        <div className={styles.header}>
+        <PageHeader className={styles.header}>
           <h1>Project workspace</h1>
           <p>{projectsHeaderDescription}</p>
           <p>Project ID: {projectId}</p>
@@ -130,7 +131,7 @@ export default async function ProjectPage({
             initialDescription={projectDescription}
             saveDescriptionAction={saveProjectDescriptionAction.bind(null, projectId)}
           />
-        </div>
+        </PageHeader>
 
         <section className={styles.card}>
           <h2>Harness</h2>

@@ -1,3 +1,4 @@
+import { PageHeader } from "@/components/page-header";
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { CableCanvas } from "@/components/cable-canvas";
@@ -202,7 +203,7 @@ export default async function HarnessCanvasPage({
   return (
     <div className={styles.page}>
       <main className={styles.main}>
-        <header className={styles.header}>
+        <PageHeader className={styles.header}>
           <h1>Harness Canvas</h1>
           <p>{pageDescriptions.harnessHeaderDescription}</p>
           <div className={styles.actions}>
@@ -227,7 +228,7 @@ export default async function HarnessCanvasPage({
             saveDescriptionAction={saveHarnessDescriptionAction}
             readOnly={isReadOnly}
           />
-        </header>
+        </PageHeader>
 
         <section className={styles.card}>
           <CableCanvas

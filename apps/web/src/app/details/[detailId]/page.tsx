@@ -1,3 +1,4 @@
+import { PageHeader } from "@/components/page-header";
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -163,7 +164,7 @@ export default async function DetailsPage({
     <div className={styles.page}>
       <AutoRefresh enabled={hasPendingExports} intervalMs={3000} />
       <main className={styles.main}>
-        <div className={styles.header}>
+        <PageHeader className={styles.header}>
           <h1>Revision Workspace</h1>
           <p>
             Revision {revision.revisionNumber} ({revision.id}) for <strong>{design.name}</strong>
@@ -180,7 +181,7 @@ export default async function DetailsPage({
               {error}
             </p>
           ) : null}
-        </div>
+        </PageHeader>
 
         <section className={styles.card} data-testid="details-bom-section">
           <h2>Bill of Materials</h2>

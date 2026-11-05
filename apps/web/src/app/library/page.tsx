@@ -1,3 +1,4 @@
+import { PageHeader } from "@/components/page-header";
 import Link from "next/link";
 import { LIBRARY_ITEM_CATEGORIES, listLibraryComponents } from "@/lib/api";
 import { requireSignedInUser } from "@/lib/auth";
@@ -33,11 +34,11 @@ export default async function LibraryPage({
   return (
     <div className={styles.page}>
       <main className={styles.main}>
-        <div className={styles.header}>
+        <PageHeader className={styles.header}>
           <h1>Library catalog</h1>
           <p>Search and filter all item categories.</p>
           <Link href="/">Back to projects</Link>
-        </div>
+        </PageHeader>
 
         <section className={styles.card}>
           <h2>Filters</h2>

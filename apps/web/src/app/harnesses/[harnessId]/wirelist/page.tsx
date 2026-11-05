@@ -1,3 +1,4 @@
+import { PageHeader } from "@/components/page-header";
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { WirelistDetailsSection } from "@/components/wirelist-details-section";
@@ -180,7 +181,7 @@ export default async function HarnessWirelistPage({
   return (
     <div className={styles.page}>
       <main className={styles.main}>
-        <header className={styles.header}>
+        <PageHeader className={styles.header}>
           <h1>Wirelist</h1>
           <p>
             Harness <strong>{harness.name}</strong>. Spreadsheet edits autosave into revision snapshot data used by Details.
@@ -190,7 +191,7 @@ export default async function HarnessWirelistPage({
             <Link href={`/harnesses/${harness.id}/details/new`}>Details</Link>
             <Link href={`/details/${revision.id}`}>Open Revision Workspace</Link>
           </div>
-        </header>
+        </PageHeader>
         <section className={styles.card}>
           <WirelistGrid
             revisionId={revision.id}

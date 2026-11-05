@@ -16,20 +16,16 @@
   align-items: center;
   justify-content: center;
   margin-left: auto;
-  padding: 8px 12px;
+  padding: 6px 10px;
   border: 1px solid #1d4ed8;
   border-radius: 8px;
-  background: #2563eb;
-  color: #fff;
+  background: #fff;
+  color: #1d4ed8;
+  line-height: 1.2;
   font: inherit;
-  font-weight: 600;
-  line-height: 1.25;
   text-decoration: none;
+  cursor: pointer;
   white-space: nowrap;
-}
-
-.adminLink:hover {
-  background: #1d4ed8;
 }
 
 .adminLink:focus-visible {

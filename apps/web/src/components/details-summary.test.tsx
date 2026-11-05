@@ -114,7 +114,7 @@ describe("DetailsSummary", () => {
     expect(j2a.queryByText(/slot A/)).not.toBeInTheDocument();
     expect(j2a.getByText("No compatible contacts.")).toBeInTheDocument();
     expect(
-      screen.getByText("cable1: c_canvas_1 -> c_canvas_2, 24 in, expandable sleeving, bundle dia —")
+      screen.getByText("section1: c_canvas_1 -> c_canvas_2, 24 in, expandable sleeving, bundle dia —")
     ).toBeInTheDocument();
     expect(screen.getByText("J1 -> J2: 24 in")).toBeInTheDocument();
     expect(screen.queryByText(/c_canvas_1\)/)).not.toBeInTheDocument();
@@ -321,8 +321,8 @@ describe("DetailsSummary", () => {
       />
     );
 
-    expect(screen.getByText(`cable1: c1 -> jx, 12 in, expandable sleeving, ${trunkDiameter}, size SLV-L`)).toBeInTheDocument();
-    expect(screen.getByText(`cable2: jx -> c2, 6 in, expandable sleeving, ${branchDiameter}, size SLV-S`)).toBeInTheDocument();
-    expect(screen.getByText(`cable3: jx -> c3, 6 in, no sleeving, ${branchDiameter}`)).toBeInTheDocument();
+    expect(screen.getByText(`section1: c1 -> jx, 12 in, expandable sleeving, ${trunkDiameter}, size SLV-L`)).toBeInTheDocument();
+    expect(screen.getByText(`section2: jx -> c2, 6 in, expandable sleeving, ${branchDiameter}, size SLV-S`)).toBeInTheDocument();
+    expect(screen.getByText(`section3: jx -> c3, 6 in, no sleeving, ${branchDiameter}`)).toBeInTheDocument();
   });
 });

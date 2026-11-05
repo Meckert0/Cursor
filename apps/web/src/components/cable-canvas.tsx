@@ -6,15 +6,17 @@ import type { LibraryComponentDto, RevisionDto } from "@/lib/api";
 import {
   buildNextCanvasId,
   buildNextConnectorReference,
-  buildNextCableName
+  buildNextSectionName
 } from "@/lib/cable-canvas-ids";
 import {
   buildConnectorPinsFromComponent,
   filterAllowedAccessoryOptionsForModule,
   buildCableBraidCrosses,
   buildCableSleeveOutline,
+  formatBundleDiameterLabel,
   formatCableSectionCanvasLabel,
   formatConnectorPinsLabel,
+  getSleevingLabel,
   loadInitialCanvasDraft,
   normalizeSelectedPathId,
   SLEEVING_OPTIONS
@@ -336,7 +338,7 @@ export function CableCanvas({
     }
     if (selectedEntity.type === "path") {
       const path = pathsState.find((entry) => entry.id === selectedEntity.id);
-      return path ? `wire ${path.wireName ?? path.id}` : "wire";
+      return path?.wireName ?? "section";
     }
     if (selectedEntity.type === "connector") {
       const connector = connectors.find((entry) => entry.id === selectedEntity.id);
@@ -554,7 +556,7 @@ export function CableCanvas({
       ...previous,
       {
         id: nextPathId,
-        wireName: buildNextCableName(pathsState),
+        wireName: buildNextSectionName(pathsState),
         fromConnectorId: fromId,
         toConnectorId: toId,
         pathType: "cable",
@@ -1724,11 +1726,16 @@ export function CableCanvas({
           const isEditingLength = inlineLengthEdit?.pathId === path.id;
           const midpointX = (path.x1 + path.x2) / 2;
           const midpointY = (path.y1 + path.y2) / 2;
+          const sectionName = pathEntry?.wireName ?? path.id;
+          const rawLength = pathEntry?.length ?? 0;
+          const lengthInches = Number.isFinite(rawLength) && rawLength >= 0 ? rawLength : 0;
+          const sleeving = pathEntry?.sleeving ?? "none";
+          const bundleDiameter = bundleDiameterBySection.get(path.id) ?? null;
           const label = formatCableSectionCanvasLabel({
-            wireName: pathEntry?.wireName ?? path.id,
-            lengthInches: pathEntry?.length ?? 0,
-            sleeving: pathEntry?.sleeving ?? "none",
-            bundleDiameterIn: bundleDiameterBySection.get(path.id) ?? null
+            wireName: sectionName,
+            lengthInches,
+            sleeving,
+            bundleDiameterIn: bundleDiameter
           });
           if (isEditingLength) {
             return (
@@ -1754,27 +1761,44 @@ export function CableCanvas({
                     setInlineLengthEdit(null);
                   }
                 }}
-                aria-label={`Length in inches for ${pathEntry?.wireName ?? path.id}`}
+                aria-label={`Length in inches for ${sectionName}`}
               />
             );
           }
           return (
-            <div
+            <button
               key={path.id}
+              type="button"
               className={`${styles.cableLabel}${
                 selectedEntity?.type === "path" && selectedEntity.id === path.id ? ` ${styles.cableLabelSelected}` : ""
               }`}
               style={{ left: midpointX, top: midpointY }}
               data-testid={`cable-label-${path.id}`}
+              aria-label={label}
+              onFocus={() => {
+                setSelectedPathId(path.id);
+                setSelectedEntity({ type: "path", id: path.id });
+              }}
               onPointerDown={(event) => {
                 event.stopPropagation();
                 setSelectedPathId(path.id);
                 setSelectedEntity({ type: "path", id: path.id });
               }}
+              onClick={() => {
+                setSelectedPathId(path.id);
+                setSelectedEntity({ type: "path", id: path.id });
+              }}
               onDoubleClick={() => startInlineLengthEdit(path.id)}
             >
-              {label}
-            </div>
+              <span className={styles.cableLabelSummary}>
+                <span>{lengthInches} in</span>
+                <span>{getSleevingLabel(sleeving)}</span>
+              </span>
+              <span className={styles.cableLabelDetails}>
+                <span className={styles.cableLabelName}>{sectionName}</span>
+                <span>{formatBundleDiameterLabel(bundleDiameter)}</span>
+              </span>
+            </button>
           );
         })}
 

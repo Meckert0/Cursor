@@ -9,6 +9,7 @@ import {
 } from "./path-roles";
 import { normalizeSingleSlotReferences } from "./connector-frames";
 import { preserveWirelistAcrossCanvasEdit } from "./wirelist-utils";
+import { normalizeSectionName } from "./section-names";
 
 type NodePosition = {
   x: number;
@@ -81,12 +82,11 @@ export function buildSnapshotFromCanvas(
 ): RevisionDto["snapshot"] {
   const { wireRunPaths: baselineWireRuns } = partitionSnapshotPaths(baseline.paths, baseline.pinMappings);
   const wireRunIds = new Set(baselineWireRuns.map((path) => path.id));
-  const cablePaths = input.paths
-    .filter((path) => !wireRunIds.has(path.id))
-    .map((path) => ({
-      ...path,
-      pathType: "cable" as const
-    }));
+  const cablePaths = normalizePathsWithWireDefaults(
+    input.paths
+      .filter((path) => !wireRunIds.has(path.id))
+      .map((path) => ({ ...path, pathType: "cable" as const }))
+  );
   const wireRunPaths = baselineWireRuns;
   const mergedPaths = mergeSnapshotPaths(cablePaths, wireRunPaths);
   const pathIds = new Set(mergedPaths.map((path) => path.id));
@@ -360,14 +360,36 @@ export function normalizePathsWithWireDefaults(
   pinMappings: RevisionDto["snapshot"]["pinMappings"] = []
 ): RevisionDto["snapshot"]["paths"] {
   const mappedPathIds = pinMappedPathIds(pinMappings);
+  const namedSections = paths.flatMap((path) =>
+    isCableSectionPath(path, mappedPathIds) && path.wireName !== undefined ? [path.wireName] : []
+  );
+  const sectionNames = new Set(namedSections.map(normalizeSectionName));
+  // Current designations and custom names take precedence when a legacy name
+  // would otherwise rename to a designation that is already in use.
+  const assignedSectionNames = new Set(namedSections.filter((name) => normalizeSectionName(name) === name));
+  const defaultSectionName = (index: number): string => {
+    let next = index + 1;
+    while (sectionNames.has(`section${next}`)) {
+      next += 1;
+    }
+    const name = `section${next}`;
+    sectionNames.add(name);
+    return name;
+  };
   return paths.map((path, index) => {
     const pathType = normalizePathType(path, mappedPathIds);
+    let wireName = path.wireName ?? `wire${index + 1}`;
+    if (pathType === "cable") {
+      wireName = path.wireName !== undefined ? normalizeSectionName(path.wireName) : defaultSectionName(index);
+      if (path.wireName !== undefined && wireName !== path.wireName && assignedSectionNames.has(wireName)) {
+        wireName = defaultSectionName(index);
+      }
+      assignedSectionNames.add(wireName);
+    }
     return {
       ...path,
       pathType,
-      wireName:
-        path.wireName ??
-        (pathType === "cable" ? `cable${index + 1}` : `wire${index + 1}`),
+      wireName,
       sleeving: path.sleeving ?? "none"
     };
   });
@@ -506,7 +528,7 @@ export function formatCableSectionCanvasLabel(input: {
   bundleDiameterIn: number | null;
 }): string {
   const length = Number.isFinite(input.lengthInches) && input.lengthInches >= 0 ? input.lengthInches : 0;
-  return `${input.wireName} - ${length} in | ${getSleevingLabel(input.sleeving)} | ${formatBundleDiameterLabel(input.bundleDiameterIn)}`;
+  return `${normalizeSectionName(input.wireName)} - ${length} in | ${getSleevingLabel(input.sleeving)} | ${formatBundleDiameterLabel(input.bundleDiameterIn)}`;
 }
 
 /**
@@ -640,11 +662,11 @@ export function formatEndpointTotalLabel(input: {
 }
 
 export function buildUniqueWireSections(paths: Path[]): UniqueWireSection[] {
-  return paths
+  return normalizePathsWithWireDefaults(paths)
     .filter((path) => isCableSectionPath(path))
     .map((path) => ({
       pathId: path.id,
-      wireName: path.wireName ?? path.id,
+      wireName: normalizeSectionName(path.wireName ?? path.id),
       fromNodeId: path.fromConnectorId,
       toNodeId: path.toConnectorId,
       lengthFt: typeof path.length === "number" && path.length >= 0 ? path.length : 0,

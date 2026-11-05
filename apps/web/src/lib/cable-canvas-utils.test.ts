@@ -248,7 +248,7 @@ describe("cable-canvas-utils", () => {
     expect(sections).toEqual([
       {
         pathId: "p2",
-        wireName: "cable2",
+        wireName: "section2",
         fromNodeId: "c2",
         toNodeId: "j1",
         lengthFt: 0,
@@ -257,7 +257,7 @@ describe("cable-canvas-utils", () => {
       },
       {
         pathId: "p1",
-        wireName: "p1",
+        wireName: "section3",
         fromNodeId: "c1",
         toNodeId: "c2",
         lengthFt: 3.5,
@@ -742,7 +742,7 @@ describe("cable-canvas-utils", () => {
         sleeving: "expandable_sleeving",
         bundleDiameterIn: null
       })
-    ).toBe("cable1 - 24 in | expandable sleeving | bundle dia —");
+    ).toBe("section1 - 24 in | expandable sleeving | bundle dia —");
     expect(
       formatCableSectionCanvasLabel({
         wireName: "cable1",
@@ -750,7 +750,7 @@ describe("cable-canvas-utils", () => {
         sleeving: "none",
         bundleDiameterIn: 0.1155
       })
-    ).toBe("cable1 - 12 in | no sleeving | bundle dia 0.1155 in");
+    ).toBe("section1 - 12 in | no sleeving | bundle dia 0.1155 in");
     expect(
       formatCableSectionCanvasLabel({
         wireName: "cable2",
@@ -758,7 +758,15 @@ describe("cable-canvas-utils", () => {
         sleeving: "wire_braid_under_expandable_sleeving",
         bundleDiameterIn: 0.2
       })
-    ).toBe("cable2 - 0 in | wire braid under expandable sleeving | bundle dia 0.2 in");
+    ).toBe("section2 - 0 in | wire braid under expandable sleeving | bundle dia 0.2 in");
+    expect(
+      formatCableSectionCanvasLabel({
+        wireName: "cable2 power",
+        lengthInches: 12,
+        sleeving: "none",
+        bundleDiameterIn: null
+      })
+    ).toBe("cable2 power - 12 in | no sleeving | bundle dia —");
   });
 
   it("builds overlapping braid crosses that stay on the cable and span its width", () => {

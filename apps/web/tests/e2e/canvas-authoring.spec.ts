@@ -43,7 +43,7 @@ test("canvas authoring supports create, connect, and delete", async ({ page }) =
   await cable.locator("line").last().click({ force: true });
   await expect(page.getByLabel("Wire part number")).toHaveCount(0);
   await expect(page.getByLabel("Length (inches)")).toBeVisible();
-  await expect(page.getByLabel("Sleeving")).toBeVisible();
+  await expect(page.getByRole("combobox", { name: /^Sleeving/ })).toBeVisible();
 
   await connectors.nth(1).click();
   await page.getByRole("button", { name: "Delete" }).click();

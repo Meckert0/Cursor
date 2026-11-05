@@ -67,7 +67,7 @@ async function authorFullCableOnCanvas(page: Page) {
   await expect(page.getByLabel("Wire part number")).toHaveCount(0);
   await expect(page.getByLabel("Length (inches)")).toBeVisible();
   await page.getByLabel("Length (inches)").fill(String(FULL_CABLE.wireLengthIn));
-  await page.getByLabel("Sleeving").selectOption({ label: FULL_CABLE.sleevingLabel });
+  await page.getByRole("combobox", { name: /^Sleeving/ }).selectOption({ label: FULL_CABLE.sleevingLabel });
   await waitForCanvasSaved(page);
 }
 

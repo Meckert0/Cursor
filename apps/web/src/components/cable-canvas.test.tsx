@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { LibraryComponentDto, RevisionDto } from "@/lib/api";
 import { bundleDiameterInches, formatBundleDiameterLabel, formatCableSectionCanvasLabel } from "@/lib/cable-canvas-utils";
@@ -78,7 +78,7 @@ function snapshot(): RevisionDto["snapshot"] {
 }
 
 describe("CableCanvas cable sections", () => {
-  it("draws thicker centered labels that include each section bundle diameter", () => {
+  it("centers compact section labels with accessible names and expandable diameter details", () => {
     const carriedDiameter = formatBundleDiameterLabel(bundleDiameterInches([0.062]));
     render(
       <CableCanvas
@@ -94,16 +94,23 @@ describe("CableCanvas cable sections", () => {
 
     const carried = screen.getByTestId("cable-label-p1");
     const empty = screen.getByTestId("cable-label-p2");
-    expect(carried).toHaveTextContent(
+    expect(carried).toHaveAccessibleName(
       formatCableSectionCanvasLabel({
-        wireName: "cable1",
+        wireName: "section1",
         lengthInches: 24,
         sleeving: "expandable_sleeving",
         bundleDiameterIn: bundleDiameterInches([0.062])
       })
     );
-    expect(carried).toHaveTextContent(carriedDiameter);
-    expect(empty).toHaveTextContent("cable2 - 8 in | no sleeving | bundle dia —");
+    const summary = carried.querySelector(`.${styles.cableLabelSummary}`) as HTMLElement;
+    expect(within(summary).getByText("24 in")).toBeInTheDocument();
+    expect(within(summary).getByText("expandable sleeving")).toBeInTheDocument();
+    expect(summary).not.toHaveTextContent("section1");
+    expect(summary).not.toHaveTextContent("bundle dia");
+    const details = carried.querySelector(`.${styles.cableLabelDetails}`) as HTMLElement;
+    expect(within(details).getByText("section1")).toBeInTheDocument();
+    expect(details).toHaveTextContent(carriedDiameter);
+    expect(empty).toHaveAccessibleName("section2 - 8 in | no sleeving | bundle dia —");
     expect(carried).toHaveStyle({ left: "180px", top: "68px" });
     expect(empty).toHaveStyle({ left: "380px", top: "128px" });
     expect(carried.className).toContain(styles.cableLabel);
@@ -202,10 +209,27 @@ describe("CableCanvas cable sections", () => {
     );
 
     fireEvent.doubleClick(screen.getByTestId("cable-label-p2"));
-    const input = screen.getByLabelText("Length in inches for cable2");
+    const input = screen.getByLabelText("Length in inches for section2");
     expect(input).toHaveStyle({ left: "380px", top: "128px" });
     expect(input).toHaveValue("8");
     expect(screen.queryByTestId("cable-label-p2")).not.toBeInTheDocument();
+  });
+
+  it("selects a keyboard-focused section before applying Delete", () => {
+    render(
+      <CableCanvas
+        revisionId="rev-section-focus"
+        snapshot={snapshot()}
+        snapshotHash="hash"
+        connectorCatalog={[]}
+        quickAddConnectorAction={async () => ({ ok: true, connectorCatalog: [] })}
+      />
+    );
+    fireEvent.focus(screen.getByTestId("cable-label-p2"));
+    expect(screen.getByText("Selected: section2")).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "Delete" });
+    expect(screen.queryByTestId("cable-label-p2")).not.toBeInTheDocument();
+    expect(screen.getByTestId("cable-label-p1")).toBeInTheDocument();
   });
 
   it("hides the slot name field when a frame has one slot", () => {

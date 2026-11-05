@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
-import { ConnectorModulesSection } from "@/components/connector-modules-section";
+import { WirelistDetailsSection } from "@/components/wirelist-details-section";
 import { WirelistGrid } from "@/components/wirelist-grid";
 import {
   getHarness,
@@ -206,16 +206,14 @@ export default async function HarnessWirelistPage({
             saveWirelistAction={saveWirelistAction}
           />
         </section>
-        <div className={styles.connectorsColumn}>
-          <ConnectorModulesSection
-            revisionId={revision.id}
-            snapshot={revision.snapshot}
-            connectorCatalog={connectorCatalog}
-            contactCatalog={contactCatalog}
-            moduleContactCompat={moduleContactCompat}
-            contactRelationships={contactRelationships}
-          />
-        </div>
+        <WirelistDetailsSection
+          revisionId={revision.id}
+          snapshot={revision.snapshot}
+          connectorCatalog={connectorCatalog}
+          contactCatalog={contactCatalog}
+          moduleContactCompat={moduleContactCompat}
+          contactRelationships={contactRelationships}
+        />
       </main>
     </div>
   );

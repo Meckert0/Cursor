@@ -158,10 +158,13 @@ describe("DetailsSummary", () => {
     const modules = screen.getAllByRole("article");
     expect(modules.map((module) => module.getAttribute("aria-label"))).toEqual(["Module J1", "Module J2"]);
     const j1Rows = within(screen.getByRole("table", { name: "Compatible contacts for J1" })).getAllByRole("row");
-    expect(j1Rows[0]).toHaveTextContent("ContactAWGPosStatus");
-    expect(j1Rows[1]).toHaveTextContent("CNT-22 Contact CNT-2222-26 AWG1–2Allowed");
+    expect(j1Rows[0]).toHaveTextContent("ContactAWGPos");
+    expect(j1Rows[0]).not.toHaveTextContent("Status");
+    expect(j1Rows[1]).toHaveTextContent("CNT-22 Contact CNT-2222-26 AWG1–2");
+    expect(j1Rows[1]).not.toHaveTextContent("Allowed");
     const j2Rows = within(screen.getByRole("table", { name: "Compatible contacts for J2" })).getAllByRole("row");
-    expect(j2Rows[1]).toHaveTextContent("CNT-16 Contact CNT-1616-20 AWGAllReview");
+    expect(j2Rows[1]).toHaveTextContent("CNT-16 Contact CNT-1616-20 AWGAll");
+    expect(j2Rows[1]).not.toHaveTextContent("Review");
   });
 
   it("fills each cable section bundle diameter from the wirelist and sizes the sleeving", () => {

@@ -64,7 +64,6 @@ function CompatibilityTable({ entry }: { entry: ConnectorModuleEntry }) {
           <th scope="col">Contact</th>
           <th scope="col">AWG</th>
           <th scope="col">Pos</th>
-          <th scope="col">Status</th>
         </tr>
       </thead>
       <tbody>
@@ -76,7 +75,6 @@ function CompatibilityTable({ entry }: { entry: ConnectorModuleEntry }) {
             </td>
             <td>{contact.awgRange || "—"}</td>
             <td>{formatContactPositionList(contact.positions)}</td>
-            <td>{contact.status === "allowed" ? "Allowed" : "Review"}</td>
           </tr>
         ))}
       </tbody>

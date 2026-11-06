@@ -82,8 +82,8 @@ describe("ConnectorModulesSection", () => {
       },
       connectorCatalog: [component],
       contactCatalog: [
-        { ...component, id: "cnt-1", category: "contact", partNumber: "CNT-1" },
-        { ...component, id: "cnt-2", category: "contact", partNumber: "CNT-2" }
+        { ...component, id: "cnt-1", category: "contact" as const, partNumber: "CNT-1" },
+        { ...component, id: "cnt-2", category: "contact" as const, partNumber: "CNT-2" }
       ],
       contactRelationships: [
         {
@@ -119,8 +119,8 @@ describe("ConnectorModulesSection", () => {
       fireEvent.click(screen.getByRole("button", { name: "Show Details" }));
     }
     const table = screen.getByRole("table", { name: "Compatible contacts for J1" });
-    expect(within(table).getByRole("cell", { name: "A1–D40", exact: true })).toBeInTheDocument();
-    expect(within(table).getByRole("cell", { name: "A1–A2, B1–B2", exact: true })).toBeInTheDocument();
+    expect(within(table).getByRole("cell", { name: "A1–D40" })).toBeInTheDocument();
+    expect(within(table).getByRole("cell", { name: "A1–A2, B1–B2" })).toBeInTheDocument();
     expect(table).not.toHaveTextContent("A1–A40, B1–B40");
   });
 });

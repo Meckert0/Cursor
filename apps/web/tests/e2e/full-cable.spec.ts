@@ -4,6 +4,7 @@ import {
   createProjectAndOpenProjectPage,
   ingestFullCableCatalog,
   registerAndSignIn,
+  selectConnectorPickerPart,
   uniqueToken
 } from "./helpers";
 import { FULL_CABLE, FULL_CABLE_BOM_EXPECTATIONS } from "./fixtures/full-cable";
@@ -35,7 +36,7 @@ async function defineConnectorModule(page: Page, partNumber: string) {
   await page.getByPlaceholder("Search connectors...").fill(partNumber);
   const row = page.getByRole("row").filter({ hasText: partNumber });
   await expect(row).toBeVisible();
-  await row.getByRole("button", { name: "Select" }).click();
+  await selectConnectorPickerPart(page, partNumber);
   await expect(page.getByRole("button", { name: "Define Connector" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Change connector" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Change connector" })).toContainText(`Part number: ${partNumber}`);
@@ -69,6 +70,8 @@ async function authorFullCableOnCanvas(page: Page) {
   await page.getByLabel("Length (inches)").fill(String(FULL_CABLE.wireLengthIn));
   await page.getByRole("combobox", { name: /^Sleeving/ }).selectOption({ label: FULL_CABLE.sleevingLabel });
   await waitForCanvasSaved(page);
+  await page.getByRole("button", { name: "Show Details", exact: true }).click();
+  await expect(page.getByRole("list", { name: "Cable section length totals" })).toContainText(`Expandable sleeving total: ${FULL_CABLE.wireLengthIn} in`);
 }
 
 async function completeWirelistDetail(page: Page, harnessId: string) {
@@ -84,6 +87,7 @@ async function completeWirelistDetail(page: Page, harnessId: string) {
   await page.locator('input[data-cell-key="toContact"]').first().fill(FULL_CABLE.contactPartNumber);
   await page.locator('input[data-cell-key="toSignalDescription"]').first().fill(FULL_CABLE.toSignal);
   await page.locator('input[data-cell-key="wirePartNumber"]').first().fill(FULL_CABLE.wirePartNumber);
+  await page.locator('input[data-cell-key="length"]').first().fill(String(FULL_CABLE.wireLengthIn));
   await page.locator('input[data-cell-key="labelPartNumber"]').first().fill(FULL_CABLE.labelPartNumber);
   await page.locator('input[data-cell-key="labelText"]').first().fill(FULL_CABLE.labelText);
   await page.locator('input[data-cell-key="labelText"]').first().blur();
@@ -103,7 +107,8 @@ async function assertResolvedBom(page: Page) {
   for (const expectation of FULL_CABLE_BOM_EXPECTATIONS) {
     const row = table.locator("tr").filter({ hasText: expectation.partNumber }).filter({ hasText: expectation.category });
     await expect(row).toBeVisible();
-    await expect(row).toContainText(expectation.quantity);
+    await expect(row.getByRole("cell").nth(4)).toHaveText(expectation.quantity);
+    await expect(row.getByRole("cell").nth(5)).toHaveText(expectation.unit);
     await expect(row).toContainText("resolved");
   }
 }

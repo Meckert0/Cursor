@@ -149,6 +149,13 @@ export function uniqueToken() {
   return Date.now();
 }
 
+export async function selectConnectorPickerPart(page: Page, partNumber: string, kind: "connector" | "module" = "connector") {
+  await page.getByRole("radio", { name: `Preview ${partNumber}`, exact: true }).check();
+  const review = page.getByRole("button", { name: new RegExp(`^Review ${kind}`) });
+  if (await review.isVisible()) await review.click();
+  await page.getByRole("button", { name: new RegExp(`^Use ${kind}`) }).click();
+}
+
 async function getAdminSessionCookie(request: APIRequestContext): Promise<string> {
   const password = "pass1234!";
   const email = "meckert@vpc.com";

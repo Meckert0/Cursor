@@ -29,15 +29,14 @@ export const FULL_CABLE = {
   toLocation: "J2 - 1"
 } as const;
 
-/** Expected resolved BOM lines after authoring the canonical one-wire cable. */
+/** Wire BOM quantities. Physical cable-section sleeving is verified in section material totals. */
 export const FULL_CABLE_BOM_EXPECTATIONS = [
-  { category: "module", partNumber: FULL_CABLE.modulePartNumber, quantity: "2" },
-  { category: "backshell", partNumber: FULL_CABLE.backshellPartNumber, quantity: "2" },
-  { category: "strain-relief", partNumber: FULL_CABLE.strainReliefPartNumber, quantity: "2" },
-  { category: "wire", partNumber: FULL_CABLE.wirePartNumber, quantity: String(FULL_CABLE.wireLengthIn) },
-  { category: "contact", partNumber: FULL_CABLE.contactPartNumber, quantity: "2" },
-  { category: "label", partNumber: FULL_CABLE.labelPartNumber, quantity: "1" },
-  { category: "sleeve-tube-braid", partNumber: FULL_CABLE.sleevingPartNumber, quantity: String(FULL_CABLE.wireLengthIn) }
+  { category: "module", partNumber: FULL_CABLE.modulePartNumber, quantity: "2", unit: "ea" },
+  { category: "backshell", partNumber: FULL_CABLE.backshellPartNumber, quantity: "2", unit: "ea" },
+  { category: "strain-relief", partNumber: FULL_CABLE.strainReliefPartNumber, quantity: "2", unit: "ea" },
+  { category: "wire", partNumber: FULL_CABLE.wirePartNumber, quantity: String(FULL_CABLE.wireLengthIn), unit: "in" },
+  { category: "contact", partNumber: FULL_CABLE.contactPartNumber, quantity: "2", unit: "ea" },
+  { category: "label", partNumber: FULL_CABLE.labelPartNumber, quantity: "1", unit: "ea" }
 ] as const;
 
 /** Catalog parts required by the full-cable e2e journey (ingested unreviewed, then reviewed via owner role). */

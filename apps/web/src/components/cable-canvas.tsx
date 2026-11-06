@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { DetailsSummary } from "@/components/details-summary";
+import { ConnectorPickerDialog } from "@/components/connector-picker-dialog";
 import type { LibraryComponentDto, RevisionDto } from "@/lib/api";
 import {
   buildNextCanvasId,
@@ -23,13 +24,9 @@ import {
 } from "@/lib/cable-canvas-utils";
 import { cableSectionBundleDiameters } from "@/lib/bundle-diameter";
 import {
-  getPartFieldsForCategory,
-  readPartFieldRawValue,
-  formatPartFieldDisplayValue,
   isCanvasConnectorPart,
   isCanvasDefinablePart,
-  isCanvasFramePart,
-  displayPartType
+  isCanvasFramePart
 } from "@/lib/part-fields";
 import {
   buildSlotsForFrame,
@@ -67,15 +64,6 @@ type ConnectState = {
 };
 
 type JunctionNode = NonNullable<RevisionDto["snapshot"]["junctions"]>[number];
-
-function readComponentFieldValue(component: LibraryComponentDto, key: string): string {
-  const field = getPartFieldsForCategory(component.category).find((entry) => entry.key === key);
-  if (!field) {
-    return "";
-  }
-  const formatted = formatPartFieldDisplayValue(readPartFieldRawValue(component, field));
-  return formatted === "-" ? "" : formatted;
-}
 
 export function CableCanvas({
   revisionId,
@@ -145,13 +133,8 @@ export function CableCanvas({
   const [connectorCatalogState, setConnectorCatalogState] = useState<LibraryComponentDto[]>(connectorCatalog);
   const [backshellCatalogState] = useState<LibraryComponentDto[]>(backshellCatalog);
   const [strainReliefCatalogState] = useState<LibraryComponentDto[]>(strainReliefCatalog);
-  const [connectorQuickAddNotice, setConnectorQuickAddNotice] = useState("");
-  const [connectorQuickAddError, setConnectorQuickAddError] = useState("");
-  const [connectorQuickAddPending, setConnectorQuickAddPending] = useState(false);
-  const [showAddConnectorDialog, setShowAddConnectorDialog] = useState(false);
   const [showConnectorSearchDialog, setShowConnectorSearchDialog] = useState(false);
   const [connectorSearchTarget, setConnectorSearchTarget] = useState<"housing" | { slotId: string }>("housing");
-  const [connectorSearchQuery, setConnectorSearchQuery] = useState("");
   const [includeReverseCompat, setIncludeReverseCompat] = useState(false);
   const [connectorNameDraft, setConnectorNameDraft] = useState("");
   const [connectorNameError, setConnectorNameError] = useState<string | null>(null);
@@ -393,20 +376,6 @@ export function CableCanvas({
     }
     return junctions.find((junction) => junction.id === selectedEntity.id) ?? null;
   }, [junctions, selectedEntity]);
-  const modulePartFields = useMemo(() => getPartFieldsForCategory("module"), []);
-  const connectorAddFormFields = useMemo(
-    () => modulePartFields.filter((field) => field.showOnAddForm),
-    [modulePartFields]
-  );
-  const connectorSearchColumns = useMemo(
-    () => [
-      { key: "partNumber", label: "Part number" },
-      { key: "partType", label: "Type" },
-      { key: "family", label: "Family" },
-      { key: "description", label: "Description" }
-    ],
-    []
-  );
   const selectedConnectorLibraryId = selectedConnector?.libraryComponentId;
   const searchPool = useMemo(() => {
     if (connectorSearchTarget === "housing") {
@@ -431,23 +400,6 @@ export function CableCanvas({
     moduleCatalog,
     selectedConnectorLibraryId
   ]);
-  const filteredConnectorSearchResults = useMemo(() => {
-    const query = connectorSearchQuery.trim().toLowerCase();
-    if (!query) {
-      return searchPool;
-    }
-    return searchPool.filter((component) => {
-      const typeLabel = displayPartType(component.partType).toLowerCase();
-      return (
-        component.partNumber.toLowerCase().includes(query) ||
-        (component.family ?? "").toLowerCase().includes(query) ||
-        (component.description ?? "").toLowerCase().includes(query) ||
-        typeLabel.includes(query) ||
-        (component.partType ?? "").toLowerCase().includes(query)
-      );
-    });
-  }, [connectorSearchQuery, searchPool]);
-
   const connectorNameKey = selectedConnector
     ? `${selectedConnector.id}:${selectedConnector.reference}`
     : "";
@@ -1094,36 +1046,10 @@ export function CableCanvas({
     setInlineLengthEdit(null);
   };
 
-  const handleQuickAddConnectorSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    if (readOnly) {
-      return;
-    }
-    event.preventDefault();
-    setConnectorQuickAddNotice("");
-    setConnectorQuickAddError("");
-    setConnectorQuickAddPending(true);
-    const form = event.currentTarget;
-    const formData = new FormData(form);
+  const createPickerPart = async (formData: FormData) => {
     const result = await quickAddConnectorAction(formData);
-    setConnectorQuickAddPending(false);
     setConnectorCatalogState(result.connectorCatalog);
-    if (!result.ok) {
-      setConnectorQuickAddError(result.error ?? "Connector quick-add failed.");
-      return;
-    }
-    setConnectorQuickAddNotice(result.notice ?? "Connector added.");
-    if (selectedEntity?.type === "connector" && result.newConnectorPartNumber) {
-      const newComponent = result.connectorCatalog.find(
-        (component) => component.partNumber === result.newConnectorPartNumber
-      );
-      if (newComponent) {
-        applyConnectorLibrarySelection(newComponent);
-      }
-    }
-    form.reset();
-    setShowAddConnectorDialog(false);
-    setShowConnectorSearchDialog(false);
-    setConnectorSearchQuery("");
+    return result;
   };
 
   const handleCanvasBackgroundPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -1460,8 +1386,6 @@ export function CableCanvas({
                   ) : null}
                 </>
               )}
-              {connectorQuickAddNotice ? <span className={styles.quickAddNotice}>{connectorQuickAddNotice}</span> : null}
-              {connectorQuickAddError ? <span className={styles.quickAddError}>{connectorQuickAddError}</span> : null}
             </div>
           ) : null}
           {selectedEntity?.type === "junction" && selectedJunction ? (
@@ -1482,146 +1406,32 @@ export function CableCanvas({
           {!selectedEntity ? <div className={styles.detailPanelEmpty} aria-hidden="true" /> : null}
         </div>
       </section>
-      {showAddConnectorDialog ? (
-        <div className={styles.quickAddOverlay} role="dialog" aria-modal="true" aria-label="Add new connector">
-          <form className={styles.quickAddDialog} onSubmit={handleQuickAddConnectorSubmit}>
-            <h3>Add new connector</h3>
-            {connectorAddFormFields.some((field) => field.key === "partNumber") ? null : (
-              <label>
-                Part number
-                <input name="partNumber" placeholder="new connector part number" required />
-              </label>
-            )}
-            {connectorAddFormFields.map((field) => {
-              const inputName = field.isIdentity ? field.key : `attr:${field.key}`;
-              return (
-                <label key={field.key}>
-                  {field.label}
-                  <input
-                    name={inputName}
-                    placeholder={field.label}
-                    required={field.required === true || field.key === "partNumber"}
-                    type={field.inputType === "number" ? "number" : "text"}
-                  />
-                </label>
-              );
-            })}
-            <div className={styles.quickAddActions}>
-              <button type="button" onClick={() => setShowAddConnectorDialog(false)} disabled={connectorQuickAddPending}>
-                Cancel
-              </button>
-              <button type="submit" disabled={readOnly || connectorQuickAddPending}>
-                {connectorQuickAddPending ? "Adding..." : "Add connector"}
-              </button>
-            </div>
-          </form>
-        </div>
-      ) : null}
       {showConnectorSearchDialog ? (
-        <div
-          className={styles.quickAddOverlay}
-          role="dialog"
-          aria-modal="true"
-          aria-label={connectorSearchTarget === "housing" ? "Define Connector" : `Select slot ${connectorSearchTarget.slotId} module`}
-        >
-          <div className={styles.connectorSearchDialog}>
-            <h3>
-              {connectorSearchTarget === "housing"
-                ? "Define Connector"
-                : `Select slot ${connectorSearchTarget.slotId} module`}
-            </h3>
-            <div className={styles.connectorSearchControls}>
-              <input
-                className={styles.connectorSearchInput}
-                value={connectorSearchQuery}
-                onChange={(event) => setConnectorSearchQuery(event.target.value)}
-                placeholder={connectorSearchTarget === "housing" ? "Search connectors..." : "Search modules..."}
-                autoFocus
-              />
-              {connectorSearchTarget === "housing" ? (
-                <button type="button" onClick={() => setShowAddConnectorDialog(true)} disabled={readOnly}>
-                  Add new connector
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className={styles.reverseCompatToggle}
-                  aria-pressed={includeReverseCompat}
-                  onClick={() => setIncludeReverseCompat((value) => !value)}
-                >
-                  show reverse compatibility modules
-                </button>
-              )}
-            </div>
-            <div className={styles.connectorSearchTableWrap}>
-              <table className={styles.connectorSearchTable}>
-                <thead>
-                  <tr>
-                    <th aria-label="Select" />
-                    {connectorSearchColumns.map((column) => (
-                      <th key={column.key}>{column.label}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredConnectorSearchResults.length === 0 ? (
-                    <tr>
-                      <td colSpan={connectorSearchColumns.length + 1}>
-                        {connectorSearchTarget === "housing"
-                          ? "No connectors found."
-                          : includeReverseCompat
-                            ? "No reverse-compatible modules for this slot."
-                            : "No compatible modules for this slot."}
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredConnectorSearchResults.map((component) => (
-                      <tr key={component.id}>
-                        <td>
-                          <button
-                            type="button"
-                            disabled={readOnly}
-                            onClick={() => {
-                              if (connectorSearchTarget === "housing") {
-                                applyConnectorLibrarySelection(component);
-                              } else {
-                                applySlotModuleSelection(connectorSearchTarget.slotId, component);
-                              }
-                              setShowConnectorSearchDialog(false);
-                              setConnectorSearchQuery("");
-                              setIncludeReverseCompat(false);
-                            }}
-                          >
-                            Select
-                          </button>
-                        </td>
-                        {connectorSearchColumns.map((column) => (
-                          <td key={column.key}>
-                            {column.key === "partType"
-                              ? displayPartType(component.partType) || "-"
-                              : readComponentFieldValue(component, column.key)}
-                          </td>
-                        ))}
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-            <div className={styles.quickAddActions}>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowConnectorSearchDialog(false);
-                  setConnectorSearchQuery("");
-                  setIncludeReverseCompat(false);
-                }}
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConnectorPickerDialog
+          parts={searchPool}
+          destination={selectedConnector?.reference ?? ""}
+          slot={connectorSearchTarget === "housing" ? undefined : {
+            slotId: connectorSearchTarget.slotId,
+            framePartNumber: selectedConnector?.partNumber,
+            reverse: includeReverseCompat,
+            onReverseChange: setIncludeReverseCompat
+          }}
+          readOnly={readOnly}
+          onCreatePart={createPickerPart}
+          onSelect={(component) => {
+            if (connectorSearchTarget === "housing") {
+              applyConnectorLibrarySelection(component);
+            } else {
+              applySlotModuleSelection(connectorSearchTarget.slotId, component);
+            }
+            setShowConnectorSearchDialog(false);
+            setIncludeReverseCompat(false);
+          }}
+          onClose={() => {
+            setShowConnectorSearchDialog(false);
+            setIncludeReverseCompat(false);
+          }}
+        />
       ) : null}
       <div className={styles.canvas} ref={canvasRef} data-testid="cable-canvas" onPointerDown={handleCanvasBackgroundPointerDown}>
         <svg className={styles.lines} aria-hidden>

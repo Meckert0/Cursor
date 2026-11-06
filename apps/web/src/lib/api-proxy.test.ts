@@ -3,13 +3,13 @@ import { copyForwardableHeaders, resolveApiProxyUrl } from "./api-proxy";
 
 describe("api proxy helpers", () => {
   it("builds the upstream URL from path segments and search", () => {
-    expect(resolveApiProxyUrl(["library", "components"], "?q=micro", { API_BASE_URL: "https://api.example.com/" })).toBe(
+    expect(resolveApiProxyUrl(["library", "components"], "?q=micro", { API_BASE_URL: "https://api.example.com/", NODE_ENV: "test" })).toBe(
       "https://api.example.com/v1/library/components?q=micro"
     );
   });
 
   it("defaults to localhost and supports the /v1 root", () => {
-    expect(resolveApiProxyUrl(undefined, "", {})).toBe("http://localhost:3000/v1");
+    expect(resolveApiProxyUrl(undefined, "", { NODE_ENV: "test" })).toBe("http://localhost:3000/v1");
   });
 
   it("drops hop-by-hop headers", () => {

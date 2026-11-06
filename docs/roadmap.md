@@ -1,6 +1,6 @@
 # Cable Design Tool Roadmap
 
-Last updated: 2026-08-20
+Last updated: 2026-11-06
 
 ## Purpose
 
@@ -32,6 +32,7 @@ Get one cable completely working from start to finish, with a complete bill of m
 - E2E journey matrix (auth, project/harness, canvas, validate/export, submit-for-quote, moderation, wirelist, failure paths) with CI trace upload.
 - Library governance v1 (first-class compatibility columns, archive/restore, review policies).
 - Canvas persistence and hardening v1 (server snapshot autosave, undo/redo, junction properties, module split).
+- Connector picker redesign: nearly full-width dialog, filter options across the top, independent sorting/filtering for every information column, optional columns, part previews with explicit confirmation, and responsive keyboard-accessible connector/frame-slot selection. Existing compatibility, undo, and autosave paths are preserved.
 - Export reliability v1 (startup recovery, transient retry/backoff, permanent failure classification, retention cleanup, operations runbook).
 - Bill of materials v1 (API, details UI, JSON/PDF/XLSX inclusion, library existence validation, unresolved-part visibility).
 - Observability baseline v1 (request/correlation IDs, `/v1/metrics`, deepened `/v1/health`, export worker trace logs).

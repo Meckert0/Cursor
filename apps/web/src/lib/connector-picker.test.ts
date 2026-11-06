@@ -1,0 +1,118 @@
+import { describe, expect, it } from "vitest";
+import type { LibraryComponentDto } from "./api";
+import {
+  CONNECTOR_PICKER_COLUMNS, buildPickerIndex, getPickerFacetChoices, getPickerResults,
+  pickerColumn, pickerDisplayValue, pickerFilterError, type PickerColumnId, type PickerFilter, type PickerFilters
+} from "./connector-picker";
+
+function part(id: string, overrides: Partial<LibraryComponentDto> = {}): LibraryComponentDto {
+  return {
+    id, partNumber: id, category: "module", partType: "MODULE", family: "i1", description: "Signal module",
+    side: "ITA", isActive: true, isReviewed: true, stockStatus: "in_stock", attributes: {},
+    createdByUserId: "u1", createdAt: "2026-01-01", lastEditedByUserId: "u1", lastEditedAt: "2026-01-01", updatedAt: "2026-01-01",
+    ...overrides
+  };
+}
+const range = (min: string, max = ""): PickerFilter => ({ kind: "number", mode: "range", min, max });
+const values = (...selected: string[]): PickerFilter => ({ kind: "values", values: selected });
+const contains = (value: string): PickerFilter => ({ kind: "text", operator: "contains", value });
+
+describe("connector picker discovery", () => {
+  it("searches all tokens across fields, preserves phrases, and normalizes part numbers", () => {
+    const index = buildPickerIndex([
+      part("a", { partNumber: "ABC-096-I", description: "Signal power module", family: "i1" }),
+      part("b", { partNumber: "X-096", description: "Signal module", family: "iCon" }),
+      part("c", { partNumber: "ABC-096-I-EXTRA", description: "Power module", family: "i1" })
+    ]);
+    expect(getPickerResults(index, 'i1 "signal power"', {}, null).map(r => r.part.id)).toEqual(["a"]);
+    expect(getPickerResults(index, "abc096i", {}, null).map(r => r.part.id)).toEqual(["a", "c"]);
+    expect(getPickerResults(index, "096 SIGNAL", {}, null).map(r => r.part.id)).toEqual(["a", "b"]);
+    expect(getPickerResults(index, "", { partNumber: contains("---") }, null)).toHaveLength(0);
+  });
+
+  it("matches descriptions independently and supports equals and starts with", () => {
+    const index = buildPickerIndex([part("a", { description: "Coax module" }), part("b", { description: "Signal module" })]);
+    expect(getPickerResults(index, "", { description: { kind: "text", operator: "equals", value: "COAX MODULE" } }, null).map(r => r.part.id)).toEqual(["a"]);
+    expect(getPickerResults(index, "", { description: { kind: "text", operator: "starts", value: "signal" } }, null).map(r => r.part.id)).toEqual(["b"]);
+  });
+
+  it("combines OR within a column with AND across columns and global search", () => {
+    const index = buildPickerIndex([
+      part("a", { attributes: { positionCount: 64 } }),
+      part("b", { family: "iCon", attributes: { positionCount: 96 } }),
+      part("c", { side: "RECEIVER", attributes: { positionCount: 96 } }),
+      part("d", { description: "Power module", attributes: { positionCount: 96 } })
+    ]);
+    const filters: PickerFilters = { family: values("i1", "iCon"), side: values("ITA"), positions: range("64", "96") };
+    expect(getPickerResults(index, "signal", filters, null).map(r => r.part.id)).toEqual(["a", "b"]);
+    expect(getPickerFacetChoices(index, "signal", filters, "side")).toContainEqual({ value: "Receiver", count: 1 });
+  });
+
+  it("keeps selected zero-count values when compatibility changes the input pool", () => {
+    const index = buildPickerIndex([part("a")]);
+    const choices = getPickerFacetChoices(index, "", { side: values("Receiver") }, "side");
+    expect(choices).toContainEqual({ value: "Receiver", count: 0 });
+    expect(choices).toContainEqual({ value: "ITA", count: 1 });
+    expect(getPickerResults(index, "", {}, null).map(r => r.part.id)).toEqual(["a"]);
+  });
+
+  it("counts mixed contact groups, separates frame capacity, and preserves unknowns", () => {
+    const index = buildPickerIndex([
+      part("mixed", { attributes: { pinCount: 64, pinCount2: 12 } }),
+      part("explicit", { attributes: { positionCount: 100, pinCount: 64 } }),
+      part("ids", { attributes: { pinIds: ["A1", "A2"] } }),
+      part("frame", { category: "frame", partType: "RECEIVER", attributes: { slotIds: ["A", "B"], gender: "Pin" } }),
+      part("missing")
+    ]);
+    expect(index.map(r => r.values.positions)).toEqual([76, 100, 2, null, null]);
+    expect(index[3].values.moduleCapacity).toBe(2);
+    expect(pickerDisplayValue(index[3], pickerColumn("positions"))).toBe("Not applicable");
+    expect(pickerDisplayValue(index[4], pickerColumn("positions"))).toBe("Not supplied");
+    expect(pickerDisplayValue(index[3], pickerColumn("gender"))).toBe("Not applicable");
+    expect(getPickerResults(index, "", { positions: { kind: "number", mode: "missing", min: "", max: "" } }, null).map(r => r.part.id)).toEqual(["missing"]);
+    expect(getPickerResults(index, "", { positions: { kind: "number", mode: "notApplicable", min: "", max: "" } }, null).map(r => r.part.id)).toEqual(["frame"]);
+  });
+
+  it("validates numeric bounds and uses inclusive ranges without treating missing values as zero", () => {
+    for (const filter of [range("-1"), range("1.5"), range("not a number"), range("100", "10")]) expect(pickerFilterError(filter)).not.toBeNull();
+    expect(pickerFilterError(range("0", "96"))).toBeNull();
+    const index = buildPickerIndex([part("zero", { attributes: { positionCount: 0 } }), part("96", { attributes: { positionCount: 96 } }), part("missing")]);
+    expect(getPickerResults(index, "", { positions: range("0", "96") }, null).map(r => r.part.id)).toEqual(["96", "zero"]);
+    expect(getPickerResults(index, "", { positions: range("1.5") }, null)).toEqual([]);
+  });
+
+  it("sorts numeric values naturally and keeps missing values last in both directions", () => {
+    const index = buildPickerIndex([part("P-10", { attributes: { positionCount: 10 } }), part("P-2", { attributes: { positionCount: 2 } }), part("P-1")]);
+    expect(getPickerResults(index, "", {}, null).map(r => r.part.id)).toEqual(["P-1", "P-2", "P-10"]);
+    expect(getPickerResults(index, "", {}, { id: "positions", direction: "asc" }).map(r => r.part.id)).toEqual(["P-2", "P-10", "P-1"]);
+    expect(getPickerResults(index, "", {}, { id: "positions", direction: "desc" }).map(r => r.part.id)).toEqual(["P-10", "P-2", "P-1"]);
+  });
+
+  const sortableValues: Array<[PickerColumnId, Partial<LibraryComponentDto>, Partial<LibraryComponentDto>, PickerFilter]> = [
+    ["partNumber", { partNumber: "AA-1" }, { partNumber: "ZZ-1" }, contains("aa")],
+    ["description", { description: "Alpha" }, { description: "Zulu" }, contains("alpha")],
+    ["type", { category: "frame", partType: "ITA" }, {}, values("ITA housing")],
+    ["family", { family: "Alpha" }, { family: "Zulu" }, values("Alpha")],
+    ["side", { side: "ITA" }, { side: "RECEIVER" }, values("ITA")],
+    ["positions", { attributes: { positionCount: 2 } }, { attributes: { positionCount: 10 } }, range("2", "2")],
+    ["stockStatus", { stockStatus: "in_stock" }, { stockStatus: "out_of_stock" }, values("In stock")],
+    ["reviewStatus", { isReviewed: false }, { isReviewed: true }, values("Awaiting review")],
+    ["gender", { attributes: { gender: "Pin" } }, { attributes: { gender: "Socket" } }, values("Pin")],
+    ["moduleCapacity", { category: "frame", partType: "ITA", attributes: { moduleCapacity: 2 } }, { category: "frame", partType: "ITA", attributes: { moduleCapacity: 10 } }, range("2", "2")],
+    ["contactFamily", { attributes: { contactFamily1: "Coax" } }, { attributes: { contactFamily1: "Signal" } }, values("Coax")],
+    ["contactSize", { attributes: { contactSize: "16" } }, { attributes: { contactSize: "22" } }, values("16")],
+    ["emi", { attributes: { emi: false } }, { attributes: { emi: true } }, values("No")]
+  ];
+  it.each(sortableValues)("supports ascending, descending, and filtering for the %s column", (id, first, second, filter) => {
+    const index = buildPickerIndex([part("b", second), part("a", first)]);
+    expect(getPickerResults(index, "", {}, { id, direction: "asc" }).map(r => r.part.id)).toEqual(["a", "b"]);
+    expect(getPickerResults(index, "", {}, { id, direction: "desc" }).map(r => r.part.id)).toEqual(["b", "a"]);
+    expect(getPickerResults(index, "", { [id]: filter }, null).map(r => r.part.id)).toEqual(["a"]);
+  });
+
+  it("covers every declared information column and resolves ties by identity", () => {
+    expect(sortableValues.map(([id]) => id)).toEqual(CONNECTOR_PICKER_COLUMNS.map(c => c.id));
+    const index = buildPickerIndex([part("b", { partNumber: "SAME" }), part("a", { partNumber: "SAME" })]);
+    expect(getPickerResults(index, "", {}, { id: "family", direction: "desc" }).map(r => r.part.id)).toEqual(["a", "b"]);
+  });
+});

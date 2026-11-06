@@ -6,6 +6,7 @@ import {
   openDetailsWithRetry,
   putPartRelationship,
   registerAndSignIn,
+  selectConnectorPickerPart,
   uniqueToken
 } from "./helpers";
 
@@ -188,7 +189,7 @@ test("define connector can place an ITA frame with per-slot modules", async ({ p
   await page.getByRole("button", { name: "Define Connector" }).click();
   await expect(page.getByRole("dialog", { name: "Define Connector" })).toBeVisible();
   await page.getByPlaceholder("Search connectors...").fill(framePn);
-  await page.getByRole("row").filter({ hasText: framePn }).getByRole("button", { name: "Select" }).click();
+  await selectConnectorPickerPart(page, framePn, "connector");
   await expect(page.getByRole("button", { name: "Change connector" })).toContainText(`Part number: ${framePn}`);
   await expect(connectors).toHaveCount(1);
   await expect(page.getByLabel("Slot A module name")).toHaveValue("J1A");
@@ -199,21 +200,21 @@ test("define connector can place an ITA frame with per-slot modules", async ({ p
   await expect(page.getByRole("row").filter({ hasText: moduleAPn })).toBeVisible();
   await expect(page.getByRole("row").filter({ hasText: otherPn })).toHaveCount(0);
   await expect(page.getByRole("row").filter({ hasText: reversePn })).toHaveCount(0);
-  await page.getByRole("button", { name: "show reverse compatibility modules" }).click();
+  await page.getByRole("button", { name: "Opposite-side modules" }).click();
   await expect(page.getByRole("row").filter({ hasText: reversePn })).toBeVisible();
   await expect(page.getByRole("row").filter({ hasText: moduleAPn })).toHaveCount(0);
-  await page.getByRole("button", { name: "show reverse compatibility modules" }).click();
+  await page.getByRole("button", { name: "Same-side modules" }).click();
   await expect(page.getByRole("row").filter({ hasText: reversePn })).toHaveCount(0);
   await expect(page.getByRole("row").filter({ hasText: moduleAPn })).toBeVisible();
-  await page.getByRole("row").filter({ hasText: moduleAPn }).getByRole("button", { name: "Select" }).click();
+  await selectConnectorPickerPart(page, moduleAPn, "module");
   await expect(page.getByRole("button", { name: "Change slot A module" })).toContainText(`Part number: ${moduleAPn}`);
 
   await page.getByRole("button", { name: "Define slot B module" }).click();
-  await page.getByRole("row").filter({ hasText: moduleBPn }).getByRole("button", { name: "Select" }).click();
+  await selectConnectorPickerPart(page, moduleBPn, "module");
   await expect(page.getByRole("button", { name: "Change slot B module" })).toContainText(`Part number: ${moduleBPn}`);
 
   await openDetailsWithRetry(page);
   await expect(page.getByRole("heading", { name: "Connectors" })).toBeVisible();
-  await expect(page.getByText(/J1A: 2 TP ITA/)).toBeVisible();
-  await expect(page.getByText(/J1B: 2 MC ITA/)).toBeVisible();
+  await expect(page.getByRole("article", { name: "Module J1A", exact: true })).toContainText("2 TP ITA");
+  await expect(page.getByRole("article", { name: "Module J1B", exact: true })).toContainText("2 MC ITA");
 });

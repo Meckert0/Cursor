@@ -6,6 +6,7 @@ import {
   openDetailsWithRetry,
   putPartRelationship,
   registerAndSignIn,
+  selectConnectorPickerPart,
   uniqueToken
 } from "./helpers";
 
@@ -64,7 +65,7 @@ test("connector positions form one A1–D40 range in Details, Canvas, and Wireli
   await page.locator('[class*="connectorNode"]').first().click();
   await page.getByRole("button", { name: "Define Connector" }).click();
   await page.getByPlaceholder("Search connectors...").fill(modulePartNumber);
-  await page.getByRole("row").filter({ hasText: modulePartNumber }).getByRole("button", { name: "Select" }).click();
+  await selectConnectorPickerPart(page, modulePartNumber, "connector");
   await expect(page.getByTestId("canvas-save-status")).toContainText(/Saved at|All changes saved/, { timeout: 20_000 });
 
   await page.getByRole("button", { name: "Show Details" }).click();

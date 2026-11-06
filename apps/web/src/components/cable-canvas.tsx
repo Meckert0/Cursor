@@ -344,6 +344,11 @@ export function CableCanvas({
     return connectors.find((connector) => connector.id === selectedEntity.id) ?? null;
   }, [connectors, selectedEntity]);
   const selectedIsFrame = selectedConnector ? isFrameHousingConnector(selectedConnector) : false;
+  const selectedLibraryPart = (selectedIsFrame ? frameCatalog : moduleCatalog).find((part) =>
+    selectedConnector?.libraryComponentId
+      ? part.id === selectedConnector.libraryComponentId
+      : part.partNumber === selectedConnector?.partNumber
+  );
   const moduleDefined = Boolean(selectedConnector?.libraryComponentId);
   const allowedBackshellOptions = useMemo(() => {
     if (selectedIsFrame) {
@@ -1173,212 +1178,233 @@ export function CableCanvas({
             </div>
           ) : null}
           {selectedEntity?.type === "connector" && selectedConnector ? (
-            <div className={styles.detailPanel}>
-              <label>
-                {selectedIsFrame ? "Frame name" : "Connector name"}
-                <input
-                  value={connectorNameDraft}
-                  disabled={readOnly}
-                  onChange={(event) => setConnectorNameDraft(event.target.value)}
-                  onBlur={(event) => commitConnectorName(event.target.value)}
-                  placeholder="e.g. J1"
-                />
-              </label>
-              {connectorNameError ? <span className={styles.quickAddError}>{connectorNameError}</span> : null}
-              {moduleDefined ? (
-                <button
-                  type="button"
-                  className={styles.changeConnectorButton}
-                  onClick={() => {
-                    setConnectorSearchTarget(selectedIsFrame ? "frame" : "connector");
-                    setShowConnectorSearchDialog(true);
-                  }}
-                  disabled={readOnly}
-                  aria-label={selectedIsFrame ? "Change frame" : "Change connector"}
-                >
-                  {selectedConnector.partNumber
-                    ? `Part number: ${selectedConnector.partNumber}`
-                    : selectedIsFrame ? "Change frame" : "Change connector"}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setConnectorSearchTarget(selectedIsFrame ? "frame" : "connector");
-                    setShowConnectorSearchDialog(true);
-                  }}
-                  disabled={readOnly}
-                >
-                  {selectedIsFrame ? "Define Frame" : "Define Connector"}
-                </button>
-              )}
+            <div className={`${styles.detailPanel} ${styles.partDetailsPanel}`}>
+              <section className={styles.partIdentity} aria-label={selectedIsFrame ? "Frame details" : "Connector details"}>
+                <h2 className={styles.partHeading}>{selectedIsFrame ? "Frame" : "Connector"}</h2>
+                <label>
+                  {selectedIsFrame ? "Frame name" : "Connector name"}
+                  <input
+                    value={connectorNameDraft}
+                    disabled={readOnly}
+                    onChange={(event) => setConnectorNameDraft(event.target.value)}
+                    onBlur={(event) => commitConnectorName(event.target.value)}
+                    placeholder="e.g. J1"
+                  />
+                </label>
+                {connectorNameError ? <span className={styles.quickAddError}>{connectorNameError}</span> : null}
+                {moduleDefined ? (
+                  <button
+                    type="button"
+                    className={styles.changeConnectorButton}
+                    onClick={() => {
+                      setConnectorSearchTarget(selectedIsFrame ? "frame" : "connector");
+                      setShowConnectorSearchDialog(true);
+                    }}
+                    disabled={readOnly}
+                    aria-label={selectedIsFrame ? "Change frame" : "Change connector"}
+                  >
+                    {selectedConnector.partNumber
+                      ? `Part number: ${selectedConnector.partNumber}`
+                      : selectedIsFrame ? "Change frame" : "Change connector"}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setConnectorSearchTarget(selectedIsFrame ? "frame" : "connector");
+                      setShowConnectorSearchDialog(true);
+                    }}
+                    disabled={readOnly}
+                  >
+                    {selectedIsFrame ? "Define Frame" : "Define Connector"}
+                  </button>
+                )}
+                {selectedLibraryPart?.description ? <p className={styles.partDescription}>{selectedLibraryPart.description}</p> : null}
+              </section>
               {selectedIsFrame ? (
-                <div className={styles.slotBlocks}>
-                  {(selectedConnector.slots ?? []).map((slot) => {
-                    const slotModuleDefined = Boolean(slot.libraryComponentId);
-                    const backshellStatus = new Map(
-                      moduleBackshellCompat
-                        .filter((row) => row.modulePartId === slot.libraryComponentId)
-                        .map((row) => [row.backshellPartId, row.status] as const)
-                    );
-                    const strainStatus = new Map(
-                      moduleStrainReliefCompat
-                        .filter((row) => row.modulePartId === slot.libraryComponentId)
-                        .map((row) => [row.strainReliefPartId, row.status] as const)
-                    );
-                    const slotBackshells = filterAllowedAccessoryOptionsForModule(
-                      backshellCatalogState,
-                      slot.libraryComponentId,
-                      backshellStatus
-                    );
-                    const slotStrainReliefs = filterAllowedAccessoryOptionsForModule(
-                      strainReliefCatalogState,
-                      slot.libraryComponentId,
-                      strainStatus
-                    );
-                    return (
-                      <div key={slot.slotId} className={styles.slotBlock}>
-                        {(selectedConnector.slots?.length ?? 0) === 1 ? null : (
-                          <>
-                            <label>
-                              Slot {slot.slotId} name
-                              <input
-                                className={styles.slotNameInput}
-                                value={slotNameDrafts[slot.slotId] ?? slot.reference}
+                <section className={styles.partModules} aria-label="Frame modules">
+                  <h2 className={styles.partHeading}>Modules</h2>
+                  <div className={styles.slotBlocks}>
+                    {(selectedConnector.slots ?? []).map((slot) => {
+                      const slotModuleDefined = Boolean(slot.libraryComponentId);
+                      const slotLibraryPart = moduleCatalog.find((part) =>
+                        slot.libraryComponentId ? part.id === slot.libraryComponentId : part.partNumber === slot.partNumber
+                      );
+                      const backshellStatus = new Map(
+                        moduleBackshellCompat
+                          .filter((row) => row.modulePartId === slot.libraryComponentId)
+                          .map((row) => [row.backshellPartId, row.status] as const)
+                      );
+                      const strainStatus = new Map(
+                        moduleStrainReliefCompat
+                          .filter((row) => row.modulePartId === slot.libraryComponentId)
+                          .map((row) => [row.strainReliefPartId, row.status] as const)
+                      );
+                      const slotBackshells = filterAllowedAccessoryOptionsForModule(
+                        backshellCatalogState,
+                        slot.libraryComponentId,
+                        backshellStatus
+                      );
+                      const slotStrainReliefs = filterAllowedAccessoryOptionsForModule(
+                        strainReliefCatalogState,
+                        slot.libraryComponentId,
+                        strainStatus
+                      );
+                      return (
+                        <article key={slot.slotId} className={styles.slotBlock} aria-label={`Slot ${slot.slotId} module`}>
+                          <div className={styles.slotIdentity}>
+                            {(selectedConnector.slots?.length ?? 0) === 1 ? (
+                              <div className={styles.moduleName}><span>Module name</span><strong>{slot.reference}</strong></div>
+                            ) : (
+                              <>
+                                <label>
+                                  Slot {slot.slotId} name
+                                  <input
+                                    className={styles.slotNameInput}
+                                    value={slotNameDrafts[slot.slotId] ?? slot.reference}
+                                    disabled={readOnly}
+                                    onChange={(event) =>
+                                      setSlotNameDrafts((previous) => ({
+                                        ...previous,
+                                        [slot.slotId]: event.target.value
+                                      }))
+                                    }
+                                    onBlur={(event) => commitSlotName(slot.slotId, event.target.value)}
+                                    placeholder={`e.g. ${selectedConnector.reference}${slot.slotId}`}
+                                    aria-label={`Slot ${slot.slotId} module name`}
+                                  />
+                                </label>
+                                {slotNameErrors[slot.slotId] ? (
+                                  <span className={styles.quickAddError}>{slotNameErrors[slot.slotId]}</span>
+                                ) : null}
+                              </>
+                            )}
+                          </div>
+                          <div className={styles.modulePart}>
+                            {slotModuleDefined ? (
+                              <button
+                                type="button"
+                                className={styles.changeConnectorButton}
+                                onClick={() => {
+                                  setConnectorSearchTarget({ slotId: slot.slotId });
+                                  setShowConnectorSearchDialog(true);
+                                }}
                                 disabled={readOnly}
-                                onChange={(event) =>
-                                  setSlotNameDrafts((previous) => ({
-                                    ...previous,
-                                    [slot.slotId]: event.target.value
-                                  }))
-                                }
-                                onBlur={(event) => commitSlotName(slot.slotId, event.target.value)}
-                                placeholder={`e.g. ${selectedConnector.reference}${slot.slotId}`}
-                                aria-label={`Slot ${slot.slotId} module name`}
-                              />
-                            </label>
-                            {slotNameErrors[slot.slotId] ? (
-                              <span className={styles.quickAddError}>{slotNameErrors[slot.slotId]}</span>
-                            ) : null}
-                          </>
-                        )}
-                        {slotModuleDefined ? (
-                          <button
-                            type="button"
-                            className={styles.changeConnectorButton}
-                            onClick={() => {
-                              setConnectorSearchTarget({ slotId: slot.slotId });
-                              setShowConnectorSearchDialog(true);
-                            }}
-                            disabled={readOnly}
-                            aria-label={`Change slot ${slot.slotId} module`}
-                          >
-                            {slot.partNumber ? `Part number: ${slot.partNumber}` : "Change module"}
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setConnectorSearchTarget({ slotId: slot.slotId });
-                              setShowConnectorSearchDialog(true);
-                            }}
-                            disabled={readOnly}
-                            aria-label={`Define slot ${slot.slotId} module`}
-                          >
-                            Select module
-                          </button>
-                        )}
-                        <label>
-                          Backshell
-                          <select
-                            value={slot.backshellLibraryComponentId ?? ""}
-                            disabled={readOnly || !slotModuleDefined}
-                            aria-label={`Slot ${slot.slotId} backshell`}
-                            onChange={(event) =>
-                              applySlotAccessorySelection(slot.slotId, "backshell", event.target.value)
-                            }
-                          >
-                            <option value="">No backshell</option>
-                            {slotBackshells.map((option) => (
-                              <option key={option.component.id} value={option.component.id}>
-                                {option.label}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <label>
-                          Strain relief
-                          <select
-                            value={slot.strainReliefLibraryComponentId ?? ""}
-                            disabled={readOnly || !slotModuleDefined}
-                            aria-label={`Slot ${slot.slotId} strain relief`}
-                            onChange={(event) =>
-                              applySlotAccessorySelection(slot.slotId, "strainRelief", event.target.value)
-                            }
-                          >
-                            <option value="">No strain relief</option>
-                            {slotStrainReliefs.map((option) => (
-                              <option key={option.component.id} value={option.component.id}>
-                                {option.label}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                      </div>
-                    );
-                  })}
-                </div>
+                                aria-label={`Change slot ${slot.slotId} module`}
+                              >
+                                {slot.partNumber ? `Part number: ${slot.partNumber}` : "Change module"}
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setConnectorSearchTarget({ slotId: slot.slotId });
+                                  setShowConnectorSearchDialog(true);
+                                }}
+                                disabled={readOnly}
+                                aria-label={`Define slot ${slot.slotId} module`}
+                              >
+                                Select module
+                              </button>
+                            )}
+                            {slotLibraryPart?.description ? <p className={styles.partDescription}>{slotLibraryPart.description}</p> : null}
+                          </div>
+                          <label>
+                            Backshell
+                            <select
+                              value={slot.backshellLibraryComponentId ?? ""}
+                              disabled={readOnly || !slotModuleDefined}
+                              aria-label={`Slot ${slot.slotId} backshell`}
+                              onChange={(event) =>
+                                applySlotAccessorySelection(slot.slotId, "backshell", event.target.value)
+                              }
+                            >
+                              <option value="">No backshell</option>
+                              {slotBackshells.map((option) => (
+                                <option key={option.component.id} value={option.component.id}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label>
+                            Strain relief
+                            <select
+                              value={slot.strainReliefLibraryComponentId ?? ""}
+                              disabled={readOnly || !slotModuleDefined}
+                              aria-label={`Slot ${slot.slotId} strain relief`}
+                              onChange={(event) =>
+                                applySlotAccessorySelection(slot.slotId, "strainRelief", event.target.value)
+                              }
+                            >
+                              <option value="">No strain relief</option>
+                              {slotStrainReliefs.map((option) => (
+                                <option key={option.component.id} value={option.component.id}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        </article>
+                      );
+                    })}
+                  </div>
+                  {!selectedConnector.slots?.length ? <p className={styles.partDescription}>Define a frame to choose its modules.</p> : null}
+                </section>
               ) : (
-                <>
-                  <label>
-                    Backshell
-                    <select
-                      value={selectedConnector.backshellLibraryComponentId ?? ""}
-                      disabled={readOnly || !moduleDefined}
-                      onChange={(event) => applyConnectorAccessorySelection("backshell", event.target.value)}
-                    >
-                      <option value="">No backshell</option>
-                      {selectedConnector.backshellLibraryComponentId &&
-                      !allowedBackshellOptions.some(
-                        (option) => option.component.id === selectedConnector.backshellLibraryComponentId
-                      ) ? (
-                        <option value={selectedConnector.backshellLibraryComponentId} disabled>
-                          {selectedConnector.backshellPartNumber ?? selectedConnector.backshellLibraryComponentId}{" "}
-                          (incompatible — reselect)
-                        </option>
-                      ) : null}
-                      {allowedBackshellOptions.map((option) => (
-                        <option key={option.component.id} value={option.component.id}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    Strain relief
-                    <select
-                      value={selectedConnector.strainReliefLibraryComponentId ?? ""}
-                      disabled={readOnly || !moduleDefined}
-                      onChange={(event) => applyConnectorAccessorySelection("strainRelief", event.target.value)}
-                    >
-                      <option value="">No strain relief</option>
-                      {selectedConnector.strainReliefLibraryComponentId &&
-                      !allowedStrainReliefOptions.some(
-                        (option) => option.component.id === selectedConnector.strainReliefLibraryComponentId
-                      ) ? (
-                        <option value={selectedConnector.strainReliefLibraryComponentId} disabled>
-                          {selectedConnector.strainReliefPartNumber ??
-                            selectedConnector.strainReliefLibraryComponentId}{" "}
-                          (incompatible — reselect)
-                        </option>
-                      ) : null}
-                      {allowedStrainReliefOptions.map((option) => (
-                        <option key={option.component.id} value={option.component.id}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                <section className={styles.partAccessories} aria-label="Connector accessories">
+                  <h2 className={styles.partHeading}>Accessories</h2>
+                  <div className={styles.accessoryFields}>
+                    <label>
+                      Backshell
+                      <select
+                        value={selectedConnector.backshellLibraryComponentId ?? ""}
+                        disabled={readOnly || !moduleDefined}
+                        onChange={(event) => applyConnectorAccessorySelection("backshell", event.target.value)}
+                      >
+                        <option value="">No backshell</option>
+                        {selectedConnector.backshellLibraryComponentId &&
+                        !allowedBackshellOptions.some(
+                          (option) => option.component.id === selectedConnector.backshellLibraryComponentId
+                        ) ? (
+                          <option value={selectedConnector.backshellLibraryComponentId} disabled>
+                            {selectedConnector.backshellPartNumber ?? selectedConnector.backshellLibraryComponentId}{" "}
+                            (incompatible — reselect)
+                          </option>
+                        ) : null}
+                        {allowedBackshellOptions.map((option) => (
+                          <option key={option.component.id} value={option.component.id}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Strain relief
+                      <select
+                        value={selectedConnector.strainReliefLibraryComponentId ?? ""}
+                        disabled={readOnly || !moduleDefined}
+                        onChange={(event) => applyConnectorAccessorySelection("strainRelief", event.target.value)}
+                      >
+                        <option value="">No strain relief</option>
+                        {selectedConnector.strainReliefLibraryComponentId &&
+                        !allowedStrainReliefOptions.some(
+                          (option) => option.component.id === selectedConnector.strainReliefLibraryComponentId
+                        ) ? (
+                          <option value={selectedConnector.strainReliefLibraryComponentId} disabled>
+                            {selectedConnector.strainReliefPartNumber ??
+                              selectedConnector.strainReliefLibraryComponentId}{" "}
+                            (incompatible — reselect)
+                          </option>
+                        ) : null}
+                        {allowedStrainReliefOptions.map((option) => (
+                          <option key={option.component.id} value={option.component.id}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
                   {!moduleDefined ? (
                     <span className={styles.connectorPartNumber}>Define connector first</span>
                   ) : allowedBackshellOptions.length === 0 || allowedStrainReliefOptions.length === 0 ? (
@@ -1386,7 +1412,7 @@ export function CableCanvas({
                       No compatible options — add rows in Compatibility Manager
                     </span>
                   ) : null}
-                </>
+                </section>
               )}
             </div>
           ) : null}

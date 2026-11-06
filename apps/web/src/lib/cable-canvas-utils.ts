@@ -1,3 +1,4 @@
+import { isSimHost } from "./sim-modules";
 import type { LibraryComponentDto, RevisionDto } from "./api";
 import {
   isCableSectionPath,
@@ -250,6 +251,7 @@ export function readPinCountFromComponent(component: LibraryComponentDto): numbe
 }
 
 export function buildConnectorPinsFromComponent(component: LibraryComponentDto): Connector["pins"] {
+  if (isSimHost(component)) return [];
   const attrs = component.attributes as { pinIds?: unknown } | undefined;
   if (Array.isArray(attrs?.pinIds) && attrs.pinIds.length > 0) {
     return attrs.pinIds.map((pinId) => {

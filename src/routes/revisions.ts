@@ -38,6 +38,14 @@ function withSnapshotHash(revision: Revision) {
   };
 }
 
+const simInsertsSchema = z.array(z.object({
+  slotId: z.string().min(1),
+  occupiedSlotIds: z.array(z.string().min(1)).min(1),
+  libraryComponentId: z.string().min(1),
+  partNumber: z.string().min(1),
+  pins: z.array(z.object({ id: z.string(), number: z.string() }))
+})).optional();
+
 const snapshotSchema = z.object({
   connectors: z
     .array(
@@ -51,6 +59,7 @@ const snapshotSchema = z.object({
         strainReliefPartNumber: z.string().optional(),
         strainReliefLibraryComponentId: z.string().optional(),
         pins: z.array(z.object({ id: z.string(), number: z.string() })),
+        simInserts: simInsertsSchema,
         location: z.object({ x: z.number(), y: z.number() }).optional(),
         slots: z
           .array(
@@ -60,6 +69,7 @@ const snapshotSchema = z.object({
               partNumber: z.string().optional(),
               libraryComponentId: z.string().optional(),
               pins: z.array(z.object({ id: z.string(), number: z.string() })),
+              simInserts: simInsertsSchema,
               backshellPartNumber: z.string().optional(),
               backshellLibraryComponentId: z.string().optional(),
               strainReliefPartNumber: z.string().optional(),
@@ -393,7 +403,7 @@ export function registerRevisionRoutes(app: FastifyInstance) {
 
     const libraryLookup = await loadLibraryLookup(app.store);
     const compatLookup = await loadCompatLookup(app.store);
-    const partRelationships = await app.store.listPartRelationships({ relationshipType: "MODULE_ALLOWED" });
+    const partRelationships = await app.store.listPartRelationships();
     const startedAt = Date.now();
     let report;
     try {

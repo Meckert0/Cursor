@@ -1,4 +1,5 @@
-import type { LibraryComponentDto, RevisionDto } from "./api";
+import { isSimHost } from "./sim-modules";
+import type { LibraryComponentDto, RevisionDto, SimInsertAssignmentDto } from "./api";
 import {
   expandConnectorsForDetails,
   findSlotByReference,
@@ -62,6 +63,7 @@ export type WirelistTemplateHeader = (typeof WIRELIST_TEMPLATE_HEADERS)[number];
 
 type ConnectorCatalogEntry = {
   partNumber: string;
+  electricalMode?: string;
   attributes?: Record<string, unknown> | null;
 };
 
@@ -188,6 +190,7 @@ function buildCatalogPinsByPartNumber(
 ): Map<string, string[]> {
   const catalogPinsByPartNumber = new Map<string, string[]>();
   for (const component of connectorCatalog) {
+    if (isSimHost({ ...component, id: "catalog", category: "module" })) continue;
     const partKey = component.partNumber?.trim().toLowerCase();
     if (!partKey) {
       continue;
@@ -240,7 +243,7 @@ function resolvePinId(
   return resolvePinOnList(
     connector.pins,
     pinNumber,
-    catalogPinsForPartNumber(connector.partNumber, catalogPinsByPartNumber)
+    connector.simInserts !== undefined ? [] : catalogPinsForPartNumber(connector.partNumber, catalogPinsByPartNumber)
   );
 }
 
@@ -263,7 +266,7 @@ export function resolveWirelistEndpoint(
     const localPinId = resolvePinOnList(
       slotMatch.slot.pins,
       pinNumber,
-      catalogPinsForPartNumber(slotMatch.slot.partNumber, catalogPinsByPartNumber)
+      slotMatch.slot.simInserts !== undefined ? [] : catalogPinsForPartNumber(slotMatch.slot.partNumber, catalogPinsByPartNumber)
     );
     return {
       nodeId: slotMatch.connector.id,
@@ -646,12 +649,14 @@ export function buildConnectorPositionLookup(
     reference: string;
     partNumber?: string;
     pins: Array<{ id?: string; number: string }>;
+    simInserts?: SimInsertAssignmentDto[];
     slots?: Array<{
       slotId: string;
       reference: string;
       partNumber?: string;
       libraryComponentId?: string;
       pins: Array<{ id: string; number: string }>;
+      simInserts?: SimInsertAssignmentDto[];
     }>;
   }>,
   connectorCatalog: ConnectorCatalogEntry[] = []
@@ -659,6 +664,7 @@ export function buildConnectorPositionLookup(
   const catalogPinsByPartNumber = buildCatalogPinsByPartNumber(connectorCatalog);
 
   const lookup = new Map<string, Set<string>>();
+  const simHosts = new Set(connectorCatalog.filter(part => isSimHost({ ...part, id: "catalog", category: "module" })).map(part => part.partNumber.trim().toLowerCase()));
   const logical = expandConnectorsForDetails(
     connectors.map((connector, index) => ({
       id: connector.id ?? `logical-${index}`,
@@ -668,7 +674,8 @@ export function buildConnectorPositionLookup(
         id: pin.id ?? String(pinIndex + 1),
         number: pin.number
       })),
-      slots: connector.slots
+      slots: connector.slots,
+      simInserts: connector.simInserts
     }))
   );
   for (const connector of logical) {
@@ -677,8 +684,9 @@ export function buildConnectorPositionLookup(
       continue;
     }
     const catalogPins = catalogPinsForPartNumber(connector.partNumber, catalogPinsByPartNumber);
-    const positions =
-      catalogPins.length > 0
+    const legacyHost = connector.simInserts === undefined && simHosts.has(connector.partNumber?.trim().toLowerCase() ?? "");
+    const positions = legacyHost ? new Set<string>() :
+      connector.simInserts === undefined && catalogPins.length > 0
         ? new Set(catalogPins)
         : new Set(connector.pins.map((pin) => pin.number.trim()).filter((number) => number.length > 0));
     lookup.set(key, positions);
@@ -732,27 +740,35 @@ function findModuleForLocation(
     id: string;
     reference: string;
     libraryComponentId?: string;
-    slots?: Array<{ slotId: string; reference: string; libraryComponentId?: string }>;
+    simInserts?: SimInsertAssignmentDto[];
+    slots?: Array<{ slotId: string; reference: string; libraryComponentId?: string; simInserts?: SimInsertAssignmentDto[] }>;
   }>
-): { libraryComponentId?: string } | undefined {
-  const { connectorRef } = parseWirelistLocation(location);
+): { libraryComponentId?: string; pinNumber?: string } | undefined {
+  const { connectorRef, pinNumber } = parseWirelistLocation(location);
+  const resolve = (module: { libraryComponentId?: string; simInserts?: SimInsertAssignmentDto[] } | undefined) => {
+    if (module?.simInserts === undefined) return module;
+    const separator = pinNumber.indexOf("/");
+    if (separator <= 0) return undefined;
+    const insert = module.simInserts.find(item => item.slotId.toLowerCase() === pinNumber.slice(0, separator).toLowerCase());
+    return insert ? { libraryComponentId: insert.libraryComponentId, pinNumber: pinNumber.slice(separator + 1) } : undefined;
+  };
   if (!connectorRef) {
     return undefined;
   }
   const slotMatch = findSlotByReference(connectors, connectorRef);
   if (slotMatch) {
-    return slotMatch.slot;
+    return resolve(slotMatch.slot);
   }
   const exact = connectors.find(
     (connector) => connector.reference.trim() === connectorRef || connector.id.trim() === connectorRef
   );
   if (exact) {
-    return exact;
+    return resolve(exact);
   }
   const key = connectorRef.toLowerCase();
-  return connectors.find(
+  return resolve(connectors.find(
     (connector) => connector.reference.trim().toLowerCase() === key || connector.id.trim().toLowerCase() === key
-  );
+  ));
 }
 
 const CONTACT_POSITION_MESSAGE = "Contact is not compatible with this position";
@@ -764,7 +780,8 @@ export function verifyWirelistContact(
     id: string;
     reference: string;
     libraryComponentId?: string;
-    slots?: Array<{ slotId: string; reference: string; libraryComponentId?: string }>;
+    simInserts?: SimInsertAssignmentDto[];
+    slots?: Array<{ slotId: string; reference: string; libraryComponentId?: string; simInserts?: SimInsertAssignmentDto[] }>;
   }>,
   contactCatalog: Array<{ id: string; partNumber: string }>,
   moduleContactCompat: WirelistContactCompatRow[],
@@ -799,7 +816,7 @@ export function verifyWirelistContact(
     if (matching.length === 0) {
       return { state: "invalid", message: CONTACT_POSITION_MESSAGE };
     }
-    const pinKey = parseWirelistLocation(locationValue).pinNumber.trim().toLowerCase();
+    const pinKey = (connector?.pinNumber ?? parseWirelistLocation(locationValue).pinNumber).trim().toLowerCase();
     // Rows without parentPositions allow the contact on every pin of the module.
     const pinMatched = matching.filter((row) => {
       if (row.parentPositions.length === 0) {

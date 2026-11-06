@@ -18,11 +18,12 @@ import {
 } from "@/lib/api";
 import { requireSignedInUser } from "@/lib/auth";
 import { collectAttributesFromFormData, isCanvasDefinablePart } from "@/lib/part-fields";
+import { isSimInsert } from "@/lib/sim-modules";
 import { HarnessDescriptionField } from "./harness-description-field";
 import styles from "./page.module.css";
 
 function connectorCatalogForCanvas(catalog: Awaited<ReturnType<typeof listLibraryComponents>>) {
-  return catalog.filter((item) => isCanvasDefinablePart(item));
+  return catalog.filter((item) => isCanvasDefinablePart(item) || isSimInsert(item));
 }
 
 async function loadConnectorCatalog() {
@@ -65,7 +66,8 @@ export default async function HarnessCanvasPage({
     moduleAllowedRelationships,
     contactCatalog,
     moduleContactCompat,
-    contactRelationships
+    contactRelationships,
+    insertAllowedRelationships
   ] = await Promise.all([
     loadConnectorCatalog(),
     listLibraryComponents({
@@ -92,7 +94,8 @@ export default async function HarnessCanvasPage({
       isActive: true
     }),
     listModuleContactCompat(),
-    listPartRelationships({ relationshipType: "CONTACT_ALLOWED" })
+    listPartRelationships({ relationshipType: "CONTACT_ALLOWED" }),
+    listPartRelationships({ relationshipType: "INSERT_ALLOWED" })
   ]);
 
   async function quickAddConnectorAction(formData: FormData) {
@@ -253,6 +256,7 @@ export default async function HarnessCanvasPage({
             moduleBackshellCompat={moduleBackshellCompat}
             moduleStrainReliefCompat={moduleStrainReliefCompat}
             moduleAllowedRelationships={moduleAllowedRelationships}
+            insertAllowedRelationships={insertAllowedRelationships}
             wireCatalog={wireCatalog}
             sleeveCatalog={sleeveCatalog}
             contactCatalog={contactCatalog}

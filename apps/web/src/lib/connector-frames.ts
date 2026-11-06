@@ -25,6 +25,7 @@ export type LogicalConnector = {
   partNumber?: string;
   libraryComponentId?: string;
   pins: ConnectorPin[];
+  simInserts?: SnapshotConnector["simInserts"];
   backshellPartNumber?: string;
   backshellLibraryComponentId?: string;
   strainReliefPartNumber?: string;
@@ -268,6 +269,7 @@ export function expandConnectorsForDetails(connectors: SnapshotConnector[]): Log
         partNumber: connector.partNumber,
         libraryComponentId: connector.libraryComponentId,
         pins: connector.pins,
+        simInserts: connector.simInserts,
         backshellPartNumber: connector.backshellPartNumber,
         backshellLibraryComponentId: connector.backshellLibraryComponentId,
         strainReliefPartNumber: connector.strainReliefPartNumber,
@@ -283,6 +285,7 @@ export function expandConnectorsForDetails(connectors: SnapshotConnector[]): Log
         partNumber: slot.partNumber,
         libraryComponentId: slot.libraryComponentId,
         pins: slot.pins,
+        simInserts: slot.simInserts,
         backshellPartNumber: slot.backshellPartNumber,
         backshellLibraryComponentId: slot.backshellLibraryComponentId,
         strainReliefPartNumber: slot.strainReliefPartNumber,

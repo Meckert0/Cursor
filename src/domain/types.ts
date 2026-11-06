@@ -56,12 +56,21 @@ export interface ConnectorPin {
   number: string;
 }
 
+export interface SimInsertAssignment {
+  slotId: string;
+  occupiedSlotIds: string[];
+  libraryComponentId: string;
+  partNumber: string;
+  pins: ConnectorPin[];
+}
+
 export interface ConnectorSlot {
   slotId: string;
   reference: string;
   partNumber?: string;
   libraryComponentId?: string;
   pins: ConnectorPin[];
+  simInserts?: SimInsertAssignment[];
   backshellPartNumber?: string;
   backshellLibraryComponentId?: string;
   strainReliefPartNumber?: string;
@@ -78,6 +87,7 @@ export interface SnapshotConnector {
   strainReliefPartNumber?: string;
   strainReliefLibraryComponentId?: string;
   pins: ConnectorPin[];
+  simInserts?: SimInsertAssignment[];
   location?: { x: number; y: number };
   /** Present when the canvas node is an ITA/Receiver frame; each slot is a wirelist connector. */
   slots?: ConnectorSlot[];

@@ -1,17 +1,18 @@
 import type { LibraryComponentDto } from "./api";
 import { isCanvasConnectorPart, isCanvasFramePart } from "./part-fields";
 import { normalizeCatalogSide } from "./connector-frames";
+import { isSimInsert } from "./sim-modules";
 
 export type PickerValue = string | number | null;
-export type PickerMode = "connector" | "frame";
+export type PickerMode = "connector" | "frame" | "sim-insert";
 
 export function isPickerPart(part: LibraryComponentDto, mode: PickerMode): boolean {
-  return mode === "frame" ? isCanvasFramePart(part) : isCanvasConnectorPart(part);
+  return mode === "sim-insert" ? isSimInsert(part) : mode === "frame" ? isCanvasFramePart(part) : isCanvasConnectorPart(part);
 }
 export type PickerColumnId =
   | "partNumber" | "description" | "type" | "family" | "side" | "positions"
   | "stockStatus" | "reviewStatus" | "gender" | "moduleCapacity"
-  | "contactFamily" | "contactSize" | "emi";
+  | "contactFamily" | "contactSize" | "emi" | "slotOccupancy";
 
 export interface PickerColumn {
   id: PickerColumnId;
@@ -75,6 +76,7 @@ export const CONNECTOR_PICKER_COLUMNS: readonly PickerColumn[] = [
   { id: "partNumber", label: "Part number", kind: "text", width: 165, value: p => p.partNumber },
   { id: "description", label: "Description", kind: "text", width: 245, value: p => text(p.description) },
   { id: "type", label: "Type", kind: "values", width: 130, value: p => {
+    if (isSimInsert(p)) return "SIM insert";
     if (!isFrame(p)) return "Module";
     const side = normalizeCatalogSide(p.partType);
     return side === "ITA" ? "ITA housing" : side === "RECEIVER" ? "Receiver housing" : "Frame";
@@ -94,15 +96,18 @@ export const CONNECTOR_PICKER_COLUMNS: readonly PickerColumn[] = [
   { id: "emi", label: "EMI shielding", kind: "values", width: 135, value: p => {
     const value = p.attributes.emi;
     return value === true || value === "true" ? "Yes" : value === false || value === "false" ? "No" : "Unknown";
-  }, applies: isModule }
+  }, applies: isModule },
+  { id: "slotOccupancy", label: "Slots occupied", kind: "number", width: 135, value: p => wholeNumber(p.attributes.slotOccupancy) ?? 1, applies: isSimInsert }
 ];
 
 export const DEFAULT_PICKER_COLUMNS = CONNECTOR_PICKER_COLUMNS.slice(0, 8).map(c => c.id);
 export const TOP_PICKER_FILTERS: readonly PickerColumnId[] = ["type", "family", "side", "positions", "stockStatus"];
 export function pickerDefaultColumns(mode: PickerMode): PickerColumnId[] {
+  if (mode === "sim-insert") return [...DEFAULT_PICKER_COLUMNS, "slotOccupancy"];
   return DEFAULT_PICKER_COLUMNS.map(id => mode === "frame" && id === "positions" ? "moduleCapacity" : id);
 }
 export function pickerTopFilters(mode: PickerMode): PickerColumnId[] {
+  if (mode === "sim-insert") return TOP_PICKER_FILTERS.map(id => id === "positions" ? "slotOccupancy" : id);
   return TOP_PICKER_FILTERS.map(id => mode === "frame" && id === "positions" ? "moduleCapacity" : id);
 }
 export const pickerColumn = (id: PickerColumnId): PickerColumn => CONNECTOR_PICKER_COLUMNS.find(c => c.id === id)!;

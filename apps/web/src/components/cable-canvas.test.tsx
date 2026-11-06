@@ -78,6 +78,24 @@ function snapshot(): RevisionDto["snapshot"] {
 }
 
 describe("CableCanvas cable sections", () => {
+  it("expands only one SIM module at a time while keeping modules in the frame's module area", () => {
+    const host: LibraryComponentDto = { id: "sim-host", category: "module", partType: "MODULE", electricalMode: "INSERT_HOST", partNumber: "SIM-HOST", family: "SIM", description: "SIM host", attributes: { simSlotCount: 2 }, isActive: true, isReviewed: true, stockStatus: "in_stock", createdByUserId: "u", createdAt: "2026-01-01", lastEditedByUserId: "u", lastEditedAt: "2026-01-01", updatedAt: "2026-01-01" };
+    render(<CableCanvas revisionId="sim-disclosure" snapshot={{ ...snapshot(), paths: [], connectors: [{ id: "f", reference: "J1", partNumber: "FRAME", pins: [], slots: [
+      { slotId: "A", reference: "J1A", partNumber: host.partNumber, libraryComponentId: host.id, pins: [], simInserts: [] },
+      { slotId: "B", reference: "J1B", partNumber: host.partNumber, libraryComponentId: host.id, pins: [], simInserts: [] }
+    ] }] }} snapshotHash="hash" connectorCatalog={[host]} quickAddConnectorAction={async () => ({ ok: true, connectorCatalog: [host] })} />);
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Frame J1" }));
+    const modules = within(screen.getByRole("region", { name: "Frame modules" }));
+    const first = modules.getByRole("button", { name: "Configure SIM inserts for J1A" });
+    const second = modules.getByRole("button", { name: "Configure SIM inserts for J1B" });
+    fireEvent.click(first);
+    expect(first).toHaveAttribute("aria-expanded", "true");
+    fireEvent.click(second);
+    expect(first).toHaveAttribute("aria-expanded", "false");
+    expect(second).toHaveAttribute("aria-expanded", "true");
+    expect(modules.queryByRole("region", { name: "J1A SIM slots" })).not.toBeInTheDocument();
+    expect(modules.getByRole("region", { name: "J1B SIM slots" })).toBeVisible();
+  });
   it("creates separate connector and frame drafts and preserves their kind through undo and redo", () => {
     render(<CableCanvas revisionId="rev-separate-part-kinds" snapshot={{ ...snapshot(), connectors: [], paths: [] }} snapshotHash="hash" connectorCatalog={[]} quickAddConnectorAction={async () => ({ ok: true, connectorCatalog: [] })} />);
     fireEvent.click(screen.getByRole("button", { name: "Add frame" }));

@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { DetailsSummary } from "@/components/details-summary";
 import { ConnectorPickerDialog } from "@/components/connector-picker-dialog";
+import { SimInsertControls } from "@/components/sim-insert-controls";
+import { availableSimInserts, catalogModulePins, isSimHost, normalizeCanvasSimModules, simPlacement, usableSimPins, type SimInsertAssignment, type SimRelationship } from "@/lib/sim-modules";
 import type { LibraryComponentDto, RevisionDto } from "@/lib/api";
 import {
   buildNextCanvasId,
@@ -75,6 +77,7 @@ export function CableCanvas({
   moduleBackshellCompat = [],
   moduleStrainReliefCompat = [],
   moduleAllowedRelationships = [],
+  insertAllowedRelationships = [],
   wireCatalog = [],
   sleeveCatalog = [],
   contactCatalog,
@@ -97,6 +100,7 @@ export function CableCanvas({
     status: "allowed" | "forbidden" | "review";
   }>;
   moduleAllowedRelationships?: FrameModuleRelationship[];
+  insertAllowedRelationships?: SimRelationship[];
   wireCatalog?: LibraryComponentDto[];
   sleeveCatalog?: LibraryComponentDto[];
   contactCatalog?: LibraryComponentDto[];
@@ -121,7 +125,11 @@ export function CableCanvas({
   const nodeWidth = 120;
   const connectorNodeHeight = 56;
   const junctionNodeSize = 24;
-  const initialDraft = useMemo(() => loadInitialCanvasDraft(revisionId, snapshot), [revisionId, snapshot]);
+  const initialDraft = useMemo(() => {
+    const draft = loadInitialCanvasDraft(revisionId, snapshot);
+    const normalized = normalizeCanvasSimModules(draft.connectors, connectorCatalog, insertAllowedRelationships);
+    return { ...draft, connectors: normalized, recoveredDirty: draft.recoveredDirty || normalized !== draft.connectors };
+  }, [revisionId, snapshot, connectorCatalog, insertAllowedRelationships]);
   const [connectors, setConnectors] = useState<RevisionDto["snapshot"]["connectors"]>(() => initialDraft.connectors);
   const [junctions, setJunctions] = useState<JunctionNode[]>(() => initialDraft.junctions);
   const [pathsState, setPathsState] = useState<RevisionDto["snapshot"]["paths"]>(() => initialDraft.paths);
@@ -136,7 +144,8 @@ export function CableCanvas({
   const [backshellCatalogState] = useState<LibraryComponentDto[]>(backshellCatalog);
   const [strainReliefCatalogState] = useState<LibraryComponentDto[]>(strainReliefCatalog);
   const [showConnectorSearchDialog, setShowConnectorSearchDialog] = useState(false);
-  const [connectorSearchTarget, setConnectorSearchTarget] = useState<"connector" | "frame" | { slotId: string }>("connector");
+  const [connectorSearchTarget, setConnectorSearchTarget] = useState<"connector" | "frame" | { slotId: string } | { simSlotId: string; moduleSlotId?: string }>("connector");
+  const [expandedSimModule, setExpandedSimModule] = useState<string | null>(null);
   const [includeReverseCompat, setIncludeReverseCompat] = useState(false);
   const [connectorNameDraft, setConnectorNameDraft] = useState("");
   const [connectorNameError, setConnectorNameError] = useState<string | null>(null);
@@ -384,9 +393,18 @@ export function CableCanvas({
     return junctions.find((junction) => junction.id === selectedEntity.id) ?? null;
   }, [junctions, selectedEntity]);
   const selectedConnectorLibraryId = selectedConnector?.libraryComponentId;
+  const simSearchTarget = typeof connectorSearchTarget !== "string" && "simSlotId" in connectorSearchTarget ? connectorSearchTarget : null;
+  const selectedSimModule = simSearchTarget?.moduleSlotId
+    ? selectedConnector?.slots?.find(slot => slot.slotId === simSearchTarget.moduleSlotId)
+    : selectedConnector;
   const searchPool = useMemo(() => {
     if (connectorSearchTarget === "connector") return moduleCatalog;
     if (connectorSearchTarget === "frame") return frameCatalog;
+    if ("simSlotId" in connectorSearchTarget) {
+      const hostModule = connectorSearchTarget.moduleSlotId ? selectedConnector?.slots?.find(slot => slot.slotId === connectorSearchTarget.moduleSlotId) : selectedConnector;
+      const host = moduleCatalog.find(part => part.id === hostModule?.libraryComponentId);
+      return host ? availableSimInserts(host, connectorSearchTarget.simSlotId, hostModule?.simInserts ?? [], connectorCatalogState, insertAllowedRelationships) : [];
+    }
     if (!selectedConnectorLibraryId) {
       return [];
     }
@@ -404,7 +422,9 @@ export function CableCanvas({
     includeReverseCompat,
     moduleAllowedRelationships,
     moduleCatalog,
-    selectedConnectorLibraryId
+    selectedConnectorLibraryId,
+    selectedConnector,
+    insertAllowedRelationships
   ]);
   const connectorNameKey = selectedConnector
     ? `${selectedConnector.id}:${selectedConnector.reference}`
@@ -779,7 +799,8 @@ export function CableCanvas({
       return;
     }
 
-    const nextPins = buildConnectorPinsFromComponent(component);
+    const simInserts = isSimHost(component) || activeConnector.simInserts ? activeConnector.simInserts ?? [] : undefined;
+    const nextPins = isSimHost(component) ? usableSimPins(component, simInserts ?? [], connectorCatalogState, insertAllowedRelationships) : buildConnectorPinsFromComponent(component);
     const allowedBackshellIds = new Set(
       moduleBackshellCompat
         .filter((row) => row.modulePartId === component.id && row.status === "allowed")
@@ -809,7 +830,7 @@ export function CableCanvas({
     const accessoriesUnchanged =
       nextBackshellId === activeConnector.backshellLibraryComponentId &&
       nextStrainReliefId === activeConnector.strainReliefLibraryComponentId;
-    if (partNumberUnchanged && libraryIdUnchanged && pinsUnchanged && accessoriesUnchanged && !activeConnector.slots) {
+    if (partNumberUnchanged && libraryIdUnchanged && pinsUnchanged && accessoriesUnchanged && !activeConnector.slots && JSON.stringify(simInserts) === JSON.stringify(activeConnector.simInserts)) {
       return;
     }
     pushUndoCheckpoint();
@@ -821,6 +842,7 @@ export function CableCanvas({
               partNumber: normalizedPartNumber || undefined,
               libraryComponentId: component.id || undefined,
               pins: nextPins,
+              simInserts,
               slots: undefined,
               backshellPartNumber: keepBackshell ? connector.backshellPartNumber : undefined,
               backshellLibraryComponentId: nextBackshellId,
@@ -840,7 +862,6 @@ export function CableCanvas({
     if (!activeConnector?.slots) {
       return;
     }
-    const nextPinsForSlot = buildConnectorPinsFromComponent(component);
     const allowedBackshellIds = new Set(
       moduleBackshellCompat
         .filter((row) => row.modulePartId === component.id && row.status === "allowed")
@@ -860,11 +881,13 @@ export function CableCanvas({
       const keepStrainRelief =
         Boolean(slot.strainReliefLibraryComponentId) &&
         allowedStrainReliefIds.has(slot.strainReliefLibraryComponentId!);
+      const simInserts = isSimHost(component) || slot.simInserts ? slot.simInserts ?? [] : undefined;
       return {
         ...slot,
         partNumber: component.partNumber.trim() || undefined,
         libraryComponentId: component.id || undefined,
-        pins: nextPinsForSlot,
+        pins: isSimHost(component) ? usableSimPins(component, simInserts ?? [], connectorCatalogState, insertAllowedRelationships) : buildConnectorPinsFromComponent(component),
+        simInserts,
         backshellPartNumber: keepBackshell ? slot.backshellPartNumber : undefined,
         backshellLibraryComponentId: keepBackshell ? slot.backshellLibraryComponentId : undefined,
         strainReliefPartNumber: keepStrainRelief ? slot.strainReliefPartNumber : undefined,
@@ -879,6 +902,32 @@ export function CableCanvas({
           : connector
       )
     );
+  };
+
+  const applySimInsertSelection = (slotId: string, part: LibraryComponentDto | undefined, moduleSlotId?: string) => {
+    if (readOnly || !selectedConnector) return;
+    const hostModule = moduleSlotId ? selectedConnector.slots?.find(slot => slot.slotId === moduleSlotId) : selectedConnector;
+    if (!hostModule) return;
+    const host = moduleCatalog.find(item => item.id === hostModule.libraryComponentId);
+    if (part && (!host || !availableSimInserts(host, slotId, hostModule.simInserts ?? [], [part], insertAllowedRelationships).length)) return;
+    const simInserts: SimInsertAssignment[] = (hostModule.simInserts ?? []).filter(item => item.slotId.trim().toUpperCase() !== slotId.trim().toUpperCase());
+    if (part && host) simInserts.push({ slotId, occupiedSlotIds: simPlacement(host, slotId, part)!, libraryComponentId: part.id, partNumber: part.partNumber, pins: catalogModulePins(part) });
+    const pins = host && isSimHost(host) ? usableSimPins(host, simInserts, connectorCatalogState, insertAllowedRelationships) : hostModule.pins;
+    pushUndoCheckpoint();
+    setConnectors(previous => previous.map(connector => {
+      if (connector.id !== selectedConnector.id) return connector;
+      if (!moduleSlotId) return { ...connector, simInserts, pins };
+      const slots = (connector.slots ?? []).map(slot => slot.slotId === moduleSlotId ? { ...slot, simInserts, pins } : slot);
+      return { ...connector, slots, pins: flattenFramePins(slots) };
+    }));
+  };
+
+  const renderSimControls = (module: { reference: string; simInserts?: SimInsertAssignment[] }, host: LibraryComponentDto | undefined, moduleSlotId?: string) => {
+    const moduleKey = `${selectedConnector?.id}:${moduleSlotId ?? "self"}`;
+    return <SimInsertControls host={host} assignments={module.simInserts} reference={module.reference} catalog={connectorCatalogState} relationships={insertAllowedRelationships}
+      expanded={expandedSimModule === moduleKey} onToggle={() => setExpandedSimModule(previous => previous === moduleKey ? null : moduleKey)} readOnly={readOnly}
+      onChoose={simSlotId => { setConnectorSearchTarget({ simSlotId, moduleSlotId }); setShowConnectorSearchDialog(true); }}
+      onRemove={simSlotId => applySimInsertSelection(simSlotId, undefined, moduleSlotId)} />;
   };
 
   const commitSlotName = (slotId: string, rawValue: string) => {
@@ -1350,6 +1399,7 @@ export function CableCanvas({
                               ))}
                             </select>
                           </label>
+                          {renderSimControls(slot, slotLibraryPart, slot.slotId)}
                         </article>
                       );
                     })}
@@ -1358,6 +1408,7 @@ export function CableCanvas({
                 </section>
               ) : (
                 <section className={styles.partAccessories} aria-label="Connector accessories">
+                  {renderSimControls(selectedConnector, selectedLibraryPart)}
                   <h2 className={styles.partHeading}>Accessories</h2>
                   <div className={styles.accessoryFields}>
                     <label>
@@ -1442,9 +1493,9 @@ export function CableCanvas({
       {showConnectorSearchDialog ? (
         <ConnectorPickerDialog
           parts={searchPool}
-          mode={connectorSearchTarget === "frame" ? "frame" : "connector"}
-          destination={selectedConnector?.reference ?? ""}
-          slot={typeof connectorSearchTarget === "string" ? undefined : {
+          mode={simSearchTarget ? "sim-insert" : connectorSearchTarget === "frame" ? "frame" : "connector"}
+          destination={simSearchTarget ? `${selectedSimModule?.reference ?? ""} · SIM ${simSearchTarget.simSlotId}` : selectedConnector?.reference ?? ""}
+          slot={typeof connectorSearchTarget === "string" || !("slotId" in connectorSearchTarget) ? undefined : {
             slotId: connectorSearchTarget.slotId,
             framePartNumber: selectedConnector?.partNumber,
             reverse: includeReverseCompat,
@@ -1453,9 +1504,11 @@ export function CableCanvas({
           readOnly={readOnly}
           onCreatePart={createPickerPart}
           onSelect={(component) => {
-            if (typeof connectorSearchTarget === "string") {
+            if (simSearchTarget) {
+              applySimInsertSelection(simSearchTarget.simSlotId, component, simSearchTarget.moduleSlotId);
+            } else if (typeof connectorSearchTarget === "string") {
               applyConnectorLibrarySelection(component);
-            } else {
+            } else if ("slotId" in connectorSearchTarget) {
               applySlotModuleSelection(connectorSearchTarget.slotId, component);
             }
             setShowConnectorSearchDialog(false);

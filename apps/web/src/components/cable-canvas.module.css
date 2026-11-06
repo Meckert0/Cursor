@@ -265,6 +265,44 @@
   min-width: 0;
 }
 
+.simControls {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.detailPanel .simToggle {
+  padding: 4px 0;
+  border: 0;
+  color: #334155;
+  font-size: 12px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.simSlots {
+  display: grid;
+  gap: 6px;
+  max-height: 180px;
+  overflow: auto;
+  padding: 6px 0;
+}
+
+.simSlotRow {
+  display: grid;
+  grid-template-columns: minmax(30px, auto) minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: baseline;
+  color: #334155;
+  font-size: 12px;
+}
+
+.detailPanel .simSlotRow > button {
+  padding: 4px 8px;
+  font-size: 12px;
+  justify-self: start;
+}
+
 @media (max-width: 1100px) {
   .partDetailsPanel {
     grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);

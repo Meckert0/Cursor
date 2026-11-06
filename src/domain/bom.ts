@@ -336,6 +336,18 @@ function emitConnectorPartLine(
 export function buildBom(revision: Revision, lookup: LibraryLookup): BomResult {
   const aggregates = new Map<AggregateKey, AggregateLine>();
   const snapshot: DesignSnapshot = revision.snapshot;
+  const emitSimInserts = (module: { simInserts?: import("./types.js").SimInsertAssignment[] }, reference: string) => {
+    for (const insert of module.simInserts ?? []) {
+      emitConnectorPartLine(aggregates, {
+        designRef: `${reference} / SIM ${insert.slotId}`,
+        partNumber: insert.partNumber,
+        libraryComponentId: insert.libraryComponentId,
+        categories: "module",
+        missingLabel: "SIM insert",
+        lookup
+      });
+    }
+  };
 
   for (const connector of snapshot.connectors) {
     if (isFrameHousingConnector(connector)) {
@@ -352,6 +364,7 @@ export function buildBom(revision: Revision, lookup: LibraryLookup): BomResult {
           continue;
         }
         const moduleReference = slotModuleName(connector, slot);
+        emitSimInserts(slot, moduleReference);
         emitConnectorPartLine(aggregates, {
           designRef: moduleReference,
           partNumber: slot.partNumber,
@@ -380,6 +393,7 @@ export function buildBom(revision: Revision, lookup: LibraryLookup): BomResult {
       continue;
     }
 
+    emitSimInserts(connector, connector.reference);
     emitConnectorPartLine(aggregates, {
       designRef: connector.reference,
       partNumber: connector.partNumber,

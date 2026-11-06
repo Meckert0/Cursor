@@ -4,9 +4,11 @@ import {
   isFrameHousingConnector,
   isSlotPopulated,
   modulesAllowedForFrameSlot,
+  flattenFramePins,
   slotForPinId,
   type FrameModuleRelationship
 } from "./connector-frames.js";
+import { catalogModulePins, isSimHost, isSimInsert, simAssignmentValid, simSlotIds, simSlotCapacity, usableSimPins } from "./sim-modules.js";
 import { isWirePart, type CompatStatus, type LibraryComponentRecord } from "./library.js";
 import {
   awgInAcceptedRange,
@@ -23,7 +25,7 @@ import {
   type ValidationMode,
   type ValidationPolicyOverrides
 } from "./ruleset-definitions.js";
-import type { ConnectorPin, DesignSnapshot, ValidationIssue, ValidationReport } from "./types.js";
+import type { ConnectorPin, DesignSnapshot, SimInsertAssignment, ValidationIssue, ValidationReport } from "./types.js";
 
 export interface ValidateSnapshotOptions {
   libraryLookup?: LibraryLookup;
@@ -328,6 +330,55 @@ export function validateSnapshot(snapshot: DesignSnapshot, options: ValidateSnap
 
   if (options.libraryLookup) {
     const lookup = options.libraryLookup;
+    const pinsKey = (pins: ConnectorPin[]) => pins.map(pin => `${pin.id}\0${pin.number}`).sort().join("\n");
+    const checkModule = (connectorId: string, label: string, module: { pins: ConnectorPin[]; simInserts?: SimInsertAssignment[] }, component: LibraryComponentRecord) => {
+      if (isSimInsert(component)) {
+        emit("RULE_SIM_INSERT_INVALID", { entityType: "connector", entityId: connectorId, message: `${label} is a SIM insert and must be placed inside a SIM module.` });
+        return true;
+      }
+      if (!isSimHost(component) && !module.simInserts?.length) {
+        emitModulePinIssues(emit, connectorId, module.pins, component);
+        return false;
+      }
+      const assignments = module.simInserts ?? [];
+      const parts = assignments.map(item => resolveComponent(lookup, { ...item, categories: "module" })).filter((part): part is LibraryComponentRecord => !!part);
+      const ids = simSlotIds(component);
+      const filled = new Set<string>();
+      const starts = new Set<string>();
+      for (const item of assignments) {
+        const insert = resolveComponent(lookup, { ...item, categories: "module" });
+        if (!insert) {
+          emit("RULE_LIBRARY_PART_NOT_FOUND", { entityType: "connector", entityId: connectorId, message: `${label} SIM insert "${item.partNumber}" was not found in the library.` });
+          continue;
+        }
+        emitLibraryStatusIssues(emit, { entityType: "connector", entityId: connectorId, partLabel: `${label} SIM insert`, component: insert });
+        const start = item.slotId.trim().toUpperCase();
+        if (starts.has(start) || !isSimInsert(insert) || !simAssignmentValid(component, item, assignments, parts, options.partRelationships ?? [])) {
+          emit("RULE_SIM_INSERT_INVALID", { entityType: "connector", entityId: connectorId, message: `${label}: insert ${item.partNumber} does not fit or is not allowed at SIM slot ${item.slotId}, or overlaps another insert.` });
+        } else {
+          item.occupiedSlotIds.forEach(id => filled.add(id.trim().toUpperCase()));
+        }
+        starts.add(start);
+        if (pinsKey(item.pins) !== pinsKey(catalogModulePins(insert))) {
+          emit("RULE_SIM_INSERT_PINS", { entityType: "connector", entityId: connectorId, message: `${label}: SIM insert ${item.partNumber} pins do not match its library definition.` });
+        }
+      }
+      if (!isSimHost(component) || !ids.length || ids.length !== simSlotCapacity(component)) {
+        emit("RULE_SIM_INSERT_INVALID", { entityType: "connector", entityId: connectorId, message: `${label} needs a complete SIM host slot layout in the library.` });
+      }
+      const empty = ids.filter(id => !filled.has(id.trim().toUpperCase()));
+      if (empty.length) {
+        emit("RULE_SIM_INSERT_INCOMPLETE", { entityType: "connector", entityId: connectorId, message: `${label} has unfilled SIM slots: ${empty.join(", ")}.` });
+      }
+      const expected = usableSimPins(component, assignments.map(item => {
+        const insert = parts.find(part => part.id === item.libraryComponentId);
+        return insert ? { ...item, pins: catalogModulePins(insert) } : item;
+      }), parts, options.partRelationships ?? []);
+      if (isSimHost(component) && pinsKey(module.pins) !== pinsKey(expected)) {
+        emit("RULE_SIM_INSERT_PINS", { entityType: "connector", entityId: connectorId, message: `${label} usable pins do not match the selected SIM inserts.` });
+      }
+      return true;
+    };
 
     for (const connector of snapshot.connectors) {
       const isFrame = isFrameHousingConnector(connector);
@@ -353,12 +404,13 @@ export function validateSnapshot(snapshot: DesignSnapshot, options: ValidateSnap
           });
 
           if (!isFrame) {
-            emitModulePinIssues(emit, connector.id, connector.pins, component);
+            checkModule(connector.id, connector.reference, connector, component);
           }
         }
       }
 
       if (isFrame) {
+        let hasSimModule = false;
         for (const slot of connector.slots ?? []) {
           if (!isSlotPopulated(slot)) {
             continue;
@@ -382,7 +434,7 @@ export function validateSnapshot(snapshot: DesignSnapshot, options: ValidateSnap
             partLabel: `Slot ${slot.slotId} module`,
             component: slotModule
           });
-          emitModulePinIssues(emit, connector.id, slot.pins, slotModule);
+          hasSimModule = checkModule(connector.id, slot.reference, slot, slotModule) || hasSimModule;
 
           if (component?.category === "frame" && options.partRelationships) {
             const allowed = modulesAllowedForFrameSlot(
@@ -399,6 +451,9 @@ export function validateSnapshot(snapshot: DesignSnapshot, options: ValidateSnap
               });
             }
           }
+        }
+        if (hasSimModule && pinsKey(connector.pins) !== pinsKey(flattenFramePins(connector.slots ?? []))) {
+          emit("RULE_SIM_INSERT_PINS", { entityType: "connector", entityId: connector.id, message: `Frame ${connector.reference} pins do not match its modules and SIM inserts.` });
         }
       }
     }
@@ -560,15 +615,17 @@ export function validateSnapshot(snapshot: DesignSnapshot, options: ValidateSnap
               ? mapping.toPinId
               : "";
         const slot = mappingPinId ? slotForPinId(connector, mappingPinId) : undefined;
+        const localPinId = slot ? mappingPinId.slice(slot.slotId.length + 1) : mappingPinId;
+        const simInsert = (slot ?? connector).simInserts?.find(item => localPinId.startsWith(`${item.slotId}:`));
         const moduleComponent = resolveComponent(lookup, {
-          libraryComponentId: slot?.libraryComponentId ?? connector.libraryComponentId,
-          partNumber: slot?.partNumber ?? connector.partNumber,
+          libraryComponentId: simInsert?.libraryComponentId ?? slot?.libraryComponentId ?? connector.libraryComponentId,
+          partNumber: simInsert?.partNumber ?? slot?.partNumber ?? connector.partNumber,
           categories: "module"
         });
         if (!moduleComponent || moduleComponent.category !== "module") {
           continue;
         }
-        for (const contactPartNumber of [path.fromContact, path.toContact]) {
+        for (const contactPartNumber of [connectorId === path.fromConnectorId ? path.fromContact : path.toContact]) {
           if (!contactPartNumber?.trim()) {
             continue;
           }
@@ -579,9 +636,18 @@ export function validateSnapshot(snapshot: DesignSnapshot, options: ValidateSnap
           if (!contactComponent) {
             continue;
           }
+          let status = options.compatLookup.moduleContact(moduleComponent.id, contactComponent.id);
+          if (simInsert) {
+            const contactRules = (options.partRelationships ?? []).filter(rule => rule.parentPartId === moduleComponent.id && rule.relationshipType === "CONTACT_ALLOWED");
+            if (contactRules.length) {
+              const insertPin = localPinId.slice(simInsert.slotId.length + 1).trim().toUpperCase();
+              const matches = contactRules.filter(rule => rule.compatibleParts.some(pn => pn.trim().toUpperCase() === contactComponent.partNumber.trim().toUpperCase()) && (!rule.parentPositions.length || rule.parentPositions.some(pin => pin.trim().toUpperCase() === insertPin)));
+              status = matches.some(rule => rule.status === "forbidden") || !matches.length ? "forbidden" : matches.some(rule => rule.status === "review") ? "review" : "allowed";
+            }
+          }
           emitCompatFinding(emit, {
             code: "RULE_COMPAT_MODULE_CONTACT",
-            status: options.compatLookup.moduleContact(moduleComponent.id, contactComponent.id),
+            status,
             entityType: "path",
             entityId: path.id,
             leftLabel: `Module "${moduleComponent.partNumber}"`,

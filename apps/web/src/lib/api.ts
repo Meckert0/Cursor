@@ -236,6 +236,14 @@ interface ListProjectHarnessesResponse {
   items: HarnessDto[];
 }
 
+export interface SimInsertAssignmentDto {
+  slotId: string;
+  occupiedSlotIds: string[];
+  libraryComponentId: string;
+  partNumber: string;
+  pins: Array<{ id: string; number: string }>;
+}
+
 export interface RevisionDto {
   id: string;
   designId: string;
@@ -257,6 +265,7 @@ export interface RevisionDto {
       strainReliefPartNumber?: string;
       strainReliefLibraryComponentId?: string;
       pins: Array<{ id: string; number: string }>;
+      simInserts?: SimInsertAssignmentDto[];
       location?: { x: number; y: number };
       slots?: Array<{
         slotId: string;
@@ -264,6 +273,7 @@ export interface RevisionDto {
         partNumber?: string;
         libraryComponentId?: string;
         pins: Array<{ id: string; number: string }>;
+        simInserts?: SimInsertAssignmentDto[];
         backshellPartNumber?: string;
         backshellLibraryComponentId?: string;
         strainReliefPartNumber?: string;

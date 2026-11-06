@@ -34,6 +34,7 @@ Get one cable completely working from start to finish, with a complete bill of m
 - Canvas persistence and hardening v1 (server snapshot autosave, undo/redo, junction properties, module split).
 - Connector picker redesign: nearly full-width dialog, filter options across the top, independent sorting/filtering for every information column, optional columns, part previews with explicit confirmation, and responsive keyboard-accessible connector/frame-slot selection. Existing compatibility, undo, and autosave paths are preserved.
 - Separate connector and frame creation: Add connector and Add frame create distinct drafts, Define/Change controls retain the correct kind after save/reload and undo, each picker excludes the other category, and housing quick-add supports ITA and Receiver frames with module capacity and slot IDs.
+- SIM modules remain connectors and expose nested insert configuration in the canvas top bar. Insert selection respects compatibility, side, sections, and multi-slot occupancy; saved assignments drive usable pins, contact choices, validation, and physical-insert BOM quantities, with undo and autosave support.
 - Export reliability v1 (startup recovery, transient retry/backoff, permanent failure classification, retention cleanup, operations runbook).
 - Bill of materials v1 (API, details UI, JSON/PDF/XLSX inclusion, library existence validation, unresolved-part visibility).
 - Observability baseline v1 (request/correlation IDs, `/v1/metrics`, deepened `/v1/health`, export worker trace logs).

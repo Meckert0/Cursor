@@ -26,11 +26,23 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 function mount(overrides: Partial<React.ComponentProps<typeof ConnectorPickerDialog>> = {}) {
   const onSelect = vi.fn(), onClose = vi.fn();
   render(<ConnectorPickerDialog parts={parts} destination="J3" onCreatePart={create} onSelect={onSelect} onClose={onClose} {...overrides} />);
-  return { onSelect, onClose, dialog: screen.getByRole("dialog", { name: overrides.mode === "frame" ? "Define Frame" : "Define Connector" }) };
+  return { onSelect, onClose, dialog: screen.getByRole("dialog", { name: overrides.mode === "sim-insert" ? "Select SIM insert" : overrides.mode === "frame" ? "Define Frame" : "Define Connector" }) };
 }
 const tableRows = () => within(screen.getByRole("table", { name: "Parts matching your search" })).getAllByRole("row").slice(1);
 
 describe("ConnectorPickerDialog", () => {
+  it("limits SIM slot selection to inserts and includes sortable occupancy without offering host creation", () => {
+    const insert = part("SIM-PAIR", { partType: "SIM_INSERT", attributes: { slotOccupancy: 2, pinCount: 4 } });
+    const { onSelect } = mount({ mode: "sim-insert", parts: [...parts, insert, part("FRAME", { category: "frame", partType: "ITA" })] });
+    expect(tableRows()).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "Sort Slots occupied ascending" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: /Add new/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Reset filters" }));
+    expect(tableRows()).toHaveLength(1);
+    fireEvent.click(screen.getByRole("radio", { name: "Preview SIM-PAIR" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Use SIM insert/ }));
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith(insert);
+  });
   it.each(["connector", "frame"] as const)("restricts the %s picker independently of search and user filters", mode => {
     const catalog = [
       ...parts,

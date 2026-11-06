@@ -117,7 +117,8 @@ describe("connector picker discovery", () => {
     ["moduleCapacity", { category: "frame", partType: "ITA", attributes: { moduleCapacity: 2 } }, { category: "frame", partType: "ITA", attributes: { moduleCapacity: 10 } }, range("2", "2")],
     ["contactFamily", { attributes: { contactFamily1: "Coax" } }, { attributes: { contactFamily1: "Signal" } }, values("Coax")],
     ["contactSize", { attributes: { contactSize: "16" } }, { attributes: { contactSize: "22" } }, values("16")],
-    ["emi", { attributes: { emi: false } }, { attributes: { emi: true } }, values("No")]
+    ["emi", { attributes: { emi: false } }, { attributes: { emi: true } }, values("No")],
+    ["slotOccupancy", { partType: "SIM_INSERT", attributes: { slotOccupancy: 1 } }, { partType: "SIM_INSERT", attributes: { slotOccupancy: 2 } }, range("1", "1")]
   ];
   it.each(sortableValues)("supports ascending, descending, and filtering for the %s column", (id, first, second, filter) => {
     const index = buildPickerIndex([part("b", second), part("a", first)]);

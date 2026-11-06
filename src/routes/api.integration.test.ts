@@ -26,6 +26,32 @@ function buildTestApp() {
   });
 }
 
+test("SIM insert assignments survive snapshot saves at standalone and frame-module levels", async () => {
+  const app = buildTestApp();
+  await app.ready();
+  const headers = { "x-user-id": "sim-editor", "x-role": "owner" };
+  try {
+    const project = await app.inject({ method: "POST", url: "/v1/projects", headers, payload: { name: "SIM project", createdBy: "sim-editor" } });
+    assert.equal(project.statusCode, 201);
+    const design = await app.inject({ method: "POST", url: `/v1/projects/${project.json().id}/designs`, headers, payload: { name: "SIM harness", createdBy: "sim-editor" } });
+    assert.equal(design.statusCode, 201);
+    const revision = await app.inject({ method: "GET", url: `/v1/revisions/${design.json().currentRevisionId}`, headers });
+    const simInserts = [{ slotId: "A1", occupiedSlotIds: ["A1", "A2"], libraryComponentId: "sim-pair", partNumber: "SIM-PAIR", pins: [{ id: "1", number: "1" }] }];
+    const snapshot = { ...revision.json().snapshot, connectors: [
+      { id: "standalone", reference: "J1", pins: [{ id: "A1:1", number: "A1/1" }], simInserts },
+      { id: "frame", reference: "J2", pins: [{ id: "A:A1:1", number: "A1/1" }], slots: [{ slotId: "A", reference: "J2", pins: [{ id: "A1:1", number: "A1/1" }], simInserts }] }
+    ] };
+    const saved = await app.inject({ method: "PATCH", url: `/v1/revisions/${revision.json().id}/snapshot`, headers, payload: { expectedSnapshotHash: revision.json().snapshotHash, snapshot } });
+    assert.equal(saved.statusCode, 200);
+    assert.deepEqual(saved.json().snapshot.connectors[0].simInserts, simInserts);
+    assert.deepEqual(saved.json().snapshot.connectors[1].slots[0].simInserts, simInserts);
+    const reloaded = await app.inject({ method: "GET", url: `/v1/revisions/${revision.json().id}`, headers });
+    assert.deepEqual(reloaded.json().snapshot.connectors, saved.json().snapshot.connectors);
+  } finally {
+    await app.close();
+  }
+});
+
 test("library ingest preserves exclusive sleeve diameter minimums", async () => {
   const app = buildTestApp();
   await app.ready();

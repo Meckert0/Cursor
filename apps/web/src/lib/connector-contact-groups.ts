@@ -1,6 +1,7 @@
 import type { CompatStatus, LibraryComponentDto, RevisionDto } from "./api";
 import { isFrameHousingConnector, isSlotPopulated, slotModuleName } from "./connector-frames";
 import { displayPartType } from "./part-fields";
+import { isSimHost, type SimInsertAssignment } from "./sim-modules";
 
 type SnapshotConnector = RevisionDto["snapshot"]["connectors"][number];
 type ConnectorSlot = NonNullable<SnapshotConnector["slots"]>[number];
@@ -483,6 +484,7 @@ export function buildConnectorModuleEntries(input: {
     partNumber?: string;
     libraryComponentId?: string;
     pins: Array<{ id: string; number: string }>;
+    simInserts?: SimInsertAssignment[];
     backshellPartNumber?: string;
     strainReliefPartNumber?: string;
     frame?: ConnectorModuleEntry["frame"];
@@ -492,7 +494,14 @@ export function buildConnectorModuleEntries(input: {
       partNumber: module.partNumber
     });
     const partNumber = resolvedModulePartNumber(module.partNumber, component);
-    const groups = readModuleContactGroups(component, module.pins.length);
+    const simHost = isSimHost(component);
+    const effectivePins = simHost && module.simInserts === undefined ? [] : module.pins;
+    const activeInserts = (module.simInserts ?? []).filter(item => module.pins.some(pin => pin.id.startsWith(`${item.slotId}:`)));
+    const groups = simHost ? activeInserts.flatMap(item => readModuleContactGroups(findCatalogComponent(input.connectorCatalog, item), item.pins.length)) : readModuleContactGroups(component, module.pins.length);
+    const contacts = simHost ? activeInserts.flatMap(item => compatibleContactsForModule(item.libraryComponentId, contactCatalog, moduleContactCompat, contactRelationships).map(contact => ({
+      ...contact,
+      positions: (contact.positions === "All" ? item.pins.map(pin => pin.number) : contact.positions.split(",").map(pin => pin.trim())).map(pin => `${item.slotId}/${pin}`).join(", ")
+    }))) : compatibleContactsForModule(module.libraryComponentId?.trim() || component?.id, contactCatalog, moduleContactCompat, contactRelationships);
     return {
       key: module.key,
       designator: module.designator,
@@ -505,17 +514,12 @@ export function buildConnectorModuleEntries(input: {
       strainReliefPartNumber: module.strainReliefPartNumber?.trim() ?? "",
       moduleDefined: Boolean(partNumber || module.libraryComponentId),
       pinPositions: [
-        ...module.pins.map((pin) => pin.number),
-        ...(Array.isArray(component?.attributes?.pinIds)
+        ...effectivePins.map((pin) => pin.number),
+        ...(!simHost && Array.isArray(component?.attributes?.pinIds)
           ? component.attributes.pinIds.filter((pin): pin is string => typeof pin === "string")
           : [])
       ],
-      compatibleContacts: compatibleContactsForModule(
-        module.libraryComponentId?.trim() || component?.id,
-        contactCatalog,
-        moduleContactCompat,
-        contactRelationships
-      )
+      compatibleContacts: contacts
     };
   };
 
@@ -529,6 +533,7 @@ export function buildConnectorModuleEntries(input: {
           partNumber: connector.partNumber,
           libraryComponentId: connector.libraryComponentId,
           pins: connector.pins,
+          simInserts: connector.simInserts,
           backshellPartNumber: connector.backshellPartNumber,
           strainReliefPartNumber: connector.strainReliefPartNumber
         })
@@ -541,6 +546,7 @@ export function buildConnectorModuleEntries(input: {
         partNumber: isSlotPopulated(slot) ? slot.partNumber : undefined,
         libraryComponentId: slot.libraryComponentId,
         pins: isSlotPopulated(slot) ? slot.pins : [],
+        simInserts: slot.simInserts,
         backshellPartNumber: slot.backshellPartNumber,
         strainReliefPartNumber: slot.strainReliefPartNumber,
         frame: { reference: name, partNumber: connector.partNumber?.trim() ?? "", slotId: slot.slotId }

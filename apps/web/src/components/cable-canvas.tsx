@@ -48,6 +48,7 @@ import {
   type CanvasUndoSnapshot as UndoSnapshot
 } from "@/lib/use-canvas-history";
 import { useCanvasPersistence, type CanvasSaveResult } from "@/lib/use-canvas-persistence";
+import { useCanvasViewportAnchor } from "@/lib/use-canvas-viewport-anchor";
 import styles from "./cable-canvas.module.css";
 
 type DragState = {
@@ -115,6 +116,8 @@ export function CableCanvas({
   readOnly?: boolean;
 }) {
   const canvasRef = useRef<HTMLDivElement | null>(null);
+  const controlsRef = useRef<HTMLElement | null>(null);
+  useCanvasViewportAnchor(canvasRef, controlsRef);
   const nodeWidth = 120;
   const connectorNodeHeight = 56;
   const junctionNodeSize = 24;
@@ -1110,7 +1113,7 @@ export function CableCanvas({
 
   return (
     <section className={styles.wrapper}>
-      <section className={styles.topSection}>
+      <section className={styles.topSection} ref={controlsRef} data-testid="canvas-controls">
         <div className={styles.toolbar}>
           <button type="button" onClick={() => addCanvasPart("connector")} disabled={readOnly}>
             Add connector
@@ -1192,34 +1195,36 @@ export function CableCanvas({
                   />
                 </label>
                 {connectorNameError ? <span className={styles.quickAddError}>{connectorNameError}</span> : null}
-                {moduleDefined ? (
-                  <button
-                    type="button"
-                    className={styles.changeConnectorButton}
-                    onClick={() => {
-                      setConnectorSearchTarget(selectedIsFrame ? "frame" : "connector");
-                      setShowConnectorSearchDialog(true);
-                    }}
-                    disabled={readOnly}
-                    aria-label={selectedIsFrame ? "Change frame" : "Change connector"}
-                  >
-                    {selectedConnector.partNumber
-                      ? `Part number: ${selectedConnector.partNumber}`
-                      : selectedIsFrame ? "Change frame" : "Change connector"}
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setConnectorSearchTarget(selectedIsFrame ? "frame" : "connector");
-                      setShowConnectorSearchDialog(true);
-                    }}
-                    disabled={readOnly}
-                  >
-                    {selectedIsFrame ? "Define Frame" : "Define Connector"}
-                  </button>
-                )}
-                {selectedLibraryPart?.description ? <p className={styles.partDescription}>{selectedLibraryPart.description}</p> : null}
+                <div className={styles.partSummary}>
+                  {moduleDefined ? (
+                    <button
+                      type="button"
+                      className={styles.changeConnectorButton}
+                      onClick={() => {
+                        setConnectorSearchTarget(selectedIsFrame ? "frame" : "connector");
+                        setShowConnectorSearchDialog(true);
+                      }}
+                      disabled={readOnly}
+                      aria-label={selectedIsFrame ? "Change frame" : "Change connector"}
+                    >
+                      {selectedConnector.partNumber
+                        ? `Part number: ${selectedConnector.partNumber}`
+                        : selectedIsFrame ? "Change frame" : "Change connector"}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setConnectorSearchTarget(selectedIsFrame ? "frame" : "connector");
+                        setShowConnectorSearchDialog(true);
+                      }}
+                      disabled={readOnly}
+                    >
+                      {selectedIsFrame ? "Define Frame" : "Define Connector"}
+                    </button>
+                  )}
+                  {selectedLibraryPart?.description ? <span className={styles.partDescription}><span aria-hidden="true"> · </span>{selectedLibraryPart.description}</span> : null}
+                </div>
               </section>
               {selectedIsFrame ? (
                 <section className={styles.partModules} aria-label="Frame modules">
@@ -1280,7 +1285,7 @@ export function CableCanvas({
                               </>
                             )}
                           </div>
-                          <div className={styles.modulePart}>
+                          <div className={`${styles.modulePart} ${styles.partSummary}`}>
                             {slotModuleDefined ? (
                               <button
                                 type="button"
@@ -1307,7 +1312,7 @@ export function CableCanvas({
                                 Select module
                               </button>
                             )}
-                            {slotLibraryPart?.description ? <p className={styles.partDescription}>{slotLibraryPart.description}</p> : null}
+                            {slotLibraryPart?.description ? <span className={styles.partDescription}><span aria-hidden="true"> · </span>{slotLibraryPart.description}</span> : null}
                           </div>
                           <label>
                             Backshell

@@ -229,7 +229,7 @@ export function ConnectorPickerDialog({ parts, mode = "connector", destination, 
     dialog.showModal();
     document.body.style.overflow = "hidden";
     searchRef.current?.focus();
-    return () => { dialog.close(); document.body.style.overflow = overflow; if (trigger?.isConnected) trigger.focus(); };
+    return () => { dialog.close(); document.body.style.overflow = overflow; if (trigger?.isConnected) trigger.focus({ preventScroll: true }); };
   }, []);
 
   const resetSelection = () => { setSelectedId(null); setReviewing(false); setPage(1); };

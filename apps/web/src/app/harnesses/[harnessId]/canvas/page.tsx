@@ -100,14 +100,24 @@ export default async function HarnessCanvasPage({
     if (isReadOnly) {
       return {
         ok: false,
-        error: "Switch to edit mode to add connectors.",
+        error: "Switch to edit mode to add parts.",
         connectorCatalog: await loadConnectorCatalog()
       };
+    }
+    const requestedCategory = String(formData.get("category") ?? "module");
+    if (requestedCategory !== "module" && requestedCategory !== "frame") {
+      return { ok: false, error: "Choose a connector or frame category.", connectorCatalog: await loadConnectorCatalog() };
+    }
+    const category = requestedCategory;
+    const noun = category === "frame" ? "frame" : "connector";
+    const partType = category === "frame" ? String(formData.get("partType") ?? "").trim().toUpperCase() : "MODULE";
+    if (category === "frame" && partType !== "ITA" && partType !== "RECEIVER") {
+      return { ok: false, error: "Choose an ITA or Receiver housing type.", connectorCatalog: await loadConnectorCatalog() };
     }
     const partNumber = String(formData.get("partNumber") ?? "").trim();
     const family = String(formData.get("family") ?? "").trim();
     const description = String(formData.get("description") ?? "").trim();
-    const attributes = collectAttributesFromFormData(formData, "module");
+    const attributes = collectAttributesFromFormData(formData, category);
     if (!partNumber) {
       return {
         ok: false,
@@ -117,17 +127,19 @@ export default async function HarnessCanvasPage({
     }
     try {
       await ingestLibraryComponents({
-        idempotencyKey: `connector-quick-add:${partNumber}:${Date.now()}`,
+        idempotencyKey: `${noun}-quick-add:${partNumber}:${Date.now()}`,
         items: [
           {
-            category: "module",
-            family: family || "User entered connector",
+            category,
+            family: family || `User entered ${noun}`,
             partNumber,
-            description: description || `User-entered connector ${partNumber}`,
+            description: description || `User-entered ${noun} ${partNumber}`,
             isActive: true,
             stockStatus: "in_stock",
             isReviewed: false,
-            partType: "MODULE",
+            partType,
+            ...(category === "frame" ? { side: partType, electricalMode: "NONE" } : {}),
+            notes: String(formData.get("notes") ?? "").trim() || undefined,
             attributes
           }
         ]
@@ -136,14 +148,14 @@ export default async function HarnessCanvasPage({
       revalidatePath(`/harnesses/${harness.id}/canvas`);
       return {
         ok: true,
-        notice: "Connector added as unreviewed entry.",
+        notice: `${category === "frame" ? "Frame" : "Connector"} added as unreviewed entry.`,
         newConnectorPartNumber: partNumber,
         connectorCatalog: refreshedConnectorCatalog
       };
     } catch (error) {
       return {
         ok: false,
-        error: error instanceof Error ? error.message : "Connector quick-add failed.",
+        error: error instanceof Error ? error.message : `${noun} quick-add failed.`,
         connectorCatalog: await loadConnectorCatalog()
       };
     }

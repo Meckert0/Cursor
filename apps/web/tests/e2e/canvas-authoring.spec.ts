@@ -78,7 +78,7 @@ test("canvas-first flow reaches details workspace", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Revision Workspace" })).toBeVisible();
 });
 
-test("define connector can place an ITA frame with per-slot modules", async ({ page, request }) => {
+test("add frame defines an ITA housing with per-slot modules", async ({ page, request }) => {
   test.setTimeout(120_000);
   const token = uniqueToken();
   const frameId = `e2e-frame-${token}`;
@@ -182,15 +182,15 @@ test("define connector can place an ITA frame with per-slot modules", async ({ p
   await createProjectAndOpenProjectPage(page, `Frame Canvas Project ${token}`);
   await createHarnessOnProjectPage(page, `Frame Canvas Harness ${token}`);
 
-  await page.getByRole("button", { name: "Add connector" }).click();
+  await page.getByRole("button", { name: "Add frame" }).click();
   const connectors = page.locator('[class*="connectorNode"]');
   await expect(connectors).toHaveCount(1);
   await connectors.nth(0).click();
-  await page.getByRole("button", { name: "Define Connector" }).click();
-  await expect(page.getByRole("dialog", { name: "Define Connector" })).toBeVisible();
-  await page.getByPlaceholder("Search connectors...").fill(framePn);
-  await selectConnectorPickerPart(page, framePn, "connector");
-  await expect(page.getByRole("button", { name: "Change connector" })).toContainText(`Part number: ${framePn}`);
+  await page.getByRole("button", { name: "Define Frame" }).click();
+  await expect(page.getByRole("dialog", { name: "Define Frame" })).toBeVisible();
+  await page.getByPlaceholder("Search frames...").fill(framePn);
+  await selectConnectorPickerPart(page, framePn, "frame");
+  await expect(page.getByRole("button", { name: "Change frame" })).toContainText(`Part number: ${framePn}`);
   await expect(connectors).toHaveCount(1);
   await expect(page.getByLabel("Slot A module name")).toHaveValue("J1A");
   await expect(page.getByLabel("Slot B module name")).toHaveValue("J1B");

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { LibraryComponentDto } from "./api";
 import {
   CONNECTOR_PICKER_COLUMNS, buildPickerIndex, getPickerFacetChoices, getPickerResults,
-  pickerColumn, pickerDisplayValue, pickerFilterError, type PickerColumnId, type PickerFilter, type PickerFilters
+  isPickerPart, pickerColumn, pickerDefaultColumns, pickerDisplayValue, pickerFilterError, pickerTopFilters, type PickerColumnId, type PickerFilter, type PickerFilters
 } from "./connector-picker";
 
 function part(id: string, overrides: Partial<LibraryComponentDto> = {}): LibraryComponentDto {
@@ -18,6 +18,22 @@ const values = (...selected: string[]): PickerFilter => ({ kind: "values", value
 const contains = (value: string): PickerFilter => ({ kind: "text", operator: "contains", value });
 
 describe("connector picker discovery", () => {
+  it("keeps connector and housing eligibility separate, including legacy Receiver aliases", () => {
+    const catalog = [
+      part("module"),
+      part("ita", { category: "frame", partType: "ITA" }),
+      part("receiver", { category: "frame", partType: "RECEIVER" }),
+      part("rcv", { category: "frame", partType: "RCV" }),
+      part("sim", { partType: "SIM_INSERT" }),
+      part("contact", { category: "contact", partType: "CONTACT" })
+    ];
+    expect(catalog.filter(p => isPickerPart(p, "connector")).map(p => p.id)).toEqual(["module"]);
+    expect(catalog.filter(p => isPickerPart(p, "frame")).map(p => p.id)).toEqual(["ita", "receiver", "rcv"]);
+    expect(pickerDefaultColumns("frame")).toContain("moduleCapacity");
+    expect(pickerDefaultColumns("frame")).not.toContain("positions");
+    expect(pickerTopFilters("frame")).toContain("moduleCapacity");
+    expect(pickerDefaultColumns("connector")).toContain("positions");
+  });
   it("searches all tokens across fields, preserves phrases, and normalizes part numbers", () => {
     const index = buildPickerIndex([
       part("a", { partNumber: "ABC-096-I", description: "Signal power module", family: "i1" }),

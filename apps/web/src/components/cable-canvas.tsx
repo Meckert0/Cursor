@@ -25,7 +25,6 @@ import {
 import { cableSectionBundleDiameters } from "@/lib/bundle-diameter";
 import {
   isCanvasConnectorPart,
-  isCanvasDefinablePart,
   isCanvasFramePart
 } from "@/lib/part-fields";
 import {
@@ -134,7 +133,7 @@ export function CableCanvas({
   const [backshellCatalogState] = useState<LibraryComponentDto[]>(backshellCatalog);
   const [strainReliefCatalogState] = useState<LibraryComponentDto[]>(strainReliefCatalog);
   const [showConnectorSearchDialog, setShowConnectorSearchDialog] = useState(false);
-  const [connectorSearchTarget, setConnectorSearchTarget] = useState<"housing" | { slotId: string }>("housing");
+  const [connectorSearchTarget, setConnectorSearchTarget] = useState<"connector" | "frame" | { slotId: string }>("connector");
   const [includeReverseCompat, setIncludeReverseCompat] = useState(false);
   const [connectorNameDraft, setConnectorNameDraft] = useState("");
   const [connectorNameError, setConnectorNameError] = useState<string | null>(null);
@@ -325,13 +324,13 @@ export function CableCanvas({
     }
     if (selectedEntity.type === "connector") {
       const connector = connectors.find((entry) => entry.id === selectedEntity.id);
-      return connector ? `connector ${connector.reference}` : "connector";
+      return connector ? `${isFrameHousingConnector(connector) ? "frame" : "connector"} ${connector.reference}` : "connector";
     }
     const junction = junctions.find((entry) => entry.id === selectedEntity.id);
     return junction ? `junction ${junction.label ?? junction.id}` : "junction";
   }, [connectors, junctions, pathsState, selectedEntity]);
-  const connectorOptions = useMemo(
-    () => connectorCatalogState.filter((component) => isCanvasDefinablePart(component)),
+  const frameCatalog = useMemo(
+    () => connectorCatalogState.filter((component) => isCanvasFramePart(component)),
     [connectorCatalogState]
   );
   const moduleCatalog = useMemo(
@@ -378,9 +377,8 @@ export function CableCanvas({
   }, [junctions, selectedEntity]);
   const selectedConnectorLibraryId = selectedConnector?.libraryComponentId;
   const searchPool = useMemo(() => {
-    if (connectorSearchTarget === "housing") {
-      return connectorOptions;
-    }
+    if (connectorSearchTarget === "connector") return moduleCatalog;
+    if (connectorSearchTarget === "frame") return frameCatalog;
     if (!selectedConnectorLibraryId) {
       return [];
     }
@@ -393,7 +391,7 @@ export function CableCanvas({
     ).filter((module) => moduleMatchesFrameSide(module, frameComponent, includeReverseCompat));
   }, [
     connectorCatalogState,
-    connectorOptions,
+    frameCatalog,
     connectorSearchTarget,
     includeReverseCompat,
     moduleAllowedRelationships,
@@ -444,7 +442,7 @@ export function CableCanvas({
     };
   }, [connectState, getNodeCenter]);
 
-  const addConnector = () => {
+  const addCanvasPart = (kind: "connector" | "frame") => {
     if (readOnly) {
       return;
     }
@@ -454,7 +452,7 @@ export function CableCanvas({
       "c_canvas_"
     );
     const reference = buildNextConnectorReference(connectors);
-    setConnectors((previous) => [...previous, { id: connectorId, reference, pins: [] }]);
+    setConnectors((previous) => [...previous, { id: connectorId, reference, pins: [], ...(kind === "frame" ? { slots: [] } : {}) }]);
     setPositions((previous) => ({
       ...previous,
       [connectorId]: { x: 80 + ((connectors.length + 1) % 5) * 150, y: 80 + Math.floor((connectors.length + 1) / 5) * 110 }
@@ -738,6 +736,7 @@ export function CableCanvas({
     if (!activeConnector) {
       return;
     }
+    if (isFrameHousingConnector(activeConnector) ? !isCanvasFramePart(component) : !isCanvasConnectorPart(component)) return;
     const normalizedPartNumber = component.partNumber.trim();
     if (isCanvasFramePart(component)) {
       const slotIds = slotIdsForFrame(frameAttributesFromComponent(component));
@@ -826,7 +825,7 @@ export function CableCanvas({
   };
 
   const applySlotModuleSelection = (slotId: string, component: LibraryComponentDto) => {
-    if (readOnly || !selectedEntity || selectedEntity.type !== "connector") {
+    if (readOnly || !isCanvasConnectorPart(component) || !selectedEntity || selectedEntity.type !== "connector") {
       return;
     }
     const activeConnector = connectors.find((connector) => connector.id === selectedEntity.id);
@@ -1108,8 +1107,11 @@ export function CableCanvas({
     <section className={styles.wrapper}>
       <section className={styles.topSection}>
         <div className={styles.toolbar}>
-          <button type="button" onClick={addConnector} disabled={readOnly}>
+          <button type="button" onClick={() => addCanvasPart("connector")} disabled={readOnly}>
             Add connector
+          </button>
+          <button type="button" onClick={() => addCanvasPart("frame")} disabled={readOnly}>
+            Add frame
           </button>
           <button type="button" onClick={addJunction} disabled={readOnly}>
             Add junction
@@ -1173,7 +1175,7 @@ export function CableCanvas({
           {selectedEntity?.type === "connector" && selectedConnector ? (
             <div className={styles.detailPanel}>
               <label>
-                Connector name
+                {selectedIsFrame ? "Frame name" : "Connector name"}
                 <input
                   value={connectorNameDraft}
                   disabled={readOnly}
@@ -1188,26 +1190,26 @@ export function CableCanvas({
                   type="button"
                   className={styles.changeConnectorButton}
                   onClick={() => {
-                    setConnectorSearchTarget("housing");
+                    setConnectorSearchTarget(selectedIsFrame ? "frame" : "connector");
                     setShowConnectorSearchDialog(true);
                   }}
                   disabled={readOnly}
-                  aria-label="Change connector"
+                  aria-label={selectedIsFrame ? "Change frame" : "Change connector"}
                 >
                   {selectedConnector.partNumber
                     ? `Part number: ${selectedConnector.partNumber}`
-                    : "Change connector"}
+                    : selectedIsFrame ? "Change frame" : "Change connector"}
                 </button>
               ) : (
                 <button
                   type="button"
                   onClick={() => {
-                    setConnectorSearchTarget("housing");
+                    setConnectorSearchTarget(selectedIsFrame ? "frame" : "connector");
                     setShowConnectorSearchDialog(true);
                   }}
                   disabled={readOnly}
                 >
-                  Define Connector
+                  {selectedIsFrame ? "Define Frame" : "Define Connector"}
                 </button>
               )}
               {selectedIsFrame ? (
@@ -1409,8 +1411,9 @@ export function CableCanvas({
       {showConnectorSearchDialog ? (
         <ConnectorPickerDialog
           parts={searchPool}
+          mode={connectorSearchTarget === "frame" ? "frame" : "connector"}
           destination={selectedConnector?.reference ?? ""}
-          slot={connectorSearchTarget === "housing" ? undefined : {
+          slot={typeof connectorSearchTarget === "string" ? undefined : {
             slotId: connectorSearchTarget.slotId,
             framePartNumber: selectedConnector?.partNumber,
             reverse: includeReverseCompat,
@@ -1419,7 +1422,7 @@ export function CableCanvas({
           readOnly={readOnly}
           onCreatePart={createPickerPart}
           onSelect={(component) => {
-            if (connectorSearchTarget === "housing") {
+            if (typeof connectorSearchTarget === "string") {
               applyConnectorLibrarySelection(component);
             } else {
               applySlotModuleSelection(connectorSearchTarget.slotId, component);
@@ -1619,6 +1622,7 @@ export function CableCanvas({
               key={connector.id}
               type="button"
               disabled={readOnly}
+              aria-label={`${isFrameHousingConnector(connector) ? "Frame" : "Connector"} ${connector.reference}`}
               className={`${styles.connectorNode} ${
                 selectedEntity?.type === "connector" && selectedEntity.id === connector.id ? styles.selectedNode : ""
               }`}
@@ -1646,7 +1650,7 @@ export function CableCanvas({
             >
               <strong>{connector.reference}</strong>
               <span>{connector.id}</span>
-              <span>{formatConnectorPinsLabel(connector)}</span>
+              <span>{isFrameHousingConnector(connector) ? `Frame · ${connector.slots?.length ?? 0} slots` : formatConnectorPinsLabel(connector)}</span>
               <span
                 className={styles.connectHandle}
                 onPointerDown={(event) => {

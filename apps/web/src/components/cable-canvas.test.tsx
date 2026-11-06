@@ -78,6 +78,31 @@ function snapshot(): RevisionDto["snapshot"] {
 }
 
 describe("CableCanvas cable sections", () => {
+  it("creates separate connector and frame drafts and preserves their kind through undo and redo", () => {
+    render(<CableCanvas revisionId="rev-separate-part-kinds" snapshot={{ ...snapshot(), connectors: [], paths: [] }} snapshotHash="hash" connectorCatalog={[]} quickAddConnectorAction={async () => ({ ok: true, connectorCatalog: [] })} />);
+    fireEvent.click(screen.getByRole("button", { name: "Add frame" }));
+    expect(screen.getByLabelText("Frame name")).toHaveValue("J1");
+    expect(screen.getByRole("button", { name: "Define Frame" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Define Connector" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    expect(screen.queryByRole("button", { name: "Frame J1" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Redo" }));
+    expect(screen.getByRole("button", { name: "Frame J1" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Define Frame" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Add connector" }));
+    expect(screen.getByLabelText("Connector name")).toHaveValue("J2");
+    expect(screen.getByRole("button", { name: "Define Connector" })).toBeVisible();
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Frame J1" }));
+    expect(screen.getByLabelText("Frame name")).toHaveValue("J1");
+    expect(screen.getByRole("button", { name: "Define Frame" })).toBeVisible();
+  });
+
+  it("disables both create buttons in read-only mode", () => {
+    render(<CableCanvas revisionId="rev-separate-read-only" snapshot={{ ...snapshot(), connectors: [], paths: [] }} snapshotHash="hash" connectorCatalog={[]} quickAddConnectorAction={async () => ({ ok: true, connectorCatalog: [] })} readOnly />);
+    expect(screen.getByRole("button", { name: "Add connector" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Add frame" })).toBeDisabled();
+  });
+
   it("centers compact section labels with accessible names and expandable diameter details", () => {
     const carriedDiameter = formatBundleDiameterLabel(bundleDiameterInches([0.062]));
     render(

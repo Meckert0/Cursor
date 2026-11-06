@@ -5,10 +5,10 @@ import { createPortal } from "react-dom";
 import type { LibraryComponentDto } from "@/lib/api";
 import { getPartFieldsForCategory } from "@/lib/part-fields";
 import {
-  CONNECTOR_PICKER_COLUMNS, DEFAULT_PICKER_COLUMNS, TOP_PICKER_FILTERS,
+  CONNECTOR_PICKER_COLUMNS,
   buildPickerIndex, getPickerFacetChoices, getPickerResults, isActivePickerFilter,
-  newPickerFilter, pickerColumn, pickerDisplayValue, pickerFilterError, pickerFilterLabel, pickerQueryTokens,
-  type PickerColumn, type PickerColumnId, type PickerFilter, type PickerFilters, type PickerRecord, type PickerSort
+  isPickerPart, newPickerFilter, pickerColumn, pickerDefaultColumns, pickerDisplayValue, pickerFilterError, pickerFilterLabel, pickerQueryTokens, pickerTopFilters,
+  type PickerColumn, type PickerColumnId, type PickerFilter, type PickerFilters, type PickerMode, type PickerRecord, type PickerSort
 } from "@/lib/connector-picker";
 import styles from "./connector-picker-dialog.module.css";
 
@@ -29,6 +29,7 @@ interface SlotContext {
 
 interface Props {
   parts: LibraryComponentDto[];
+  mode?: PickerMode;
   destination: string;
   slot?: SlotContext;
   readOnly?: boolean;
@@ -151,50 +152,56 @@ function ColumnFilterMenu({ column, index, query, filters, sort, onApply, onClea
   </>;
 }
 
-function ColumnsMenu({ visible, onApply }: { visible: PickerColumnId[]; onApply: (ids: PickerColumnId[]) => void }) {
+function ColumnsMenu({ visible, defaults, onApply }: { visible: PickerColumnId[]; defaults: PickerColumnId[]; onApply: (ids: PickerColumnId[]) => void }) {
   const [draft, setDraft] = useState(visible);
   return <><div className={styles.menuBody}><p className={styles.help}>Every information column has its own sort and filter controls.</p><div className={styles.checks}>{CONNECTOR_PICKER_COLUMNS.map(column => <label key={column.id} className={styles.check}>
     <input type="checkbox" checked={draft.includes(column.id)} disabled={column.id === "partNumber"} onChange={event => setDraft(event.target.checked ? [...draft, column.id] : draft.filter(id => id !== column.id))} /><span>{column.label}</span>
-  </label>)}</div></div><div className={styles.menuFoot}><button className={styles.linkButton} type="button" onClick={() => onApply([...DEFAULT_PICKER_COLUMNS])}>Reset columns</button><button className={`${styles.button} ${styles.primary}`} type="button" onClick={() => onApply(draft)}>Apply columns</button></div></>;
+  </label>)}</div></div><div className={styles.menuFoot}><button className={styles.linkButton} type="button" onClick={() => onApply(defaults)}>Reset columns</button><button className={`${styles.button} ${styles.primary}`} type="button" onClick={() => onApply(draft)}>Apply columns</button></div></>;
 }
 
-function QuickAddForm({ onCreate, onBack, onCreated, onPendingChange }: { onCreate: Props["onCreatePart"]; onBack: () => void; onCreated: (part: LibraryComponentDto | undefined, notice: string) => void; onPendingChange: (pending: boolean) => void }) {
-  const fields = useMemo(() => getPartFieldsForCategory("module").filter(field => field.showOnAddForm), []);
+function QuickAddForm({ mode, onCreate, onBack, onCreated, onPendingChange }: { mode: PickerMode; onCreate: Props["onCreatePart"]; onBack: () => void; onCreated: (part: LibraryComponentDto | undefined, notice: string) => void; onPendingChange: (pending: boolean) => void }) {
+  const noun = mode === "frame" ? "frame" : "connector";
+  const fields = useMemo(() => getPartFieldsForCategory(mode === "frame" ? "frame" : "module").filter(field => field.showOnAddForm && (mode !== "frame" || !["partType", "side", "electricalMode", "isActive", "stockStatus"].includes(field.key))), [mode]);
   const formRef = useRef<HTMLFormElement>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
-  useEffect(() => { formRef.current?.querySelector<HTMLInputElement>("input")?.focus(); }, []);
+  useEffect(() => { formRef.current?.querySelector<HTMLElement>('input:not([type="hidden"]), select')?.focus(); }, []);
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault(); if (pending) return;
     const data = new FormData(event.currentTarget);
     setPending(true); onPendingChange(true); setError("");
     try {
       const result = await onCreate(data);
-      if (!result.ok) { setError(result.error ?? "Connector quick-add failed."); return; }
-      onCreated(result.connectorCatalog.find(part => part.partNumber === result.newConnectorPartNumber), result.notice ?? "Connector added as an unreviewed entry. Review it before choosing Use connector.");
-    } catch (reason) { setError(reason instanceof Error ? reason.message : "Connector quick-add failed."); }
+      if (!result.ok) { setError(result.error ?? `${noun} quick-add failed.`); return; }
+      onCreated(result.connectorCatalog.find(part => part.partNumber === result.newConnectorPartNumber && isPickerPart(part, mode)), result.notice ?? `${mode === "frame" ? "Frame" : "Connector"} added as an unreviewed entry. Review it before choosing Use ${noun}.`);
+    } catch (reason) { setError(reason instanceof Error ? reason.message : `${noun} quick-add failed.`); }
     finally { setPending(false); onPendingChange(false); }
   };
   return <form ref={formRef} className={styles.createForm} onSubmit={submit}>
-    <div className={styles.createFields}>{fields.map(field => <label key={field.key}>
+    <input type="hidden" name="category" value={mode === "frame" ? "frame" : "module"} />
+    <div className={styles.createFields}>{mode === "frame" ? <label>Housing type<select name="partType" defaultValue="ITA" required><option value="ITA">ITA housing</option><option value="RECEIVER">Receiver housing</option></select></label> : null}{fields.map(field => <label key={field.key}>
       {field.label}
       {field.inputType === "boolean" ? <select name={field.isIdentity ? field.key : `attr:${field.key}`} defaultValue=""><option value="">Not supplied</option><option value="true">Yes</option><option value="false">No</option></select> : <input name={field.isIdentity ? field.key : `attr:${field.key}`} type={field.inputType === "number" ? "number" : "text"} required={field.required === true || field.key === "partNumber"} placeholder={field.label} />}
     </label>)}</div>
     {error ? <p className={styles.error} role="alert">{error}</p> : null}
-    <div className={styles.createActions}><button type="button" className={styles.button} disabled={pending} onClick={onBack}>Back to results</button><button type="submit" className={`${styles.button} ${styles.primary}`} disabled={pending}>{pending ? "Adding…" : "Add connector"}</button></div>
+    <div className={styles.createActions}><button type="button" className={styles.button} disabled={pending} onClick={onBack}>Back to results</button><button type="submit" className={`${styles.button} ${styles.primary}`} disabled={pending}>{pending ? "Adding…" : `Add ${noun}`}</button></div>
   </form>;
 }
 
 type Menu = { kind: "filter"; id: PickerColumnId; anchor: HTMLElement } | { kind: "columns" | "more"; anchor: HTMLElement };
 const PAGE_SIZE = 50;
 
-export function ConnectorPickerDialog({ parts, destination, slot, readOnly = false, onSelect, onClose, onCreatePart }: Props) {
+export function ConnectorPickerDialog({ parts, mode = "connector", destination, slot, readOnly = false, onSelect, onClose, onCreatePart }: Props) {
+  const pickerMode = slot ? "connector" : mode;
+  const frameMode = pickerMode === "frame";
+  const noun = slot ? "module" : frameMode ? "frame" : "connector";
+  const topFilters = pickerTopFilters(pickerMode);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [filters, setFilters] = useState<PickerFilters>({});
   const [sort, setSort] = useState<PickerSort | null>(null);
-  const [visibleIds, setVisibleIds] = useState<PickerColumnId[]>([...DEFAULT_PICKER_COLUMNS]);
+  const [visibleIds, setVisibleIds] = useState<PickerColumnId[]>(() => pickerDefaultColumns(pickerMode));
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [menu, setMenu] = useState<Menu | null>(null);
@@ -203,7 +210,8 @@ export function ConnectorPickerDialog({ parts, destination, slot, readOnly = fal
   const [reviewing, setReviewing] = useState(false);
   const [notice, setNotice] = useState("");
   const searchId = useId();
-  const index = useMemo(() => buildPickerIndex(parts), [parts]);
+  const eligibleParts = useMemo(() => parts.filter(part => isPickerPart(part, pickerMode)), [parts, pickerMode]);
+  const index = useMemo(() => buildPickerIndex(eligibleParts), [eligibleParts]);
   const results = useMemo(() => getPickerResults(index, query, filters, sort), [index, query, filters, sort]);
   const pageCount = Math.max(1, Math.ceil(results.length / PAGE_SIZE));
   const activePage = Math.min(page, pageCount);
@@ -248,14 +256,14 @@ export function ConnectorPickerDialog({ parts, destination, slot, readOnly = fal
   };
 
   if (typeof document === "undefined") return null;
-  return createPortal(<dialog ref={dialogRef} className={`${styles.dialog} ${reviewing && selected ? styles.reviewing : ""}`} aria-label={creating ? "Add new connector" : slot ? `Select slot ${slot.slotId} module` : "Define Connector"} aria-modal="true"
+  return createPortal(<dialog ref={dialogRef} className={`${styles.dialog} ${reviewing && selected ? styles.reviewing : ""}`} aria-label={creating ? `Add new ${noun}` : slot ? `Select slot ${slot.slotId} module` : frameMode ? "Define Frame" : "Define Connector"} aria-modal="true"
     onCancel={event => { event.preventDefault(); cancel(); }} onKeyDown={event => { if (event.key === "Escape" && menu) { event.preventDefault(); event.stopPropagation(); closeMenu(); } }}>
-    <header className={styles.header}><div><div className={styles.eyebrow}>{creating ? "ADD NEW CONNECTOR" : slot ? "SELECT MODULE" : "DEFINE CONNECTOR"} / {destination}{slot ? ` · SLOT ${slot.slotId}` : ""}</div><h1>{creating ? "Add new connector" : slot ? "Choose a slot module" : "Choose a connector"}</h1><p>{creating ? "Create a library entry, then review it before applying it to your design." : "Search, narrow your options, and find the right part."}</p></div><div className={styles.headerActions}><span className={styles.catalogState}><i />Active parts library</span><button className={styles.iconButton} type="button" disabled={createPending} onClick={creating ? backToResults : onClose} aria-label={creating ? "Back to results" : "Close connector picker"}><Icon name="close" /></button></div></header>
-    {creating ? <QuickAddForm onCreate={onCreatePart} onBack={backToResults} onCreated={createPart} onPendingChange={setCreatePending} /> : <>
-      <div className={styles.searchArea}><label className={styles.fieldLabel} htmlFor={searchId}>Search the parts library</label><div className={styles.searchRow}><div className={styles.searchBox}><Icon name="search" /><input ref={searchRef} id={searchId} type="search" placeholder={slot ? "Search modules..." : "Search connectors..."} value={query} onChange={event => { setQuery(event.target.value); resetSelection(); setMenu(null); }} />{query ? <button className={styles.clearSearch} type="button" aria-label="Clear search" onClick={() => { setQuery(""); resetSelection(); searchRef.current?.focus(); }}><Icon name="close" /></button> : null}</div>{!slot ? <button className={styles.button} type="button" disabled={readOnly} onClick={() => { setMenu(null); setCreating(true); }}>+ Add new connector</button> : null}</div></div>
+    <header className={styles.header}><div><div className={styles.eyebrow}>{creating ? `ADD NEW ${noun.toUpperCase()}` : slot ? "SELECT MODULE" : frameMode ? "DEFINE FRAME" : "DEFINE CONNECTOR"} / {destination}{slot ? ` · SLOT ${slot.slotId}` : ""}</div><h1>{creating ? `Add new ${noun}` : slot ? "Choose a slot module" : frameMode ? "Choose a frame" : "Choose a connector"}</h1><p>{creating ? "Create a library entry, then review it before applying it to your design." : "Search, narrow your options, and find the right part."}</p></div><div className={styles.headerActions}><span className={styles.catalogState}><i />Active parts library</span><button className={styles.iconButton} type="button" disabled={createPending} onClick={creating ? backToResults : onClose} aria-label={creating ? "Back to results" : `Close ${noun} picker`}><Icon name="close" /></button></div></header>
+    {creating ? <QuickAddForm mode={pickerMode} onCreate={onCreatePart} onBack={backToResults} onCreated={createPart} onPendingChange={setCreatePending} /> : <>
+      <div className={styles.searchArea}><label className={styles.fieldLabel} htmlFor={searchId}>Search the parts library</label><div className={styles.searchRow}><div className={styles.searchBox}><Icon name="search" /><input ref={searchRef} id={searchId} type="search" placeholder={slot ? "Search modules..." : frameMode ? "Search frames..." : "Search connectors..."} value={query} onChange={event => { setQuery(event.target.value); resetSelection(); setMenu(null); }} />{query ? <button className={styles.clearSearch} type="button" aria-label="Clear search" onClick={() => { setQuery(""); resetSelection(); searchRef.current?.focus(); }}><Icon name="close" /></button> : null}</div>{!slot ? <button className={styles.button} type="button" disabled={readOnly} onClick={() => { setMenu(null); setCreating(true); }}>+ Add new {noun}</button> : null}</div></div>
       <div className={styles.topOptions} aria-label="Filter and column options">
-        {TOP_PICKER_FILTERS.map(id => {
-          const column = pickerColumn(id), filter = filters[id], fixed = id === "type" && !!slot;
+        {topFilters.map(id => {
+          const column = pickerColumn(id), filter = filters[id], fixed = id === "type" && !frameMode;
           const label = filter?.kind === "values" && filter.values.length > 1 ? `${filter.values.length} selected` : filter ? pickerFilterLabel(filter) : "Any";
           return <button key={id} className={`${styles.optionButton} ${filter ? styles.active : ""}`} type="button" disabled={fixed} aria-label={`${column.label} filter`} aria-haspopup="dialog" aria-expanded={menu?.kind === "filter" && menu.id === id} onClick={event => setMenu({ kind: "filter", id, anchor: event.currentTarget })}>{column.label}<small>{fixed ? "Module" : label}</small><Icon name="chevron" /></button>;
         })}
@@ -266,10 +274,10 @@ export function ConnectorPickerDialog({ parts, destination, slot, readOnly = fal
       </div>
       {slot ? <div className={styles.context}><div><b>{destination} · Slot {slot.slotId}{slot.framePartNumber ? ` · ${slot.framePartNumber}` : ""}</b><p>{slot.reverse ? "Opposite-side modules." : "Same-side modules, including dual or unspecified sides."} Frame and slot restrictions always apply.</p></div><div className={styles.segmented} aria-label="Module side compatibility"><button type="button" aria-pressed={!slot.reverse} onClick={() => changeSide(false)}>Same-side modules</button><button type="button" aria-pressed={slot.reverse} onClick={() => changeSide(true)}>Opposite-side modules</button></div></div> : null}
       {notice ? <p className={styles.notice} role="status">{notice}</p> : null}
-      <section className={styles.results} aria-label="Connector results">
-        <div className={styles.resultsToolbar}><span className={styles.resultCount} aria-live="polite" aria-atomic="true">{results.length} {slot ? "compatible module" : "part"}{results.length === 1 ? "" : "s"}<small>of {parts.length} in this view</small></span><span className={styles.tableHint}>Click a heading to sort · Use its funnel to filter</span><span className={styles.sortStatus}>{sort ? <>Sorted: <b>{pickerColumn(sort.id).label} {sort.direction === "asc" ? "↑" : "↓"}</b><button className={styles.iconButton} type="button" aria-label="Clear sorting" onClick={() => { setSort(null); resetSelection(); }}><Icon name="close" /></button></> : query.trim() ? "Best match first" : "Part number A–Z"}</span></div>
+      <section className={styles.results} aria-label={frameMode ? "Frame results" : "Connector results"}>
+        <div className={styles.resultsToolbar}><span className={styles.resultCount} aria-live="polite" aria-atomic="true">{results.length} {slot ? "compatible module" : "part"}{results.length === 1 ? "" : "s"}<small>of {eligibleParts.length} in this view</small></span><span className={styles.tableHint}>Click a heading to sort · Use its funnel to filter</span><span className={styles.sortStatus}>{sort ? <>Sorted: <b>{pickerColumn(sort.id).label} {sort.direction === "asc" ? "↑" : "↓"}</b><button className={styles.iconButton} type="button" aria-label="Clear sorting" onClick={() => { setSort(null); resetSelection(); }}><Icon name="close" /></button></> : query.trim() ? "Best match first" : "Part number A–Z"}</span></div>
         {activeFilters.length ? <div className={styles.chips}>{activeFilters.map(([id, filter]) => <button type="button" className={styles.chip} key={id} aria-label={`Remove ${pickerColumn(id).label} filter`} onClick={() => applyFilter(id)}>{pickerColumn(id).label}: {pickerFilterLabel(filter)}<span aria-hidden="true">×</span></button>)}<button className={styles.linkButton} type="button" onClick={() => { setFilters({}); setQuery(""); resetSelection(); }}>Clear all</button></div> : null}
-        <div className={styles.tableScroll} tabIndex={0} role="region" aria-label="Scrollable connector table">
+        <div className={styles.tableScroll} tabIndex={0} role="region" aria-label={`Scrollable ${noun} table`}>
           <table className={styles.table} style={{ minWidth: 38 + visibleColumns.reduce((sum, column) => sum + column.width, 0) }} aria-label="Parts matching your search">
             <colgroup><col style={{ width: 38 }} />{visibleColumns.map(column => <col key={column.id} style={{ width: column.width }} />)}</colgroup>
             <thead><tr><th scope="col" className={styles.selectColumn}><span className={styles.srOnly}>Choose a part</span></th>{visibleColumns.map(column => {
@@ -284,15 +292,15 @@ export function ConnectorPickerDialog({ parts, destination, slot, readOnly = fal
               })}
             </tr>)}</tbody>
           </table>
-          {!results.length ? <div className={styles.empty}><Icon name="search" /><h2>{!parts.length ? slot ? "No compatible modules for this slot" : "No connectors in your library yet" : "No parts match your search"}</h2><p>{slot ? "Frame and slot compatibility rules remain applied." : "Search by another part number or remove a filter."}</p>{query || activeFilters.length ? <button type="button" className={`${styles.button} ${styles.primary}`} onClick={() => { setQuery(""); setFilters({}); resetSelection(); }}>Clear search and filters</button> : !slot ? <button type="button" className={`${styles.button} ${styles.primary}`} disabled={readOnly} onClick={() => setCreating(true)}>Add new connector</button> : null}</div> : null}
+          {!results.length ? <div className={styles.empty}><Icon name="search" /><h2>{!eligibleParts.length ? slot ? "No compatible modules for this slot" : frameMode ? "No frames in your library yet" : "No connectors in your library yet" : "No parts match your search"}</h2><p>{slot ? "Frame and slot compatibility rules remain applied." : "Search by another part number or remove a filter."}</p>{query || activeFilters.length ? <button type="button" className={`${styles.button} ${styles.primary}`} onClick={() => { setQuery(""); setFilters({}); resetSelection(); }}>Clear search and filters</button> : !slot ? <button type="button" className={`${styles.button} ${styles.primary}`} disabled={readOnly} onClick={() => setCreating(true)}>Add new {noun}</button> : null}</div> : null}
         </div>
         <div className={styles.tableFoot}><span>{slot ? "Frame and slot compatibility always applied" : "Active parts visible to you"}<span className={styles.mobileHint}>Scroll horizontally for more columns</span></span><div className={styles.pagination}><button type="button" className={styles.linkButton} disabled={activePage <= 1} onClick={() => { setPage(activePage - 1); setSelectedId(null); }}>Previous</button><span>Page {activePage} of {pageCount}</span><button type="button" className={styles.linkButton} disabled={activePage >= pageCount} onClick={() => { setPage(activePage + 1); setSelectedId(null); }}>Next</button></div></div>
-        {selected ? <section className={styles.preview} aria-label="Selected part specifications"><button className={`${styles.button} ${styles.backResults}`} type="button" onClick={() => setReviewing(false)}>← Back to results</button><div className={styles.previewIdentity}><span className={styles.previewSymbol}><Icon name="module" /></span><div><small>SELECTED PART · {destination}{slot ? ` / SLOT ${slot.slotId}` : ""}</small><h2>{selected.part.partNumber}</h2><p>{selected.part.description}</p></div></div><dl className={styles.specs}>{CONNECTOR_PICKER_COLUMNS.filter(column => !["partNumber", "description", "type"].includes(column.id) && (!column.applies || column.applies(selected.part))).map(column => <div key={column.id}><dt>{column.label}</dt><dd>{pickerDisplayValue(selected, column)}</dd></div>)}</dl><button type="button" className={styles.iconButton} aria-label="Clear selected part" onClick={() => { setSelectedId(null); setReviewing(false); }}><Icon name="close" /></button></section> : null}
+        {selected ? <section className={styles.preview} aria-label="Selected part specifications"><button className={`${styles.button} ${styles.backResults}`} type="button" onClick={() => setReviewing(false)}>← Back to results</button><div className={styles.previewIdentity}><span className={styles.previewSymbol}><Icon name={frameMode ? "columns" : "module"} /></span><div><small>SELECTED PART · {destination}{slot ? ` / SLOT ${slot.slotId}` : ""}</small><h2>{selected.part.partNumber}</h2><p>{selected.part.description}</p></div></div><dl className={styles.specs}>{CONNECTOR_PICKER_COLUMNS.filter(column => !["partNumber", "description", "type"].includes(column.id) && (!column.applies || column.applies(selected.part))).map(column => <div key={column.id}><dt>{column.label}</dt><dd>{pickerDisplayValue(selected, column)}</dd></div>)}</dl><button type="button" className={styles.iconButton} aria-label="Clear selected part" onClick={() => { setSelectedId(null); setReviewing(false); }}><Icon name="close" /></button></section> : null}
       </section>
-      <footer className={styles.footer}><div className={styles.selectionSummary}>{selected ? selected.part.partNumber : "Select a part to continue."}<small>Target: {destination}{slot ? ` · Slot ${slot.slotId}` : ""} · Preview before applying.</small></div><div className={styles.footerActions}><button className={styles.button} type="button" onClick={onClose}>Cancel</button><button className={`${styles.button} ${styles.primary}`} type="button" disabled={readOnly || !selected} onClick={confirm}><span className={styles.desktopConfirm}>Use {slot ? "module" : "connector"}</span><span className={styles.mobileConfirm}>{reviewing ? "Use" : "Review"} {slot ? "module" : "connector"}</span> →</button></div></footer>
+      <footer className={styles.footer}><div className={styles.selectionSummary}>{selected ? selected.part.partNumber : "Select a part to continue."}<small>Target: {destination}{slot ? ` · Slot ${slot.slotId}` : ""} · Preview before applying.</small></div><div className={styles.footerActions}><button className={styles.button} type="button" onClick={onClose}>Cancel</button><button className={`${styles.button} ${styles.primary}`} type="button" disabled={readOnly || !selected} onClick={confirm}><span className={styles.desktopConfirm}>Use {noun}</span><span className={styles.mobileConfirm}>{reviewing ? "Use" : "Review"} {noun}</span> →</button></div></footer>
     </>}
     {menu ? <PickerMenu key={menu.kind === "filter" ? menu.id : menu.kind} anchor={menu.anchor} title={menu.kind === "filter" ? pickerColumn(menu.id).label : menu.kind === "columns" ? "Choose columns" : "Filter any column"} onClose={closeMenu}>
-      {menu.kind === "filter" ? <ColumnFilterMenu column={pickerColumn(menu.id)} index={index} query={query} filters={filters} sort={effectiveSort} onApply={filter => applyFilter(menu.id, filter)} onClear={() => applyFilter(menu.id)} onSort={direction => applySort(menu.id, direction)} /> : menu.kind === "columns" ? <ColumnsMenu visible={visibleIds} onApply={ids => { setVisibleIds(ids); setMenu(null); }} /> : <div className={styles.menuBody}>{CONNECTOR_PICKER_COLUMNS.filter(column => !TOP_PICKER_FILTERS.includes(column.id)).map(column => <button type="button" key={column.id} className={`${styles.menuItem} ${filters[column.id] ? styles.active : ""}`} onClick={() => setMenu({ kind: "filter", id: column.id, anchor: menu.anchor })}>{column.label}<Icon name="filter" /></button>)}</div>}
+      {menu.kind === "filter" ? <ColumnFilterMenu column={pickerColumn(menu.id)} index={index} query={query} filters={filters} sort={effectiveSort} onApply={filter => applyFilter(menu.id, filter)} onClear={() => applyFilter(menu.id)} onSort={direction => applySort(menu.id, direction)} /> : menu.kind === "columns" ? <ColumnsMenu visible={visibleIds} defaults={pickerDefaultColumns(pickerMode)} onApply={ids => { setVisibleIds(ids); setMenu(null); }} /> : <div className={styles.menuBody}>{CONNECTOR_PICKER_COLUMNS.filter(column => !topFilters.includes(column.id)).map(column => <button type="button" key={column.id} className={`${styles.menuItem} ${filters[column.id] ? styles.active : ""}`} onClick={() => setMenu({ kind: "filter", id: column.id, anchor: menu.anchor })}>{column.label}<Icon name="filter" /></button>)}</div>}
     </PickerMenu> : null}
   </dialog>, document.body);
 }

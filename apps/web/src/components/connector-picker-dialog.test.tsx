@@ -26,11 +26,66 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 function mount(overrides: Partial<React.ComponentProps<typeof ConnectorPickerDialog>> = {}) {
   const onSelect = vi.fn(), onClose = vi.fn();
   render(<ConnectorPickerDialog parts={parts} destination="J3" onCreatePart={create} onSelect={onSelect} onClose={onClose} {...overrides} />);
-  return { onSelect, onClose, dialog: screen.getByRole("dialog", { name: "Define Connector" }) };
+  return { onSelect, onClose, dialog: screen.getByRole("dialog", { name: overrides.mode === "frame" ? "Define Frame" : "Define Connector" }) };
 }
 const tableRows = () => within(screen.getByRole("table", { name: "Parts matching your search" })).getAllByRole("row").slice(1);
 
 describe("ConnectorPickerDialog", () => {
+  it.each(["connector", "frame"] as const)("restricts the %s picker independently of search and user filters", mode => {
+    const catalog = [
+      ...parts,
+      part("ITA-FRAME", { category: "frame", partType: "ITA", description: "ITA housing", attributes: { moduleCapacity: 6 } }),
+      part("RCV-FRAME", { category: "frame", partType: "RECEIVER", description: "Receiver housing", attributes: { moduleCapacity: 4 } }),
+      part("SIM-INSERT", { partType: "SIM_INSERT" })
+    ];
+    mount({ mode, parts: catalog });
+    expect(tableRows()).toHaveLength(2);
+    expect(screen.queryByRole("radio", { name: "Preview SIM-INSERT" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: `Preview ${mode === "frame" ? "MOD-096" : "ITA-FRAME"}` })).not.toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: `Preview ${mode === "frame" ? "ITA-FRAME" : "MOD-096"}` })).toBeVisible();
+    fireEvent.change(screen.getByLabelText("Search the parts library"), { target: { value: mode === "frame" ? "MOD-096" : "ITA-FRAME" } });
+    expect(screen.queryAllByRole("radio")).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: "Reset filters" }));
+    expect(screen.queryAllByRole("radio")).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
+    expect(tableRows()).toHaveLength(2);
+    if (mode === "frame") {
+      expect(screen.getByRole("button", { name: "Module capacity filter" })).toBeVisible();
+      expect(screen.queryByRole("button", { name: "+ Add new connector" })).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Filter Type" }));
+      expect(screen.queryByRole("checkbox", { name: /^Module/ })).not.toBeInTheDocument();
+      expect(screen.getByRole("checkbox", { name: /^ITA housing/ })).toBeVisible();
+      expect(screen.getByRole("checkbox", { name: /^Receiver housing/ })).toBeVisible();
+    }
+  });
+
+  it("creates and selects the frame when a connector has the same part number", async () => {
+    const connector = part("same-module", { partNumber: "SAME-123" });
+    const frame = part("new-frame", { partNumber: "SAME-123", category: "frame", partType: "RECEIVER", attributes: { moduleCapacity: 2 } });
+    const onSelect = vi.fn();
+    function Harness() {
+      const [catalog, setCatalog] = useState([connector]);
+      return <ConnectorPickerDialog mode="frame" parts={catalog} destination="J1" onClose={vi.fn()} onSelect={onSelect} onCreatePart={async data => {
+        expect(data.get("category")).toBe("frame");
+        expect(data.get("partType")).toBe("RECEIVER");
+        expect(data.get("attr:moduleCapacity")).toBe("2");
+        setCatalog([connector, frame]);
+        return { ok: true, connectorCatalog: [connector, frame], newConnectorPartNumber: "SAME-123" };
+      }} />;
+    }
+    render(<Harness />);
+    fireEvent.click(screen.getByRole("button", { name: "+ Add new frame" }));
+    fireEvent.change(screen.getByLabelText("Housing type"), { target: { value: "RECEIVER" } });
+    fireEvent.change(screen.getByLabelText("Part number"), { target: { value: "SAME-123" } });
+    fireEvent.change(screen.getByLabelText("Module capacity"), { target: { value: "2" } });
+    fireEvent.submit(screen.getByRole("button", { name: "Add frame" }).closest("form")!);
+    await waitFor(() => expect(screen.getByRole("radio", { name: "Preview SAME-123" })).toBeChecked());
+    expect(tableRows()).toHaveLength(1);
+    expect(tableRows()[0]).toHaveTextContent("Receiver housing");
+    expect(onSelect).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /^Use frame/ }));
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith(frame);
+  });
   it("previews without applying, confirms once, and starts with confirmation disabled", () => {
     const { onSelect } = mount();
     const confirm = screen.getByRole("button", { name: /^Use connector/ });
@@ -129,9 +184,10 @@ describe("ConnectorPickerDialog", () => {
 
   it("retains slot context and uses explicit same-side and opposite-side modes", () => {
     const onReverseChange = vi.fn();
-    render(<ConnectorPickerDialog parts={parts} destination="J3" slot={{ slotId: "A", framePartNumber: "FRAME-6", reverse: false, onReverseChange }} onCreatePart={create} onClose={vi.fn()} onSelect={vi.fn()} />);
+    render(<ConnectorPickerDialog mode="frame" parts={[...parts, part("FRAME", { category: "frame", partType: "ITA" })]} destination="J3" slot={{ slotId: "A", framePartNumber: "FRAME-6", reverse: false, onReverseChange }} onCreatePart={create} onClose={vi.fn()} onSelect={vi.fn()} />);
     expect(screen.getByRole("dialog", { name: "Select slot A module" })).toHaveTextContent("FRAME-6");
     expect(screen.getByRole("button", { name: "Type filter" })).toBeDisabled();
+    expect(screen.queryByRole("radio", { name: "Preview FRAME" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "+ Add new connector" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Opposite-side modules" }));
     expect(onReverseChange).toHaveBeenCalledWith(true);

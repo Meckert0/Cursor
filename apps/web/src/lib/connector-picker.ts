@@ -1,8 +1,13 @@
 import type { LibraryComponentDto } from "./api";
-import { isCanvasFramePart } from "./part-fields";
+import { isCanvasConnectorPart, isCanvasFramePart } from "./part-fields";
 import { normalizeCatalogSide } from "./connector-frames";
 
 export type PickerValue = string | number | null;
+export type PickerMode = "connector" | "frame";
+
+export function isPickerPart(part: LibraryComponentDto, mode: PickerMode): boolean {
+  return mode === "frame" ? isCanvasFramePart(part) : isCanvasConnectorPart(part);
+}
 export type PickerColumnId =
   | "partNumber" | "description" | "type" | "family" | "side" | "positions"
   | "stockStatus" | "reviewStatus" | "gender" | "moduleCapacity"
@@ -94,6 +99,12 @@ export const CONNECTOR_PICKER_COLUMNS: readonly PickerColumn[] = [
 
 export const DEFAULT_PICKER_COLUMNS = CONNECTOR_PICKER_COLUMNS.slice(0, 8).map(c => c.id);
 export const TOP_PICKER_FILTERS: readonly PickerColumnId[] = ["type", "family", "side", "positions", "stockStatus"];
+export function pickerDefaultColumns(mode: PickerMode): PickerColumnId[] {
+  return DEFAULT_PICKER_COLUMNS.map(id => mode === "frame" && id === "positions" ? "moduleCapacity" : id);
+}
+export function pickerTopFilters(mode: PickerMode): PickerColumnId[] {
+  return TOP_PICKER_FILTERS.map(id => mode === "frame" && id === "positions" ? "moduleCapacity" : id);
+}
 export const pickerColumn = (id: PickerColumnId): PickerColumn => CONNECTOR_PICKER_COLUMNS.find(c => c.id === id)!;
 
 function normalize(value: string): string {

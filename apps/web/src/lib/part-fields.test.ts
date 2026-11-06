@@ -72,7 +72,7 @@ describe("part fields", () => {
     expect(isCanvasConnectorPart({ category: "frame", partType: "ITA" })).toBe(false);
   });
 
-  it("lets Define Connector pick modules and ITA/RCV frames", () => {
+  it("includes modules and ITA/RCV frames in the shared canvas catalog", () => {
     expect(isCanvasFramePart({ category: "frame", partType: "RECEIVER" })).toBe(true);
     expect(isCanvasDefinablePart({ category: "frame", partType: "ITA" })).toBe(true);
     expect(isCanvasDefinablePart({ category: "module", partType: "SIM_INSERT" })).toBe(false);

@@ -149,7 +149,7 @@ export function uniqueToken() {
   return Date.now();
 }
 
-export async function selectConnectorPickerPart(page: Page, partNumber: string, kind: "connector" | "module" = "connector") {
+export async function selectConnectorPickerPart(page: Page, partNumber: string, kind: "connector" | "frame" | "module" = "connector") {
   await page.getByRole("radio", { name: `Preview ${partNumber}`, exact: true }).check();
   const review = page.getByRole("button", { name: new RegExp(`^Review ${kind}`) });
   if (await review.isVisible()) await review.click();

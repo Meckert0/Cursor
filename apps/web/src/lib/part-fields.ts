@@ -349,7 +349,7 @@ export function isCanvasFramePart(part: { category: string; partType?: string })
   return partType === "ITA" || partType === "RECEIVER" || partType === "RCV" || partType === "";
 }
 
-/** Parts that can be chosen in Define Connector (standalone modules or frames). */
+/** Canvas catalog parts; the connector and frame pickers scope this catalog independently. */
 export function isCanvasDefinablePart(part: { category: string; partType?: string }): boolean {
   return isCanvasConnectorPart(part) || isCanvasFramePart(part);
 }

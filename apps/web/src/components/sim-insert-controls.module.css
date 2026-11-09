@@ -1,0 +1,70 @@
+.controls { grid-column: 1 / -1; min-width: 0; }
+.controls .preview { display: inline-flex; align-items: center; gap: 10px; min-height: 52px; max-width: 100%; padding: 4px 8px 4px 0; border: 0; border-radius: 6px; color: #334155; background: transparent; cursor: pointer; text-align: left; }
+.preview:hover { background: #eff4fc; }
+.preview:focus-visible { outline: 3px solid #86a8fb; outline-offset: 2px; }
+.thumbnail { display: block; width: 72px; height: 44px; flex: none; }
+.thumbnail text { font: 11px system-ui, sans-serif; fill: #334155; }
+.housing { fill: #e8edf4; stroke: #a6b4c7; }
+.empty { --slot-fill: #fff; --slot-line: #b5c2d4; }
+.filled { --slot-fill: #d9eee8; --slot-line: #5a9c87; }
+.attention { --slot-fill: #fff0d4; --slot-line: #c39745; }
+.thumbnail g rect { fill: var(--slot-fill); stroke: var(--slot-line); }
+.previewText { display: grid; gap: 2px; font-size: 11px; line-height: 1.4; }
+.previewText strong { font-size: 12px; font-weight: 600; }
+.previewText strong span { margin-left: 4px; color: #64748b; }
+.dialog { position: fixed; inset: 0; width: min(980px, calc(100vw - 48px)); max-width: none; max-height: calc(100dvh - 48px); margin: auto; padding: 0; border: 1px solid #c8d3e3; border-radius: 14px; color: #23334c; background: #fff; box-shadow: 0 20px 75px #13254030; overflow: hidden; font-size: 13px; }
+.dialog[open] { display: flex; flex-direction: column; }
+.dialog::backdrop { background: #1c2b436b; }
+.dialog button { font: inherit; cursor: pointer; }
+.dialog button:disabled { opacity: .45; cursor: default; }
+.dialog button:focus-visible, .layoutScroll:focus-visible { outline: 3px solid #86a8fb; outline-offset: 2px; }
+.header { display: flex; justify-content: space-between; align-items: start; gap: 16px; padding: 24px; border-bottom: 1px solid #e0e7f0; flex: none; }
+.eyebrow { margin: 0 0 8px; font-size: 10px; color: #718198; letter-spacing: .09em; font-weight: 700; }
+.header h1 { margin: 0 0 8px; font-size: 23px; line-height: 1.2; letter-spacing: -.4px; }
+.partSummary { margin: 0; color: #64748b; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.iconButton { width: 34px; height: 34px; flex: none; border: 1px solid #d5deeb; border-radius: 6px; color: #64748b; background: #fff; font-size: 24px !important; }
+.body { padding: 24px; overflow-y: auto; min-height: 0; overscroll-behavior: contain; }
+.layoutHeading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+.dialog h2 { margin: 0; font-size: 15px; font-weight: 600; }
+.layoutHeading > span { color: #64748b; font-size: 12px; }
+.help { margin: 0 0 14px; font-size: 12px; line-height: 1.7; color: #64748b; }
+.error { margin: 0 0 14px; color: #9a5c0d; font-size: 12px; line-height: 1.6; }
+.workspace { display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, 300px); gap: 24px; margin-top: 18px; }
+.layoutPanel { min-width: 0; padding: 20px 12px 14px; border: 1px solid #e0e7f0; border-radius: 10px; background: #f5f7fb; }
+.layoutScroll { overflow: auto; padding: 4px; }
+.moduleHousing { display: grid; gap: 12px; width: max-content; min-width: 116px; margin: 0 auto; padding: 16px; border: 2px solid #a6b4c7; border-radius: 9px; background: #e8edf4; box-shadow: inset 0 0 0 4px #f4f6fa; }
+.slotSection { display: grid; grid-auto-flow: column; grid-auto-columns: 76px; gap: 4px; justify-content: start; }
+.dialog .slot { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 9px; height: 90px; padding: 8px 4px; border: 1px solid var(--slot-line); border-radius: 4px; color: #334155; background: var(--slot-fill); }
+.slot strong { font-size: 17px; max-width: 100%; overflow-wrap: anywhere; }
+.slot > span { font-size: 10px; }
+.srOnly { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.dialog .slot.related { box-shadow: inset 0 0 0 1px #5b84d6; }
+.dialog .slot[aria-pressed="true"] { outline: 2px solid #285bd0; outline-offset: 1px; }
+.legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 18px; color: #64748b; font-size: 10px; }
+.legend span { display: inline-flex; align-items: center; gap: 5px; }
+.legend i { width: 9px; height: 9px; border: 1px solid var(--slot-line); border-radius: 2px; background: var(--slot-fill); }
+.selection { min-width: 0; align-self: start; padding: 8px 0; }
+.selection h2 { margin-bottom: 16px; }
+.selectedPart { margin: 0 0 6px; font-size: 14px; font-weight: 600; line-height: 1.6; overflow-wrap: anywhere; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+.button { display: inline-flex; justify-content: center; align-items: center; min-height: 38px; padding: 9px 13px; border: 1px solid #cfdae8; border-radius: 7px; color: #334155; background: #fff; font-size: 12px !important; font-weight: 600 !important; }
+.button:hover:not(:disabled) { background: #f4f7fb; }
+.primary { color: #fff; background: #285bd0; border-color: #285bd0; }
+.primary:hover:not(:disabled) { background: #1d49b2; }
+.orphaned { margin-top: 24px; padding: 16px; border: 1px solid #e6c78f; border-radius: 8px; background: #fffbf3; }
+.orphaned > div { display: flex; align-items: center; gap: 16px; margin-top: 12px; }
+.orphaned p { flex: 1; min-width: 0; margin: 0; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.orphaned p span { display: block; color: #8b6a36; }
+.footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 24px; border-top: 1px solid #e0e7f0; flex: none; }
+.footer > span { color: #718198; font-size: 11px; }
+@media (max-width: 640px) {
+  .dialog { width: calc(100vw - 20px); max-height: calc(100dvh - 20px); border-radius: 10px; }
+  .header, .body { padding: 18px; }
+  .header h1 { font-size: 20px; }
+  .workspace { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+  .selection { padding: 0; }
+  .selection h2 { margin-bottom: 10px; }
+  .slotSection { grid-auto-columns: 64px; }
+  .dialog .slot { height: 74px; }
+  .footer { padding: 14px 18px; }
+}

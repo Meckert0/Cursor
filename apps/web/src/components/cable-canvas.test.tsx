@@ -1,13 +1,18 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { LibraryComponentDto, RevisionDto } from "@/lib/api";
 import { bundleDiameterInches, formatBundleDiameterLabel, formatCableSectionCanvasLabel } from "@/lib/cable-canvas-utils";
 import { CableCanvas } from "./cable-canvas";
 import styles from "./cable-canvas.module.css";
 
 const canvasCss = readFileSync(path.resolve(process.cwd(), "src/components/cable-canvas.module.css"), "utf8");
+
+beforeAll(() => {
+  HTMLDialogElement.prototype.showModal = function () { this.setAttribute("open", ""); };
+  HTMLDialogElement.prototype.close = function () { this.removeAttribute("open"); };
+});
 
 afterEach(() => {
   cleanup();
@@ -78,7 +83,7 @@ function snapshot(): RevisionDto["snapshot"] {
 }
 
 describe("CableCanvas cable sections", () => {
-  it("expands only one SIM module at a time while keeping modules in the frame's module area", () => {
+  it("opens each frame module's SIM layout in a dialog while keeping previews in the module area", () => {
     const host: LibraryComponentDto = { id: "sim-host", category: "module", partType: "MODULE", electricalMode: "INSERT_HOST", partNumber: "SIM-HOST", family: "SIM", description: "SIM host", attributes: { simSlotCount: 2 }, isActive: true, isReviewed: true, stockStatus: "in_stock", createdByUserId: "u", createdAt: "2026-01-01", lastEditedByUserId: "u", lastEditedAt: "2026-01-01", updatedAt: "2026-01-01" };
     render(<CableCanvas revisionId="sim-disclosure" snapshot={{ ...snapshot(), paths: [], connectors: [{ id: "f", reference: "J1", partNumber: "FRAME", pins: [], slots: [
       { slotId: "A", reference: "J1A", partNumber: host.partNumber, libraryComponentId: host.id, pins: [], simInserts: [] },
@@ -88,13 +93,22 @@ describe("CableCanvas cable sections", () => {
     const modules = within(screen.getByRole("region", { name: "Frame modules" }));
     const first = modules.getByRole("button", { name: "Configure SIM inserts for J1A" });
     const second = modules.getByRole("button", { name: "Configure SIM inserts for J1B" });
+    expect(within(first).getByRole("img", { name: "J1A SIM slot layout" })).toBeInTheDocument();
+    expect(first).toHaveAttribute("aria-haspopup", "dialog");
+    first.focus();
     fireEvent.click(first);
-    expect(first).toHaveAttribute("aria-expanded", "true");
-    fireEvent.click(second);
-    expect(first).toHaveAttribute("aria-expanded", "false");
-    expect(second).toHaveAttribute("aria-expanded", "true");
+    const dialog = screen.getByRole("dialog", { name: "J1A · SIM inserts" });
+    fireEvent.keyDown(window, { key: "Delete" });
+    fireEvent.keyDown(window, { key: "z", ctrlKey: true });
+    expect(screen.getByRole("button", { name: "Frame J1" })).toBeInTheDocument();
+    expect(dialog).toBeVisible();
+    expect(within(dialog).getByRole("region", { name: "J1A SIM slots" })).toBeVisible();
     expect(modules.queryByRole("region", { name: "J1A SIM slots" })).not.toBeInTheDocument();
-    expect(modules.getByRole("region", { name: "J1B SIM slots" })).toBeVisible();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Done" }));
+    expect(first).toHaveFocus();
+    fireEvent.click(second);
+    expect(screen.queryByRole("dialog", { name: "J1A · SIM inserts" })).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "J1B · SIM inserts" })).toBeVisible();
   });
   it("creates separate connector and frame drafts and preserves their kind through undo and redo", () => {
     render(<CableCanvas revisionId="rev-separate-part-kinds" snapshot={{ ...snapshot(), connectors: [], paths: [] }} snapshotHash="hash" connectorCatalog={[]} quickAddConnectorAction={async () => ({ ok: true, connectorCatalog: [] })} />);

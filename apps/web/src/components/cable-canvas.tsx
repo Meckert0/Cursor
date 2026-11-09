@@ -145,7 +145,7 @@ export function CableCanvas({
   const [strainReliefCatalogState] = useState<LibraryComponentDto[]>(strainReliefCatalog);
   const [showConnectorSearchDialog, setShowConnectorSearchDialog] = useState(false);
   const [connectorSearchTarget, setConnectorSearchTarget] = useState<"connector" | "frame" | { slotId: string } | { simSlotId: string; moduleSlotId?: string }>("connector");
-  const [expandedSimModule, setExpandedSimModule] = useState<string | null>(null);
+  const [openSimModule, setOpenSimModule] = useState<string | null>(null);
   const [includeReverseCompat, setIncludeReverseCompat] = useState(false);
   const [connectorNameDraft, setConnectorNameDraft] = useState("");
   const [connectorNameError, setConnectorNameError] = useState<string | null>(null);
@@ -927,7 +927,7 @@ export function CableCanvas({
   const renderSimControls = (module: { reference: string; simInserts?: SimInsertAssignment[] }, host: LibraryComponentDto | undefined, moduleSlotId?: string) => {
     const moduleKey = `${selectedConnector?.id}:${moduleSlotId ?? "self"}`;
     return <SimInsertControls host={host} assignments={module.simInserts} reference={module.reference} catalog={connectorCatalogState} relationships={insertAllowedRelationships}
-      expanded={expandedSimModule === moduleKey} onToggle={() => setExpandedSimModule(previous => previous === moduleKey ? null : moduleKey)} readOnly={readOnly}
+      open={openSimModule === moduleKey} onOpen={() => setOpenSimModule(moduleKey)} onClose={() => setOpenSimModule(null)} readOnly={readOnly}
       onChoose={simSlotId => { setConnectorSearchTarget({ simSlotId, moduleSlotId }); setShowConnectorSearchDialog(true); }}
       onRemove={simSlotId => applySimInsertSelection(simSlotId, undefined, moduleSlotId)} />;
   };
@@ -1135,7 +1135,7 @@ export function CableCanvas({
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       const tagName = target?.tagName?.toLowerCase();
-      if (tagName === "input" || tagName === "textarea" || tagName === "select" || target?.isContentEditable) {
+      if (document.querySelector("dialog[open]") || tagName === "input" || tagName === "textarea" || tagName === "select" || target?.isContentEditable) {
         return;
       }
       const key = event.key.toLowerCase();

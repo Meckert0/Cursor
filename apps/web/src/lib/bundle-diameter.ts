@@ -187,8 +187,8 @@ function resolveEndpointNodeId(
 /**
  * Bundle diameter, in inches, for each cable section.
  * A wirelist wire is carried by every cable section on the route between its
- * endpoints. Sections with no routed wires, or with any wire missing a
- * positive overall diameter from the item database, stay null.
+ * endpoints. Sections with no routed wires use zero as a placeholder; sections
+ * with a wire missing its positive database diameter stay null.
  */
 export function cableSectionBundleDiameters(input: {
   connectors: Snapshot["connectors"];
@@ -285,7 +285,7 @@ export function selectSleeveForBundleDiameter(input: {
   if (!input.sleeving || input.sleeving === "none" || input.bundleDiameterIn === null) {
     return null;
   }
-  if (!Number.isFinite(input.bundleDiameterIn) || input.bundleDiameterIn <= 0) {
+  if (!Number.isFinite(input.bundleDiameterIn) || input.bundleDiameterIn < 0) {
     return null;
   }
   const normalizeFamily = (value: string) => value.trim().toLowerCase().replace(/[\s-]+/g, "_");

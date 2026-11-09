@@ -153,7 +153,7 @@ describe("CableCanvas cable sections", () => {
     const details = carried.querySelector(`.${styles.cableLabelDetails}`) as HTMLElement;
     expect(within(details).getByText("section1")).toBeInTheDocument();
     expect(details).toHaveTextContent(carriedDiameter);
-    expect(empty).toHaveAccessibleName("section2 - 8 in | no sleeving | bundle dia —");
+    expect(empty).toHaveAccessibleName("section2 - 8 in | no sleeving | bundle dia 0 in");
     expect(carried).toHaveStyle({ left: "180px", top: "68px" });
     expect(empty).toHaveStyle({ left: "380px", top: "128px" });
     expect(carried.className).toContain(styles.cableLabel);

@@ -498,12 +498,12 @@ export const BUNDLE_DIAMETER_PACKING_FACTOR = 1.155;
 
 /**
  * Diameter, in inches, of the wires that share one cable section.
- * Returns null when the section has no assigned wires or any wire is missing
- * a positive overall diameter, so sleeving is not sized from a partial bundle.
+ * Empty sections use a zero-diameter placeholder. Returns null when an assigned
+ * wire is missing a positive overall diameter, so partial bundles are not sized.
  */
 export function bundleDiameterInches(wireDiametersIn: Array<number | null | undefined>): number | null {
   if (wireDiametersIn.length === 0) {
-    return null;
+    return 0;
   }
   let sumOfSquares = 0;
   for (const value of wireDiametersIn) {

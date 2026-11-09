@@ -163,7 +163,7 @@ describe("DetailsSummary", () => {
     expect(j2a.queryByText(/slot A/)).not.toBeInTheDocument();
     expect(j2a.getByText("No compatible contacts.")).toBeInTheDocument();
     expect(
-      screen.getByText("section1: c_canvas_1 -> c_canvas_2, 24 in, expandable sleeving, bundle dia —")
+      screen.getByText("section1: c_canvas_1 -> c_canvas_2, 24 in, expandable sleeving, bundle dia 0 in")
     ).toBeInTheDocument();
     expect(screen.getByText("J1 -> J2: 24 in")).toBeInTheDocument();
     expect(screen.queryByText(/c_canvas_1\)/)).not.toBeInTheDocument();

@@ -38,9 +38,9 @@ test("canvas section labels expand on hover and keyboard focus and preserve edit
 
   const label = page.getByTestId(/^cable-label-/);
   const sectionName = label.getByText("section1", { exact: true });
-  const diameter = label.getByText("bundle dia —", { exact: true });
+  const diameter = label.getByText("bundle dia 0 in", { exact: true });
   await expect(label).toHaveCount(1);
-  await expect(label).toHaveAccessibleName("section1 - 0 in | no sleeving | bundle dia —");
+  await expect(label).toHaveAccessibleName("section1 - 0 in | no sleeving | bundle dia 0 in");
   await page.mouse.move(0, 0);
   await expect.poll(async () => (await label.innerText()).split("\n").filter(Boolean)).toEqual([
     "0 in",
@@ -87,7 +87,7 @@ test("canvas section labels expand on hover and keyboard focus and preserve edit
   await editor.fill("24.5");
   await editor.press("Enter");
   await expect(editor).toHaveCount(0);
-  await expect(label).toHaveAccessibleName("section1 - 24.5 in | no sleeving | bundle dia —");
+  await expect(label).toHaveAccessibleName("section1 - 24.5 in | no sleeving | bundle dia 0 in");
 
   await page.getByRole("combobox", { name: /^Sleeving/ }).selectOption("expandable_sleeving");
   const saveStatus = page.getByTestId("canvas-save-status");
@@ -101,10 +101,13 @@ test("canvas section labels expand on hover and keyboard focus and preserve edit
 
   await page.getByRole("button", { name: "Show Details", exact: true }).click();
   const sectionSummary = page.getByRole("listitem").filter({ hasText: /^section1:/ });
-  await expect(sectionSummary).toContainText("24.5 in, expandable sleeving, bundle dia —");
+  await expect(sectionSummary).toContainText("24.5 in, expandable sleeving, bundle dia 0 in");
+  await expect(sectionSummary).toContainText("Expandable sleeving: 875010 (24.5 in)");
+  await expect(page.getByRole("list", { name: "Material totals by part number" })).toContainText("Expandable sleeving 875010: 24.5 in");
   await expect(page.getByRole("listitem").filter({ hasText: /^cable1:/ })).toHaveCount(0);
   await openDetailsWithRetry(page);
-  await expect(sectionSummary).toContainText("24.5 in, expandable sleeving, bundle dia —");
+  await expect(sectionSummary).toContainText("24.5 in, expandable sleeving, bundle dia 0 in");
+  await expect(page.getByRole("list", { name: "Material totals by part number" })).toContainText("Expandable sleeving 875010: 24.5 in");
 
   // Reload without a canvas draft so the saved server snapshot supplies the result.
   await page.evaluate(() => {
@@ -115,7 +118,7 @@ test("canvas section labels expand on hover and keyboard focus and preserve edit
     }
   });
   await page.goto(canvasUrl);
-  await expect(label).toHaveAccessibleName("section1 - 24.5 in | expandable sleeving | bundle dia —");
+  await expect(label).toHaveAccessibleName("section1 - 24.5 in | expandable sleeving | bundle dia 0 in");
   await page.reload();
   await page.mouse.move(0, 0);
   await expect.poll(async () => (await label.innerText()).split("\n").filter(Boolean)).toEqual([

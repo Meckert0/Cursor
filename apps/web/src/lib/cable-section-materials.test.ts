@@ -3,7 +3,7 @@ import { buildSleeveDiameterCatalog } from "../../../../src/domain/sleeve-diamet
 import type { SleeveTubeBraidAttributes } from "../../../../src/domain/library";
 import type { LibraryComponentDto } from "./api";
 import type { UniqueWireSection } from "./cable-canvas-utils";
-import { selectSleeveForBundleDiameter } from "./bundle-diameter";
+import { cableSectionBundleDiameters, selectSleeveForBundleDiameter } from "./bundle-diameter";
 import { buildCableSectionMaterials, formatMaterialLength, totalCableSectionMaterials } from "./cable-section-materials";
 
 const sleeveCatalog: LibraryComponentDto[] = buildSleeveDiameterCatalog().map((item) => ({
@@ -23,16 +23,19 @@ function section(pathId: string, lengthFt: number, sleeving: UniqueWireSection["
 
 describe("supplied covering sizes", () => {
   it.each([
+    ["expandable_sleeving", 0, "875010"],
     ["expandable_sleeving", 0.75, "875010"],
     ["expandable_sleeving", 0.750001, "875011"],
     ["expandable_sleeving", 1.75, "875011"],
     ["expandable_sleeving", 1.750001, undefined],
+    ["wire_braid", 0, "875012"],
     ["wire_braid", 0.38, "875012"],
     ["wire_braid", 0.380001, "875013"],
     ["wire_braid", 0.875, "875013"],
     ["wire_braid", 0.875001, "875014"],
     ["wire_braid", 2, "875014"],
     ["wire_braid", 2.000001, undefined],
+    ["shrink_tubing", 0, "875000"],
     ["shrink_tubing", 1, "875000"],
     ["shrink_tubing", 1.000001, "875001"]
   ])("selects %s at %s inches", (sleeving, diameter, partNumber) => {
@@ -53,6 +56,23 @@ describe("supplied covering sizes", () => {
 });
 
 describe("cable section material totals", () => {
+  it("sizes empty section placeholders and counts the full length of every selected layer", () => {
+    const sections = [section("sleeved", 12, "expandable_sleeving"), section("braided", 8, "wire_braid_under_expandable_sleeving"), section("bare", 3, "none"), section("zero-length", 0, "expandable_sleeving")];
+    const bundleDiameters = cableSectionBundleDiameters({
+      connectors: [{ id: "c1", reference: "J1", pins: [] }, { id: "c2", reference: "J2", pins: [] }],
+      cablePaths: sections.map(item => ({ id: item.pathId, pathType: "cable", fromConnectorId: item.fromNodeId, toConnectorId: item.toNodeId })),
+      wireRuns: [], wireCatalog: []
+    });
+    const rows = buildCableSectionMaterials({ sections, bundleDiameters, sleeveCatalog });
+    expect(rows.map(row => row.bundleDiameterIn)).toEqual([0, 0, 0, 0]);
+    expect(rows.map(row => row.materials.map(material => material.part?.partNumber))).toEqual([["875010"], ["875010", "875012"], [], ["875010"]]);
+    expect(totalCableSectionMaterials(rows)).toEqual({
+      cableLengthIn: 23,
+      byMaterial: { expandable_sleeving: 20, wire_braid: 8 },
+      materialLengthIn: 28,
+      parts: [{ kind: "expandable_sleeving", partNumber: "875010", lengthIn: 20 }, { kind: "wire_braid", partNumber: "875012", lengthIn: 8 }]
+    });
+  });
   it("sums repeated part numbers and both layers while excluding bare sections and tubing", () => {
     const rows = buildCableSectionMaterials({
       sections: [

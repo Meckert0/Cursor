@@ -319,13 +319,15 @@ export function CableCanvas({
     return pathsState.find((path) => path.id === normalizedSelectedPathId) ?? null;
   }, [pathsState, normalizedSelectedPathId, selectedEntity]);
 
+  const inlineLengthPathId = inlineLengthEdit?.pathId;
   useEffect(() => {
-    if (!inlineLengthEdit || !inlineLengthInputRef.current) {
+    if (inlineLengthPathId === undefined || !inlineLengthInputRef.current) {
       return;
     }
+    // Select once when opening an editor; draft changes must preserve the caret.
     inlineLengthInputRef.current.focus();
     inlineLengthInputRef.current.select();
-  }, [inlineLengthEdit]);
+  }, [inlineLengthPathId]);
   const selectedEntityLabel = useMemo(() => {
     if (!selectedEntity) {
       return "none";

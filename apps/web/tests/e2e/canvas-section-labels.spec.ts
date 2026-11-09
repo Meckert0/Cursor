@@ -84,9 +84,30 @@ test("canvas section labels expand on hover and keyboard focus and preserve edit
   expect(editorBox).toBeTruthy();
   expect(editorBox!.x + editorBox!.width / 2).toBeCloseTo(beforeEditBox!.x + beforeEditBox!.width / 2, 0);
   expect(editorBox!.y + editorBox!.height / 2).toBeCloseTo(beforeEditBox!.y + beforeEditBox!.height / 2, 0);
-  await editor.fill("24.5");
+  await editor.pressSequentially("24.5");
+  await expect(editor).toHaveValue("24.5");
+  await editor.press("ArrowLeft");
+  await editor.press("Backspace");
+  await expect(editor).toHaveValue("245");
+  await editor.pressSequentially(".");
+  await expect(editor).toHaveValue("24.5");
   await editor.press("Enter");
   await expect(editor).toHaveCount(0);
+  await expect(label).toHaveAccessibleName("section1 - 24.5 in | no sleeving | bundle dia 0 in");
+
+  await label.dblclick();
+  await editor.pressSequentially("123.45");
+  await expect(editor).toHaveValue("123.45");
+  await editor.press("Escape");
+  await expect(label).toHaveAccessibleName("section1 - 24.5 in | no sleeving | bundle dia 0 in");
+
+  await label.dblclick();
+  await editor.pressSequentially("12.5");
+  await editor.press("Tab");
+  await expect(label).toHaveAccessibleName("section1 - 12.5 in | no sleeving | bundle dia 0 in");
+  await label.dblclick();
+  await editor.pressSequentially("24.5");
+  await editor.press("Enter");
   await expect(label).toHaveAccessibleName("section1 - 24.5 in | no sleeving | bundle dia 0 in");
 
   await page.getByRole("combobox", { name: /^Sleeving/ }).selectOption("expandable_sleeving");

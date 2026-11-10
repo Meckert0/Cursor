@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireAdmin, requireRole } from "../auth/rbac.js";
-import { LIBRARY_CATEGORIES, isWirePart } from "../domain/library.js";
+import { LIBRARY_CATEGORIES, catalogPartFamily, normalizeBlankModuleFamily, isWirePart } from "../domain/library.js";
 import type { WireAttributes } from "../domain/library.js";
 
 const libraryCategorySchema = z.enum(LIBRARY_CATEGORIES);
@@ -500,7 +500,7 @@ export function registerLibraryRoutes(app: FastifyInstance) {
       canViewAllUnreviewed: isAdminAccount,
       canViewInactive
     });
-    const filtered = items.filter((part) => {
+    const filtered = items.map(normalizeBlankModuleFamily).filter((part) => {
       if (query.category && part.category !== query.category) {
         return false;
       }
@@ -564,7 +564,7 @@ export function registerLibraryRoutes(app: FastifyInstance) {
     if (!component) {
       return reply.notFound("Component not found.");
     }
-    return component;
+    return normalizeBlankModuleFamily(component);
   });
 
   app.get("/v1/library/table-preferences/:scope", async (request, reply) => {
@@ -634,7 +634,7 @@ export function registerLibraryRoutes(app: FastifyInstance) {
     }
     const normalizedUserId = resolveActingUserId(request);
     const result = await app.store.ingestLibraryComponents({
-      items: body.items,
+      items: body.items.map(normalizeBlankModuleFamily),
       requestedByUserId: normalizedUserId,
       dryRun: true,
       idempotencyKey: body.idempotencyKey
@@ -657,7 +657,7 @@ export function registerLibraryRoutes(app: FastifyInstance) {
     }
     const normalizedUserId = resolveActingUserId(request);
     const result = await app.store.ingestLibraryComponents({
-      items: body.items,
+      items: body.items.map(normalizeBlankModuleFamily),
       requestedByUserId: normalizedUserId,
       dryRun: false,
       idempotencyKey: body.idempotencyKey
@@ -797,7 +797,7 @@ export function registerLibraryRoutes(app: FastifyInstance) {
       updated = await app.store.updateLibraryComponent({
         componentId: params.componentId,
         partNumber: body.partNumber,
-        family: body.family,
+        family: catalogPartFamily({ ...existing, ...body, family: body.family ?? existing.family, description: body.description ?? existing.description, attributes: nextAttributes }),
         description: body.description,
         isActive: body.isActive,
         isReviewed: body.isReviewed,
@@ -825,7 +825,7 @@ export function registerLibraryRoutes(app: FastifyInstance) {
     if (!updated) {
       return reply.notFound("Component not found.");
     }
-    return updated;
+    return normalizeBlankModuleFamily(updated);
   });
 
   app.get("/v1/library/components/review-queue", async (request, reply) => {

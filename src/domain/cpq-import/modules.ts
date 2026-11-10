@@ -1,4 +1,5 @@
 import { makePartId } from "./part-id.js";
+import { catalogPartFamily } from "../library.js";
 import {
   compactName,
   boolOrUndefined,
@@ -402,6 +403,7 @@ export function buildModules(workbook: CpqWorkbook, ctx: BuildContext): ModuleBu
     }
     pieces.push(...draft.extras);
     draft.part.description = pieces.join(", ");
+    draft.part.family = catalogPartFamily(draft.part);
 
     for (const vendorName of draft.vendorNames) {
       if (looksLikeVendorPn(vendorName)) {

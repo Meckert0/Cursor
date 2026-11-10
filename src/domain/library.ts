@@ -12,6 +12,34 @@ export const LIBRARY_CATEGORIES = [
 
 export type LibraryCategory = (typeof LIBRARY_CATEGORIES)[number];
 export type LibraryStockStatus = "in_stock" | "low_stock" | "out_of_stock" | "unknown";
+
+export const BLANK_INSERT_FAMILY = "Blank insert";
+interface PartFamilyInput {
+  category: string;
+  family: string;
+  description: string;
+  electricalMode?: string;
+  attributes?: unknown;
+}
+
+/** Classify physical blank fillers, independently of their ITA/Receiver side. */
+export function catalogPartFamily(part: PartFamilyInput): string {
+  if (part.category !== "module") return part.family;
+  const attrs = part.attributes && typeof part.attributes === "object" ? part.attributes as Record<string, unknown> : {};
+  const positive = (value: unknown) => (typeof value === "string" || typeof value === "number") && Number.isFinite(Number(value)) && Number(value) > 0;
+  if (part.electricalMode?.trim().toUpperCase() === "INSERT_HOST" || positive(attrs.simSlotCount) ||
+    (Array.isArray(attrs.simSlotSections) && attrs.simSlotSections.some(section => Array.isArray(section) && section.length))) return part.family;
+  if ([attrs.positionCount, attrs.pinCount, attrs.pinCount2].some(positive) ||
+    (Array.isArray(attrs.pinIds) && attrs.pinIds.some(pin => String(pin).trim())) ||
+    (Array.isArray(attrs.contactPositions) && attrs.contactPositions.some(position => position && typeof position === "object" && positive(position.pinCount)))) return part.family;
+  const description = [part.description, part.family, attrs.contactFamily1, attrs.contactFamily2].join(" ");
+  return /\bblank(?:ing)?\b/i.test(description) ? BLANK_INSERT_FAMILY : part.family;
+}
+
+export function normalizeBlankModuleFamily<T extends PartFamilyInput>(part: T): T {
+  const family = catalogPartFamily(part);
+  return family === part.family ? part : { ...part, family };
+}
 /** draft = unreviewed; reviewed_active = reviewed+active; inactive = reviewed but deactivated; archived = soft-deleted. */
 export type LibraryLifecycleStatus = "draft" | "reviewed_active" | "inactive" | "archived";
 

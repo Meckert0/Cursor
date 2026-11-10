@@ -4,10 +4,12 @@ import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type Form
 import { createPortal } from "react-dom";
 import type { LibraryComponentDto } from "@/lib/api";
 import { getPartFieldsForCategory } from "@/lib/part-fields";
+import { usePickerColumns } from "@/lib/use-picker-columns";
+import { MAX_PICKER_COLUMN_WIDTH, MIN_PICKER_COLUMN_WIDTH } from "@/lib/connector-picker-layout";
 import {
   CONNECTOR_PICKER_COLUMNS,
   buildPickerIndex, getPickerFacetChoices, getPickerResults, isActivePickerFilter,
-  isPickerPart, newPickerFilter, pickerColumn, pickerDefaultColumns, pickerDisplayValue, pickerFilterError, pickerFilterLabel, pickerQueryTokens, pickerTopFilters,
+  isPickerPart, newPickerFilter, pickerColumn, pickerDisplayValue, pickerFilterError, pickerFilterLabel, pickerQueryTokens, pickerTopFilters,
   type PickerColumn, type PickerColumnId, type PickerFilter, type PickerFilters, type PickerMode, type PickerRecord, type PickerSort
 } from "@/lib/connector-picker";
 import styles from "./connector-picker-dialog.module.css";
@@ -38,7 +40,7 @@ interface Props {
   onCreatePart: (formData: FormData) => Promise<ConnectorPickerCreateResult>;
 }
 
-type IconName = "search" | "close" | "filter" | "sort" | "asc" | "desc" | "chevron" | "columns" | "module";
+type IconName = "search" | "close" | "filter" | "sort" | "asc" | "desc" | "chevron" | "columns" | "module" | "grip";
 function Icon({ name }: { name: IconName }) {
   const paths: Record<IconName, ReactNode> = {
     search: <><circle cx="7.5" cy="7.5" r="5" /><path d="m11.5 11.5 4 4" /></>,
@@ -49,7 +51,8 @@ function Icon({ name }: { name: IconName }) {
     desc: <path d="M9 3v12M4 10l5 5 5-5" />,
     chevron: <path d="m5 7 4 4 4-4" />,
     columns: <><rect x="2.5" y="3" width="13" height="12" rx="1.5" /><path d="M7 3v12m4-12v12" /></>,
-    module: <><rect x="3" y="2" width="12" height="14" rx="2" /><path d="M6 6h1m4 0h1m-6 3h1m4 0h1m-6 3h1m4 0h1" /></>
+    module: <><rect x="3" y="2" width="12" height="14" rx="2" /><path d="M6 6h1m4 0h1m-6 3h1m4 0h1m-6 3h1m4 0h1" /></>,
+    grip: <path d="M6 4h.1M11 4h.1M6 9h.1M11 9h.1M6 14h.1M11 14h.1" />
   };
   return <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
 }
@@ -125,7 +128,7 @@ function ColumnFilterMenu({ column, index, query, filters, sort, onApply, onClea
           <input id={`${id}-search`} type="search" placeholder="Find a value…" value={valueSearch} onChange={event => setValueSearch(event.target.value)} />
           <div className={styles.checks}>{choices.filter(choice => choice.value.toLowerCase().includes(valueSearch.toLowerCase())).map(choice => <label className={styles.check} key={choice.value}>
             <input type="checkbox" checked={draft.values.includes(choice.value)} onChange={event => setDraft({ ...draft, values: event.target.checked ? [...draft.values, choice.value] : draft.values.filter(value => value !== choice.value) })} />
-            <span>{choice.value}</span><small>{choice.count}</small>
+            <span>{choice.value}</span>{" "}<small>{choice.count}</small>
           </label>)}</div>
           <p className={styles.help}>Choose multiple values, or leave all unchecked for any value.</p>
         </> : null}
@@ -152,11 +155,11 @@ function ColumnFilterMenu({ column, index, query, filters, sort, onApply, onClea
   </>;
 }
 
-function ColumnsMenu({ visible, defaults, onApply }: { visible: PickerColumnId[]; defaults: PickerColumnId[]; onApply: (ids: PickerColumnId[]) => void }) {
+function ColumnsMenu({ visible, order, onApply, onReset }: { visible: PickerColumnId[]; order: PickerColumnId[]; onApply: (ids: PickerColumnId[]) => void; onReset: () => void }) {
   const [draft, setDraft] = useState(visible);
-  return <><div className={styles.menuBody}><p className={styles.help}>Every information column has its own sort and filter controls.</p><div className={styles.checks}>{CONNECTOR_PICKER_COLUMNS.map(column => <label key={column.id} className={styles.check}>
+  return <><div className={styles.menuBody}><p className={styles.help}>Drag column grips to move columns and edges to resize them. Every column can be sorted and filtered.</p><div className={styles.checks}>{order.map(pickerColumn).map(column => <label key={column.id} className={styles.check}>
     <input type="checkbox" checked={draft.includes(column.id)} disabled={column.id === "partNumber"} onChange={event => setDraft(event.target.checked ? [...draft, column.id] : draft.filter(id => id !== column.id))} /><span>{column.label}</span>
-  </label>)}</div></div><div className={styles.menuFoot}><button className={styles.linkButton} type="button" onClick={() => onApply(defaults)}>Reset columns</button><button className={`${styles.button} ${styles.primary}`} type="button" onClick={() => onApply(draft)}>Apply columns</button></div></>;
+  </label>)}</div></div><div className={styles.menuFoot}><button className={styles.linkButton} type="button" onClick={onReset}>Reset columns</button><button className={`${styles.button} ${styles.primary}`} type="button" onClick={() => onApply(draft)}>Apply columns</button></div></>;
 }
 
 function QuickAddForm({ mode, onCreate, onBack, onCreated, onPendingChange }: { mode: PickerMode; onCreate: Props["onCreatePart"]; onBack: () => void; onCreated: (part: LibraryComponentDto | undefined, notice: string) => void; onPendingChange: (pending: boolean) => void }) {
@@ -199,10 +202,13 @@ export function ConnectorPickerDialog({ parts, mode = "connector", destination, 
   const topFilters = pickerTopFilters(pickerMode);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const tableRef = useRef<HTMLTableElement>(null);
+  const tableScrollRef = useRef<HTMLDivElement>(null);
+  const columnLayout = usePickerColumns(pickerMode, tableRef, tableScrollRef);
   const [query, setQuery] = useState("");
   const [filters, setFilters] = useState<PickerFilters>({});
   const [sort, setSort] = useState<PickerSort | null>(null);
-  const [visibleIds, setVisibleIds] = useState<PickerColumnId[]>(() => pickerDefaultColumns(pickerMode));
+  const visibleIds = columnLayout.layout.visible;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [menu, setMenu] = useState<Menu | null>(null);
@@ -218,7 +224,9 @@ export function ConnectorPickerDialog({ parts, mode = "connector", destination, 
   const activePage = Math.min(page, pageCount);
   const pageResults = results.slice((activePage - 1) * PAGE_SIZE, activePage * PAGE_SIZE);
   const selected = pageResults.find(record => record.part.id === selectedId) ?? null;
-  const visibleColumns = CONNECTOR_PICKER_COLUMNS.filter(column => visibleIds.includes(column.id));
+  const visibleColumns = columnLayout.columns;
+  const tableWidth = 38 + visibleColumns.reduce((sum, column) => sum + columnLayout.width(column.id), 0);
+  const columnClass = (id: PickerColumnId) => id === "partNumber" ? `${styles.partNumberColumn} ${visibleColumns[0]?.id === id ? styles.pinnedColumn : ""}` : "";
   const effectiveSort = sort ?? (!query.trim() ? { id: "partNumber" as const, direction: "asc" as const } : null);
   const activeFilters = Object.entries(filters) as [PickerColumnId, PickerFilter][];
 
@@ -257,16 +265,16 @@ export function ConnectorPickerDialog({ parts, mode = "connector", destination, 
   };
 
   if (typeof document === "undefined") return null;
-  return createPortal(<dialog ref={dialogRef} className={`${styles.dialog} ${reviewing && selected ? styles.reviewing : ""}`} aria-label={creating ? `Add new ${noun}` : insertMode ? "Select SIM insert" : slot ? `Select slot ${slot.slotId} module` : frameMode ? "Define Frame" : "Define Connector"} aria-modal="true"
-    onCancel={event => { event.preventDefault(); cancel(); }} onKeyDown={event => { if (event.key === "Escape" && menu) { event.preventDefault(); event.stopPropagation(); closeMenu(); } }}>
+  return createPortal(<dialog ref={dialogRef} className={`${styles.dialog} ${reviewing && selected ? styles.reviewing : ""} ${columnLayout.active?.kind === "resize" ? styles.resizing : columnLayout.active ? styles.moving : ""}`} aria-label={creating ? `Add new ${noun}` : insertMode ? "Select SIM insert" : slot ? `Select slot ${slot.slotId} module` : frameMode ? "Define Frame" : "Define Connector"} aria-modal="true"
+    onCancel={event => { event.preventDefault(); if (!columnLayout.cancelInteraction()) cancel(); }} onKeyDown={event => { if (event.key === "Escape" && (columnLayout.cancelInteraction() || menu)) { event.preventDefault(); event.stopPropagation(); closeMenu(); } }}>
     <header className={styles.header}><div><div className={styles.eyebrow}>{creating ? `ADD NEW ${noun.toUpperCase()}` : insertMode ? "SELECT SIM INSERT" : slot ? "SELECT MODULE" : frameMode ? "DEFINE FRAME" : "DEFINE CONNECTOR"} / {destination}{slot ? ` · SLOT ${slot.slotId}` : ""}</div><h1>{creating ? `Add new ${noun}` : insertMode ? "Choose a SIM insert" : slot ? "Choose a slot module" : frameMode ? "Choose a frame" : "Choose a connector"}</h1><p>{creating ? "Create a library entry, then review it before applying it to your design." : "Search, narrow your options, and find the right part."}</p></div><div className={styles.headerActions}><span className={styles.catalogState}><i />Active parts library</span><button className={styles.iconButton} type="button" disabled={createPending} onClick={creating ? backToResults : onClose} aria-label={creating ? "Back to results" : `Close ${noun} picker`}><Icon name="close" /></button></div></header>
     {creating ? <QuickAddForm mode={pickerMode} onCreate={onCreatePart} onBack={backToResults} onCreated={createPart} onPendingChange={setCreatePending} /> : <>
       <div className={styles.searchArea}><label className={styles.fieldLabel} htmlFor={searchId}>Search the parts library</label><div className={styles.searchRow}><div className={styles.searchBox}><Icon name="search" /><input ref={searchRef} id={searchId} type="search" placeholder={insertMode ? "Search SIM inserts..." : slot ? "Search modules..." : frameMode ? "Search frames..." : "Search connectors..."} value={query} onChange={event => { setQuery(event.target.value); resetSelection(); setMenu(null); }} />{query ? <button className={styles.clearSearch} type="button" aria-label="Clear search" onClick={() => { setQuery(""); resetSelection(); searchRef.current?.focus(); }}><Icon name="close" /></button> : null}</div>{!slot && !insertMode ? <button className={styles.button} type="button" disabled={readOnly} onClick={() => { setMenu(null); setCreating(true); }}>+ Add new {noun}</button> : null}</div></div>
-      <div className={styles.topOptions} aria-label="Filter and column options">
+      <div className={styles.topOptions} role="group" aria-label="Filter and column options">
         {topFilters.map(id => {
-          const column = pickerColumn(id), filter = filters[id], fixed = id === "type" && !frameMode;
+          const column = pickerColumn(id), filter = filters[id];
           const label = filter?.kind === "values" && filter.values.length > 1 ? `${filter.values.length} selected` : filter ? pickerFilterLabel(filter) : "Any";
-          return <button key={id} className={`${styles.optionButton} ${filter ? styles.active : ""}`} type="button" disabled={fixed} aria-label={`${column.label} filter`} aria-haspopup="dialog" aria-expanded={menu?.kind === "filter" && menu.id === id} onClick={event => setMenu({ kind: "filter", id, anchor: event.currentTarget })}>{column.label}<small>{fixed ? insertMode ? "SIM insert" : "Module" : label}</small><Icon name="chevron" /></button>;
+          return <button key={id} className={`${styles.optionButton} ${filter ? styles.active : ""}`} type="button" aria-label={`${column.label} filter`} aria-haspopup="dialog" aria-expanded={menu?.kind === "filter" && menu.id === id} onClick={event => setMenu({ kind: "filter", id, anchor: event.currentTarget })}>{column.label}<small>{label}</small><Icon name="chevron" /></button>;
         })}
         <button className={styles.optionButton} type="button" aria-haspopup="dialog" aria-expanded={menu?.kind === "more"} onClick={event => setMenu({ kind: "more", anchor: event.currentTarget })}><Icon name="filter" />More filters</button>
         <span className={styles.optionsSpacer} />
@@ -276,20 +284,29 @@ export function ConnectorPickerDialog({ parts, mode = "connector", destination, 
       {slot ? <div className={styles.context}><div><b>{destination} · Slot {slot.slotId}{slot.framePartNumber ? ` · ${slot.framePartNumber}` : ""}</b><p>{slot.reverse ? "Opposite-side modules." : "Same-side modules, including dual or unspecified sides."} Frame and slot restrictions always apply.</p></div><div className={styles.segmented} aria-label="Module side compatibility"><button type="button" aria-pressed={!slot.reverse} onClick={() => changeSide(false)}>Same-side modules</button><button type="button" aria-pressed={slot.reverse} onClick={() => changeSide(true)}>Opposite-side modules</button></div></div> : null}
       {notice ? <p className={styles.notice} role="status">{notice}</p> : null}
       <section className={styles.results} aria-label={insertMode ? "SIM insert results" : frameMode ? "Frame results" : "Connector results"}>
-        <div className={styles.resultsToolbar}><span className={styles.resultCount} aria-live="polite" aria-atomic="true">{results.length} {slot ? "compatible module" : "part"}{results.length === 1 ? "" : "s"}<small>of {eligibleParts.length} in this view</small></span><span className={styles.tableHint}>Click a heading to sort · Use its funnel to filter</span><span className={styles.sortStatus}>{sort ? <>Sorted: <b>{pickerColumn(sort.id).label} {sort.direction === "asc" ? "↑" : "↓"}</b><button className={styles.iconButton} type="button" aria-label="Clear sorting" onClick={() => { setSort(null); resetSelection(); }}><Icon name="close" /></button></> : query.trim() ? "Best match first" : "Part number A–Z"}</span></div>
+        <div className={styles.resultsToolbar}><span className={styles.resultCount} aria-live="polite" aria-atomic="true">{results.length} {slot ? "compatible module" : "part"}{results.length === 1 ? "" : "s"}<small>of {eligibleParts.length} in this view</small></span><span className={styles.tableHint}>Drag grips to move · Drag edges to resize · Headings sort, funnels filter</span><span className={styles.sortStatus}>{sort ? <>Sorted: <b>{pickerColumn(sort.id).label} {sort.direction === "asc" ? "↑" : "↓"}</b><button className={styles.iconButton} type="button" aria-label="Clear sorting" onClick={() => { setSort(null); resetSelection(); }}><Icon name="close" /></button></> : query.trim() ? "Best match first" : "Part number A–Z"}</span></div>
+        <span className={styles.srOnly} role="status">{columnLayout.announcement}</span>
         {activeFilters.length ? <div className={styles.chips}>{activeFilters.map(([id, filter]) => <button type="button" className={styles.chip} key={id} aria-label={`Remove ${pickerColumn(id).label} filter`} onClick={() => applyFilter(id)}>{pickerColumn(id).label}: {pickerFilterLabel(filter)}<span aria-hidden="true">×</span></button>)}<button className={styles.linkButton} type="button" onClick={() => { setFilters({}); setQuery(""); resetSelection(); }}>Clear all</button></div> : null}
-        <div className={styles.tableScroll} tabIndex={0} role="region" aria-label={`Scrollable ${noun} table`}>
-          <table className={styles.table} style={{ minWidth: 38 + visibleColumns.reduce((sum, column) => sum + column.width, 0) }} aria-label="Parts matching your search">
-            <colgroup><col style={{ width: 38 }} />{visibleColumns.map(column => <col key={column.id} style={{ width: column.width }} />)}</colgroup>
+        <div ref={tableScrollRef} className={styles.tableScroll} tabIndex={0} role="region" aria-label={`Scrollable ${noun} table`}>
+          <table ref={tableRef} className={styles.table} style={{ width: tableWidth, minWidth: tableWidth }} aria-label="Parts matching your search">
+            <colgroup><col style={{ width: 38 }} />{visibleColumns.map(column => <col key={column.id} style={{ width: columnLayout.width(column.id) }} />)}</colgroup>
             <thead><tr><th scope="col" className={styles.selectColumn}><span className={styles.srOnly}>Choose a part</span></th>{visibleColumns.map(column => {
               const sorted = effectiveSort?.id === column.id;
-              return <th key={column.id} scope="col" className={column.id === "partNumber" ? styles.partNumberColumn : undefined} aria-sort={sorted ? effectiveSort.direction === "asc" ? "ascending" : "descending" : "none"}><div className={styles.columnHead}><button type="button" className={`${styles.sortButton} ${sorted ? styles.sorted : ""}`} aria-label={`Sort ${column.label} ${sorted && effectiveSort.direction === "asc" ? "descending" : "ascending"}`} onClick={() => applySort(column.id)}>{column.label}<Icon name={sorted ? effectiveSort.direction : "sort"} /></button><button type="button" className={`${styles.filterButton} ${filters[column.id] ? styles.filtered : ""}`} aria-label={`Filter ${column.label}`} aria-haspopup="dialog" aria-expanded={menu?.kind === "filter" && menu.id === column.id} onClick={event => setMenu({ kind: "filter", id: column.id, anchor: event.currentTarget })}><Icon name="filter" /></button></div></th>;
+              const target = columnLayout.drop?.id === column.id ? columnLayout.drop.after ? styles.dropAfter : styles.dropBefore : "";
+              return <th key={column.id} data-picker-column={column.id} scope="col" className={`${columnClass(column.id)} ${target} ${columnLayout.active?.id === column.id && columnLayout.active.kind === "move" ? styles.draggingColumn : ""}`} aria-sort={sorted ? effectiveSort.direction === "asc" ? "ascending" : "descending" : "none"}>
+                <div className={styles.columnHead}>
+                  <button className={styles.dragHandle} type="button" data-column-grip aria-label={`Move ${column.label} column`} title="Drag to move this column, or use the Left and Right arrow keys" onPointerDown={event => columnLayout.start(event, column.id, "move")} onPointerMove={columnLayout.pointerMove} onPointerUp={() => columnLayout.finish()} onPointerCancel={() => columnLayout.finish(true)} onLostPointerCapture={() => columnLayout.finish(true)} onKeyDown={event => columnLayout.gripKeyDown(event, column.id)}><Icon name="grip" /></button>
+                  <button type="button" className={`${styles.sortButton} ${sorted ? styles.sorted : ""}`} aria-label={`Sort ${column.label} ${sorted && effectiveSort.direction === "asc" ? "descending" : "ascending"}`} onClick={() => applySort(column.id)}><span>{column.label}</span><Icon name={sorted ? effectiveSort.direction : "sort"} /></button>
+                  <button type="button" className={`${styles.filterButton} ${filters[column.id] ? styles.filtered : ""}`} aria-label={`Filter ${column.label}`} aria-haspopup="dialog" aria-expanded={menu?.kind === "filter" && menu.id === column.id} onClick={event => setMenu({ kind: "filter", id: column.id, anchor: event.currentTarget })}><Icon name="filter" /></button>
+                </div>
+                <div className={styles.resizeHandle} role="separator" tabIndex={0} aria-label={`Resize ${column.label} column`} aria-orientation="vertical" aria-valuemin={MIN_PICKER_COLUMN_WIDTH} aria-valuemax={MAX_PICKER_COLUMN_WIDTH} aria-valuenow={columnLayout.width(column.id)} title="Drag to resize; double-click or press Home to reset width" onPointerDown={event => columnLayout.start(event, column.id, "resize")} onPointerMove={columnLayout.pointerMove} onPointerUp={() => columnLayout.finish()} onPointerCancel={() => columnLayout.finish(true)} onLostPointerCapture={() => columnLayout.finish(true)} onDoubleClick={() => columnLayout.resize(column.id, column.width)} onKeyDown={event => columnLayout.resizeKeyDown(event, column.id)} />
+              </th>;
             })}</tr></thead>
             <tbody>{pageResults.map(record => <tr key={record.part.id} className={selected?.part.id === record.part.id ? styles.selectedRow : undefined} onClick={() => { if (!readOnly) { setSelectedId(record.part.id); setReviewing(false); } }}>
               <td className={styles.selectColumn}><input type="radio" name={`connector-${searchId}`} aria-label={`Preview ${record.part.partNumber}`} checked={selected?.part.id === record.part.id} disabled={readOnly} onChange={() => { setSelectedId(record.part.id); setReviewing(false); }} /></td>
               {visibleColumns.map(column => {
                 const display = pickerDisplayValue(record, column);
-                return <td key={column.id} className={column.id === "partNumber" ? styles.partNumberColumn : undefined} title={display}>{column.id === "stockStatus" ? <span className={`${styles.stock} ${styles[record.part.stockStatus]}`}><i />{display}</span> : column.id === "reviewStatus" ? <span className={`${styles.reviewBadge} ${record.part.isReviewed ? "" : styles.pendingBadge}`}>{display}</span> : column.id === "type" ? <span className={styles.typeBadge}>{display}</span> : record.values[column.id] === null ? <span className={styles.missing}>—</span> : <Highlight value={display} query={query} />}</td>;
+                return <td key={column.id} className={columnClass(column.id)} title={display}>{column.id === "stockStatus" ? <span className={`${styles.stock} ${styles[record.part.stockStatus]}`}><i />{display}</span> : column.id === "reviewStatus" ? <span className={`${styles.reviewBadge} ${record.part.isReviewed ? "" : styles.pendingBadge}`}>{display}</span> : column.id === "type" ? <span className={styles.typeBadge}>{display}</span> : record.values[column.id] === null ? <span className={styles.missing}>—</span> : <Highlight value={display} query={query} />}</td>;
               })}
             </tr>)}</tbody>
           </table>
@@ -301,7 +318,7 @@ export function ConnectorPickerDialog({ parts, mode = "connector", destination, 
       <footer className={styles.footer}><div className={styles.selectionSummary}>{selected ? selected.part.partNumber : "Select a part to continue."}<small>Target: {destination}{slot ? ` · Slot ${slot.slotId}` : ""} · Preview before applying.</small></div><div className={styles.footerActions}><button className={styles.button} type="button" onClick={onClose}>Cancel</button><button className={`${styles.button} ${styles.primary}`} type="button" disabled={readOnly || !selected} onClick={confirm}><span className={styles.desktopConfirm}>Use {noun}</span><span className={styles.mobileConfirm}>{reviewing ? "Use" : "Review"} {noun}</span> →</button></div></footer>
     </>}
     {menu ? <PickerMenu key={menu.kind === "filter" ? menu.id : menu.kind} anchor={menu.anchor} title={menu.kind === "filter" ? pickerColumn(menu.id).label : menu.kind === "columns" ? "Choose columns" : "Filter any column"} onClose={closeMenu}>
-      {menu.kind === "filter" ? <ColumnFilterMenu column={pickerColumn(menu.id)} index={index} query={query} filters={filters} sort={effectiveSort} onApply={filter => applyFilter(menu.id, filter)} onClear={() => applyFilter(menu.id)} onSort={direction => applySort(menu.id, direction)} /> : menu.kind === "columns" ? <ColumnsMenu visible={visibleIds} defaults={pickerDefaultColumns(pickerMode)} onApply={ids => { setVisibleIds(ids); setMenu(null); }} /> : <div className={styles.menuBody}>{CONNECTOR_PICKER_COLUMNS.filter(column => !topFilters.includes(column.id)).map(column => <button type="button" key={column.id} className={`${styles.menuItem} ${filters[column.id] ? styles.active : ""}`} onClick={() => setMenu({ kind: "filter", id: column.id, anchor: menu.anchor })}>{column.label}<Icon name="filter" /></button>)}</div>}
+      {menu.kind === "filter" ? <ColumnFilterMenu column={pickerColumn(menu.id)} index={index} query={query} filters={filters} sort={effectiveSort} onApply={filter => applyFilter(menu.id, filter)} onClear={() => applyFilter(menu.id)} onSort={direction => applySort(menu.id, direction)} /> : menu.kind === "columns" ? <ColumnsMenu visible={visibleIds} order={columnLayout.layout.order} onApply={ids => { columnLayout.setVisible(ids); setMenu(null); }} onReset={() => { columnLayout.reset(); setMenu(null); }} /> : <div className={styles.menuBody}>{CONNECTOR_PICKER_COLUMNS.filter(column => !topFilters.includes(column.id) && (column.id !== "type" || frameMode)).map(column => <button type="button" key={column.id} className={`${styles.menuItem} ${filters[column.id] ? styles.active : ""}`} onClick={() => setMenu({ kind: "filter", id: column.id, anchor: menu.anchor })}>{column.label}<Icon name="filter" /></button>)}</div>}
     </PickerMenu> : null}
   </dialog>, document.body);
 }

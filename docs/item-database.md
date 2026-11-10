@@ -103,6 +103,10 @@ erDiagram
     strain_reliefs }o--o| parts : "related_module_hint_part_id"
 ```
 
+The canvas part picker keeps Family and Side filters at the top. Positions and Availability remain available as sortable/filterable columns and through More filters; a fixed connector Type dropdown is omitted. Information columns can be moved by dragging their grips and resized by dragging their right edges. Grips support Left/Right keys; resize handles support Left/Right (Shift for larger steps) and Home to restore the default width. Column order, widths, and visibility are stored in the browser separately for connector, frame, and SIM-insert pickers. **Columns → Reset columns** restores the default layout while retaining search and filters.
+
+Physical blank filler modules with no electrical positions or SIM slots use the **Blank insert** family. Their ITA/Receiver/Dual side is independent of this family. Existing entries receive the same classification when read through the library API and in picker facets; ingest, edits, and both VPC and CPQ imports store it for new or updated entries. Part IDs remain stable. SIM hosts awaiting inserts and modules with electrical contacts retain their existing families.
+
 Four kinds of relationships exist:
 
 1. **Extension (1:1)** — every part has exactly one extension row in the table matching its category. `ON DELETE CASCADE` from `parts`, so deleting a part removes its extension row (and, transitively, its compat rows).

@@ -12,6 +12,7 @@ import type {
 } from "../library.js";
 import {
   emptyAttributesForCategory,
+  normalizeBlankModuleFamily,
   partRelationshipNaturalKey
 } from "../library.js";
 import type {
@@ -336,7 +337,7 @@ export function parseVpcCatalog(input: {
       sourceRow: row.row,
       partNumberKey: partNumber
     };
-    partsByNumber.set(partNumber, part);
+    partsByNumber.set(partNumber, normalizeBlankModuleFamily(part));
     partsByType[partType] = (partsByType[partType] ?? 0) + 1;
   }
 

@@ -7,6 +7,7 @@ import { MemoryAuthStore } from "../infra/auth/memory-auth-store.js";
 import { FileArtifactStorage } from "../infra/storage/file-artifact-storage.js";
 import { PassthroughArtifactDownloadUrlResolver } from "../infra/storage/artifact-download-url-resolver.js";
 import { ExportQueueService } from "../services/export-queue.js";
+import type { PartIngestItem } from "../domain/library.js";
 
 process.env.ENABLE_LEGACY_HEADER_AUTH = "true";
 
@@ -57,6 +58,32 @@ function ingestItem(input: {
     attributes: input.attributes
   };
 }
+
+test("blank-family grouping covers existing catalog reads, family filters, ingest, and edits", async () => {
+  const app = buildTestApp();
+  try {
+    const admin = await registerAndGetCookie(app, "blank-family-admin", "meckert@vpc.com");
+    const headers = { cookie: admin.cookie };
+    const blank: PartIngestItem = { id: "legacy-blank", category: "module", family: "ITA/RCV", partNumber: "BLANK-1", attributes: { positionCount: 0, pinIds: [] }, description: "Blank module, no contacts", partType: "MODULE", side: "DUAL", electricalMode: "NONE", isActive: true, isReviewed: false, stockStatus: "unknown" };
+    await app.store.ingestLibraryComponents({ requestedByUserId: admin.userId, dryRun: false, items: [blank, {
+      ...blank, id: "empty-host", partNumber: "HOST-1", family: "iCon", description: "SIM module awaiting inserts", electricalMode: "INSERT_HOST", attributes: { simSlotCount: 16, pinIds: [] }
+    }] });
+    const listed = await app.inject({ method: "GET", url: "/v1/library/components?family=Blank%20insert", headers });
+    assert.equal(listed.statusCode, 200);
+    assert.deepEqual(listed.json().items.map((part: { id: string }) => part.id), ["legacy-blank"]);
+    assert.equal(listed.json().items[0].side, "DUAL");
+    const single = await app.inject({ method: "GET", url: "/v1/library/components/legacy-blank", headers });
+    assert.equal(single.json().family, "Blank insert");
+    const ingest = await app.inject({ method: "POST", url: "/v1/library/components/ingest", headers, payload: { items: [{ ...blank, id: "new-blank", partNumber: "BLANK-2" }] } });
+    assert.equal(ingest.statusCode, 201);
+    const saved = await app.store.getLibraryComponent({ componentId: "new-blank", requestingUserId: admin.userId, canViewAllUnreviewed: true, canViewInactive: true });
+    assert.equal(saved?.family, "Blank insert");
+    const edit = await app.inject({ method: "PATCH", url: "/v1/library/components/legacy-blank", headers, payload: { family: "RCV" } });
+    assert.equal(edit.statusCode, 200);
+    assert.equal(edit.json().family, "Blank insert");
+    assert.equal(edit.json().id, "legacy-blank");
+  } finally { await app.close(); }
+});
 
 test("bulk endpoints require an admin account", async () => {
   const app = buildTestApp();

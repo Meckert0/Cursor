@@ -2,6 +2,7 @@ import type { LibraryComponentDto } from "./api";
 import { isCanvasConnectorPart, isCanvasFramePart } from "./part-fields";
 import { normalizeCatalogSide } from "./connector-frames";
 import { isSimInsert } from "./sim-modules";
+import { catalogPartFamily } from "../../../../src/domain/library";
 
 export type PickerValue = string | number | null;
 export type PickerMode = "connector" | "frame" | "sim-insert";
@@ -81,7 +82,7 @@ export const CONNECTOR_PICKER_COLUMNS: readonly PickerColumn[] = [
     const side = normalizeCatalogSide(p.partType);
     return side === "ITA" ? "ITA housing" : side === "RECEIVER" ? "Receiver housing" : "Frame";
   } },
-  { id: "family", label: "Family", kind: "values", width: 100, value: p => text(p.family) },
+  { id: "family", label: "Family", kind: "values", width: 120, value: p => text(catalogPartFamily(p)) },
   { id: "side", label: "Side", kind: "values", width: 110, value: p => {
     const side = normalizeCatalogSide(p.side);
     return side === "RECEIVER" ? "Receiver" : side === "DUAL" ? "Dual" : side || "Unspecified";
@@ -101,14 +102,14 @@ export const CONNECTOR_PICKER_COLUMNS: readonly PickerColumn[] = [
 ];
 
 export const DEFAULT_PICKER_COLUMNS = CONNECTOR_PICKER_COLUMNS.slice(0, 8).map(c => c.id);
-export const TOP_PICKER_FILTERS: readonly PickerColumnId[] = ["type", "family", "side", "positions", "stockStatus"];
+export const TOP_PICKER_FILTERS: readonly PickerColumnId[] = ["family", "side"];
 export function pickerDefaultColumns(mode: PickerMode): PickerColumnId[] {
   if (mode === "sim-insert") return [...DEFAULT_PICKER_COLUMNS, "slotOccupancy"];
   return DEFAULT_PICKER_COLUMNS.map(id => mode === "frame" && id === "positions" ? "moduleCapacity" : id);
 }
 export function pickerTopFilters(mode: PickerMode): PickerColumnId[] {
-  if (mode === "sim-insert") return TOP_PICKER_FILTERS.map(id => id === "positions" ? "slotOccupancy" : id);
-  return TOP_PICKER_FILTERS.map(id => mode === "frame" && id === "positions" ? "moduleCapacity" : id);
+  if (mode === "sim-insert") return [...TOP_PICKER_FILTERS, "slotOccupancy"];
+  return mode === "frame" ? ["type", ...TOP_PICKER_FILTERS, "moduleCapacity"] : [...TOP_PICKER_FILTERS];
 }
 export const pickerColumn = (id: PickerColumnId): PickerColumn => CONNECTOR_PICKER_COLUMNS.find(c => c.id === id)!;
 

@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   displayPartType,
+  catalogPartFamily,
+  normalizeBlankModuleFamily,
   emptyAttributesForCategory,
   isCanvasConnectorPart,
   isCanvasDefinablePart,
@@ -11,6 +13,21 @@ import {
   type ContactAttributes,
   type ModuleAttributes
 } from "./library.js";
+
+test("blank filler families are separate from physical sides and empty SIM hosts", () => {
+  const blank = { category: "module", family: "ITA/RCV", description: "Blank module", electricalMode: "NONE", attributes: { pinIds: [], positionCount: 0 } };
+  assert.equal(catalogPartFamily(blank), "Blank insert");
+  assert.equal(catalogPartFamily({ ...blank, description: "Blanking insert" }), "Blank insert");
+  assert.equal(catalogPartFamily({ ...blank, description: "Module", attributes: { contactFamily1: "BLANK" } }), "Blank insert");
+  for (const attributes of [{ positionCount: 1 }, { pinCount: 2 }, { pinCount2: 2 }, { pinIds: ["1"] }, { contactPositions: [{ pinCount: 4 }] }, { simSlotCount: 16 }, { simSlotSections: [["1", "2"]] }]) {
+    assert.equal(catalogPartFamily({ ...blank, attributes }), blank.family);
+  }
+  assert.equal(catalogPartFamily({ ...blank, electricalMode: "INSERT_HOST" }), blank.family);
+  assert.equal(catalogPartFamily({ ...blank, category: "frame" }), blank.family);
+  assert.equal(catalogPartFamily({ ...blank, description: "Signal module" }), blank.family);
+  assert.equal(normalizeBlankModuleFamily(blank).family, "Blank insert");
+  assert.equal(blank.family, "ITA/RCV");
+});
 
 test("emptyAttributesForCategory covers frame and VPC module/contact lists", () => {
   assert.deepEqual(emptyAttributesForCategory("frame"), { slotIds: [] });

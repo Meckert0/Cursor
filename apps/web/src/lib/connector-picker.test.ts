@@ -18,6 +18,21 @@ const values = (...selected: string[]): PickerFilter => ({ kind: "values", value
 const contains = (value: string): PickerFilter => ({ kind: "text", operator: "contains", value });
 
 describe("connector picker discovery", () => {
+  it("offers family and side at the top while keeping positions and availability as information columns", () => {
+    expect(pickerTopFilters("connector")).toEqual(["family", "side"]);
+    expect(pickerDefaultColumns("connector")).toEqual(expect.arrayContaining(["positions", "stockStatus"]));
+  });
+  it("groups blank fillers under Blank insert and preserves SIM host family and side", () => {
+    const blank = part("BLANK", { family: "ITA/RCV", description: "Blank module", side: "DUAL", attributes: { positionCount: 0 } });
+    const host = part("HOST", { family: "iCon", description: "SIM host with no inserts", electricalMode: "INSERT_HOST", attributes: { simSlotCount: 16 } });
+    const index = buildPickerIndex([blank, host]);
+    expect(index[0].values.family).toBe("Blank insert");
+    expect(index[0].values.side).toBe("Dual");
+    expect(index[1].values.family).toBe("iCon");
+    expect(getPickerFacetChoices(index, "", {}, "family")).toContainEqual({ value: "Blank insert", count: 1 });
+    expect(getPickerResults(index, "", { family: values("Blank insert") }, null).map(record => record.part.id)).toEqual([blank.id]);
+    expect(blank.family).toBe("ITA/RCV");
+  });
   it("keeps connector and housing eligibility separate, including legacy Receiver aliases", () => {
     const catalog = [
       part("module"),

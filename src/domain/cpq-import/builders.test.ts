@@ -17,6 +17,11 @@ function makeWorkbook(sheets: Record<string, Array<Record<string, CellValue>>>):
   return workbook;
 }
 
+test("CPQ zero-position blank modules use the Blank insert family", () => {
+  const build = buildCatalog(makeWorkbook({ Mx_Module2: [{ A: "VPC", B: "ITA/RCV", C: "DUAL", D: "Blank", E: 0, I: "510160100" }] }));
+  assert.equal(build.parts.find(part => part.partNumber === "510160100")?.family, "Blank insert");
+});
+
 function baseWorkbook(): CpqWorkbook {
   return makeWorkbook({
     Mx_WireReturnV2: [

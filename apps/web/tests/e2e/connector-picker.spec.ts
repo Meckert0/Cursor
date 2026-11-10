@@ -14,6 +14,114 @@ async function openPicker(page: Page, token: number) {
   return page.getByRole("dialog", { name: "Define Connector", exact: true });
 }
 
+async function dragPointer(page: Page, source: { x: number; y: number }, target: { x: number; y: number }) {
+  await page.mouse.move(source.x, source.y);
+  await page.mouse.down();
+  await page.mouse.move(target.x, target.y, { steps: 12 });
+  await page.mouse.up();
+}
+
+test("picker columns resize, reorder, retain their layout, and isolate blank fillers by family", async ({ page, request }) => {
+  const token = uniqueToken(), prefix = `LAYOUT-${token}`;
+  const common = { category: "module", partType: "MODULE", isActive: true, isReviewed: false, stockStatus: "in_stock" };
+  await ingestReviewedLibraryItems(request, [
+    { ...common, id: `${prefix}-BLANK`, partNumber: `${prefix}-BLANK`, family: "ITA/RCV", description: "Blank module", side: "DUAL", attributes: { positionCount: 0 } },
+    { ...common, id: `${prefix}-SIGNAL`, partNumber: `${prefix}-SIGNAL`, family: "iCon", description: "Signal module", side: "ITA", attributes: { positionCount: 96 } },
+    { ...common, id: `${prefix}-HOST`, partNumber: `${prefix}-HOST`, family: "iCon", description: "SIM module awaiting inserts", side: "ITA", electricalMode: "INSERT_HOST", attributes: { simSlotCount: 16 } }
+  ]);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  let dialog = await openPicker(page, token);
+  await dialog.getByLabel("Search the parts library").fill(prefix);
+  const options = dialog.getByRole("group", { name: "Filter and column options" });
+  for (const label of ["Type", "Positions", "Availability"]) await expect(options.getByRole("button", { name: `${label} filter`, exact: true })).toHaveCount(0);
+  await expect(dialog.getByRole("button", { name: "Filter Positions", exact: true })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Filter Availability", exact: true })).toBeVisible();
+  await dialog.getByRole("radio", { name: `Preview ${prefix}-SIGNAL`, exact: true }).check();
+  const resize = dialog.getByRole("separator", { name: "Resize Description column", exact: true });
+  const initialWidth = Number(await resize.getAttribute("aria-valuenow"));
+  const edge = (await resize.boundingBox())!;
+  await dragPointer(page, { x: edge.x + edge.width / 2, y: edge.y + edge.height / 2 }, { x: edge.x + edge.width / 2 + 100, y: edge.y + edge.height / 2 });
+  await expect(resize).toHaveAttribute("aria-valuenow", String(initialWidth + 100));
+  expect((await dialog.locator('th[data-picker-column="description"]').boundingBox())!.width).toBeCloseTo(initialWidth + 100, 0);
+
+  const grip = (await dialog.getByRole("button", { name: "Move Description column", exact: true }).boundingBox())!;
+  const target = (await dialog.locator('th[data-picker-column="partNumber"]').boundingBox())!;
+  await dragPointer(page, { x: grip.x + grip.width / 2, y: grip.y + grip.height / 2 }, { x: target.x + 12, y: target.y + target.height / 2 });
+  await expect(dialog.locator("th[data-picker-column]").first()).toHaveAttribute("data-picker-column", "description");
+  await expect(dialog.getByRole("radio", { name: `Preview ${prefix}-SIGNAL`, exact: true })).toBeChecked();
+  const sourcePart = (await dialog.getByRole("button", { name: "Move Part number column", exact: true }).boundingBox())!;
+  const familyTarget = (await dialog.locator('th[data-picker-column="family"]').boundingBox())!;
+  await dragPointer(page, { x: sourcePart.x + sourcePart.width / 2, y: sourcePart.y + sourcePart.height / 2 }, { x: familyTarget.x + familyTarget.width - 12, y: familyTarget.y + familyTarget.height / 2 });
+  const familyBounds = (await dialog.locator('th[data-picker-column="family"]').boundingBox())!;
+  const partBounds = (await dialog.locator('th[data-picker-column="partNumber"]').boundingBox())!;
+  expect(partBounds.x).toBeCloseTo(familyBounds.x + familyBounds.width, 0);
+  await dialog.screenshot({ path: test.info().outputPath("picker-custom-columns.png") });
+
+  await dialog.getByRole("button", { name: "Family filter", exact: true }).click();
+  const menu = page.getByRole("dialog", { name: "Family options", exact: true });
+  await menu.getByRole("checkbox", { name: /^Blank insert\s*1$/ }).check();
+  await menu.getByRole("button", { name: "Apply filter", exact: true }).click();
+  const rows = dialog.locator("tbody tr");
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText(`${prefix}-BLANK`);
+  await expect(rows.first()).toContainText("Blank insert");
+  await expect(rows.first()).toContainText("Dual");
+  await dialog.screenshot({ path: test.info().outputPath("picker-blank-family.png") });
+  await dialog.getByRole("button", { name: "Reset filters", exact: true }).click();
+  await expect(rows).toHaveCount(3);
+  await dialog.getByRole("button", { name: "Sort Family ascending", exact: true }).click();
+  await expect(rows.first()).toContainText(`${prefix}-BLANK`);
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.getByRole("button", { name: "Define Connector", exact: true }).click();
+  dialog = page.getByRole("dialog", { name: "Define Connector", exact: true });
+  await expect(dialog.locator("th[data-picker-column]").first()).toHaveAttribute("data-picker-column", "description");
+  await expect(dialog.getByRole("separator", { name: "Resize Description column", exact: true })).toHaveAttribute("aria-valuenow", String(initialWidth + 100));
+  await page.reload();
+  await page.locator('[class*="connectorNode"]').first().click();
+  await page.getByRole("button", { name: "Define Connector", exact: true }).click();
+  dialog = page.getByRole("dialog", { name: "Define Connector", exact: true });
+  await expect(dialog.locator("th[data-picker-column]").first()).toHaveAttribute("data-picker-column", "description");
+  await expect(dialog.getByRole("separator", { name: "Resize Description column", exact: true })).toHaveAttribute("aria-valuenow", String(initialWidth + 100));
+  await dialog.getByLabel("Search the parts library").fill(prefix);
+  await dialog.getByRole("button", { name: /^Columns/ }).click();
+  await page.getByRole("button", { name: "Reset columns", exact: true }).click();
+  await expect(dialog.locator("th[data-picker-column]").first()).toHaveAttribute("data-picker-column", "partNumber");
+  await expect(dialog.getByRole("separator", { name: "Resize Description column", exact: true })).toHaveAttribute("aria-valuenow", String(initialWidth));
+  await expect(dialog.getByLabel("Search the parts library")).toHaveValue(prefix);
+});
+
+test.describe("touch column controls", () => {
+  test.use({ viewport: { width: 390, height: 960 }, hasTouch: true });
+  test("resizes and moves columns with touch while preserving the popup", async ({ page, request }) => {
+    const token = uniqueToken(), pn = `TOUCH-PICK-${token}`;
+    await ingestReviewedLibraryItems(request, [{ id: pn, category: "module", partType: "MODULE", family: "iCon", partNumber: pn, description: "Touch module", side: "ITA", isActive: true, isReviewed: false, stockStatus: "in_stock", attributes: { positionCount: 96 } }]);
+    const dialog = await openPicker(page, token);
+    await dialog.getByLabel("Search the parts library").fill(pn);
+    const session = await page.context().newCDPSession(page);
+    const touchDrag = async (x: number, y: number, toX: number, toY: number) => {
+      await session.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y, id: 1 }] });
+      for (let step = 1; step <= 8; step++) await session.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: x + (toX - x) * step / 8, y: y + (toY - y) * step / 8, id: 1 }] });
+      await session.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    };
+    try {
+      const handle = dialog.getByRole("separator", { name: "Resize Part number column", exact: true });
+      const initial = Number(await handle.getAttribute("aria-valuenow"));
+      const edge = (await handle.boundingBox())!;
+      await touchDrag(edge.x + edge.width / 2, edge.y + edge.height / 2, edge.x + edge.width / 2 + 40, edge.y + edge.height / 2);
+      await expect(handle).toHaveAttribute("aria-valuenow", String(initial + 40));
+      const grip = (await dialog.getByRole("button", { name: "Move Description column", exact: true }).boundingBox())!;
+      const target = (await dialog.locator('th[data-picker-column="partNumber"]').boundingBox())!;
+      await touchDrag(grip.x + grip.width / 2, grip.y + grip.height / 2, target.x + 12, target.y + target.height / 2);
+      await expect(dialog.locator("th[data-picker-column]").first()).toHaveAttribute("data-picker-column", "description");
+      await expect(dialog).toBeVisible();
+      await dialog.screenshot({ path: test.info().outputPath("picker-mobile-columns.png") });
+    } finally { await session.detach(); }
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Define Connector", exact: true })).toBeFocused();
+  });
+});
+
 test("wide picker synchronizes top/column filters, sorts columns, and preserves selection through autosave and undo", async ({ page, request }) => {
   const token = uniqueToken();
   const prefix = `PICK-${token}`;

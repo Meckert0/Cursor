@@ -99,6 +99,13 @@ const baseParts: VpcSheetRow[] = [
   })
 ];
 
+test("VPC blank modules import into Blank insert while empty SIM hosts keep their series", () => {
+  const blank = partRow(90, { ...baseParts[1].cells, part_number: "BLANK-TEST", family: "ITA/RCV", description: "Blank module", position_count: 0, electrical_mode: "NONE" });
+  const build = parseVpcCatalog({ parts: [blank, baseParts[2]], compatibility: [] });
+  assert.equal(build.parts.find(part => part.partNumber === "BLANK-TEST")?.family, "Blank insert");
+  assert.equal(build.parts.find(part => part.partNumber === "510161130")?.family, "iCon");
+});
+
 test("mapWorkbookStatus maps confirmed family to allowed and conditional to review", () => {
   assert.deepEqual(mapWorkbookStatus("CONFIRMED_FAMILY"), { status: "allowed", unknown: false });
   assert.deepEqual(mapWorkbookStatus("CONDITIONAL_CLEARANCE"), { status: "review", unknown: false });

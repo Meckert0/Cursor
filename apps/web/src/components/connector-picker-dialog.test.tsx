@@ -21,7 +21,7 @@ beforeAll(() => {
 beforeEach(() => {
   vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
 });
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); window.localStorage.clear(); vi.unstubAllGlobals(); });
 
 function mount(overrides: Partial<React.ComponentProps<typeof ConnectorPickerDialog>> = {}) {
   const onSelect = vi.fn(), onClose = vi.fn();
@@ -31,6 +31,60 @@ function mount(overrides: Partial<React.ComponentProps<typeof ConnectorPickerDia
 const tableRows = () => within(screen.getByRole("table", { name: "Parts matching your search" })).getAllByRole("row").slice(1);
 
 describe("ConnectorPickerDialog", () => {
+  it("removes the redundant top dropdowns while retaining column sorting and filtering", () => {
+    mount();
+    const options = within(screen.getByRole("group", { name: "Filter and column options" }));
+    for (const name of ["Type filter", "Positions filter", "Availability filter"]) expect(options.queryByRole("button", { name })).not.toBeInTheDocument();
+    for (const name of ["Positions", "Availability"]) {
+      expect(screen.getByRole("button", { name: `Sort ${name} ascending` })).toBeVisible();
+      expect(screen.getByRole("button", { name: `Filter ${name}` })).toBeVisible();
+    }
+  });
+  it("resizes and reorders columns with keyboard controls while retaining the selected part", () => {
+    const { onSelect } = mount();
+    fireEvent.click(screen.getByRole("radio", { name: "Preview MOD-096" }));
+    const resize = screen.getByRole("separator", { name: "Resize Description column" });
+    const width = Number(resize.getAttribute("aria-valuenow"));
+    fireEvent.keyDown(resize, { key: "ArrowRight" });
+    expect(resize).toHaveAttribute("aria-valuenow", String(width + 10));
+    fireEvent.keyDown(screen.getByRole("button", { name: "Move Description column" }), { key: "ArrowLeft" });
+    const headers = screen.getByRole("table").querySelectorAll<HTMLElement>("th[data-picker-column]");
+    expect(Array.from(headers, header => header.dataset.pickerColumn).slice(0, 2)).toEqual(["description", "partNumber"]);
+    expect(screen.getByRole("radio", { name: "Preview MOD-096" })).toBeChecked();
+    expect(screen.getByRole("button", { name: "Filter Description" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /^Use connector/ }));
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith(parts[0]);
+  });
+  it("restores customized columns when reopened and resets the layout without resetting search", () => {
+    function Harness() {
+      const [open, setOpen] = useState(false);
+      return <><button onClick={() => setOpen(true)}>Open picker</button>{open ? <ConnectorPickerDialog parts={parts} destination="J3" onCreatePart={create} onSelect={vi.fn()} onClose={() => setOpen(false)} /> : null}</>;
+    }
+    render(<Harness />);
+    fireEvent.click(screen.getByRole("button", { name: "Open picker" }));
+    fireEvent.keyDown(screen.getByRole("separator", { name: "Resize Description column" }), { key: "ArrowRight", shiftKey: true });
+    fireEvent.keyDown(screen.getByRole("button", { name: "Move Description column" }), { key: "ArrowLeft" });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open picker" }));
+    expect(screen.getByRole("separator", { name: "Resize Description column" })).toHaveAttribute("aria-valuenow", "295");
+    expect(screen.getByRole("table").querySelector("th[data-picker-column]")).toHaveAttribute("data-picker-column", "description");
+    fireEvent.change(screen.getByLabelText("Search the parts library"), { target: { value: "MOD" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Columns/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Reset columns" }));
+    expect(screen.getByRole("separator", { name: "Resize Description column" })).toHaveAttribute("aria-valuenow", "245");
+    expect(screen.getByRole("table").querySelector("th[data-picker-column]")).toHaveAttribute("data-picker-column", "partNumber");
+    expect(screen.getByLabelText("Search the parts library")).toHaveValue("MOD");
+  });
+  it("filters blank filler modules by their Blank insert family", () => {
+    mount({ parts: [...parts, part("BLANK-MODULE", { description: "Blank module", family: "ITA/RCV", side: "DUAL", attributes: { positionCount: 0 } })] });
+    fireEvent.click(screen.getByRole("button", { name: "Family filter" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Blank insert 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply filter" }));
+    expect(tableRows()).toHaveLength(1);
+    expect(tableRows()[0]).toHaveTextContent("BLANK-MODULE");
+    expect(tableRows()[0]).toHaveTextContent("Blank insert");
+    expect(tableRows()[0]).toHaveTextContent("Dual");
+  });
   it("limits SIM slot selection to inserts and includes sortable occupancy without offering host creation", () => {
     const insert = part("SIM-PAIR", { partType: "SIM_INSERT", attributes: { slotOccupancy: 2, pinCount: 4 } });
     const { onSelect } = mount({ mode: "sim-insert", parts: [...parts, insert, part("FRAME", { category: "frame", partType: "ITA" })] });
@@ -186,7 +240,7 @@ describe("ConnectorPickerDialog", () => {
 
   it("rejects reversed ranges without replacing applied results", () => {
     mount();
-    fireEvent.click(screen.getByRole("button", { name: "Positions filter" }));
+    fireEvent.click(screen.getByRole("button", { name: "Filter Positions" }));
     fireEvent.change(screen.getByLabelText("Minimum"), { target: { value: "100" } });
     fireEvent.change(screen.getByLabelText("Maximum"), { target: { value: "10" } });
     fireEvent.click(screen.getByRole("button", { name: "Apply filter" }));
@@ -198,7 +252,7 @@ describe("ConnectorPickerDialog", () => {
     const onReverseChange = vi.fn();
     render(<ConnectorPickerDialog mode="frame" parts={[...parts, part("FRAME", { category: "frame", partType: "ITA" })]} destination="J3" slot={{ slotId: "A", framePartNumber: "FRAME-6", reverse: false, onReverseChange }} onCreatePart={create} onClose={vi.fn()} onSelect={vi.fn()} />);
     expect(screen.getByRole("dialog", { name: "Select slot A module" })).toHaveTextContent("FRAME-6");
-    expect(screen.getByRole("button", { name: "Type filter" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Type filter" })).not.toBeInTheDocument();
     expect(screen.queryByRole("radio", { name: "Preview FRAME" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "+ Add new connector" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Opposite-side modules" }));

@@ -56,13 +56,32 @@ function wholeNumber(value: unknown): number | null {
   return Number.isFinite(number) && Number.isInteger(number) && number >= 0 ? number : null;
 }
 
+function positionGroups(part: LibraryComponentDto): number[] {
+  if (!isModule(part)) return [];
+  const primary = wholeNumber(part.attributes.pinCount);
+  const secondary = wholeNumber(part.attributes.pinCount2);
+  if (primary !== null && primary > 0 && secondary !== null && secondary > 0) return [primary, secondary];
+  const groups = part.attributes.contactPositions;
+  return Array.isArray(groups) ? groups
+    .map(group => wholeNumber(group && typeof group === "object" ? group.pinCount : null))
+    .filter((count): count is number => count !== null && count > 0) : [];
+}
+
+function positionBreakdown(part: LibraryComponentDto): string | null {
+  const groups = positionGroups(part);
+  return groups.length > 1 ? groups.join("/") : null;
+}
+
 function positions(part: LibraryComponentDto): number | null {
   if (!isModule(part)) return null;
   const explicit = wholeNumber(part.attributes.positionCount);
   if (explicit !== null) return explicit;
+  const groups = positionGroups(part);
+  if (groups.length > 1) return groups.reduce((total, count) => total + count, 0);
   const primary = wholeNumber(part.attributes.pinCount);
   const secondary = wholeNumber(part.attributes.pinCount2);
   if (primary !== null || secondary !== null) return (primary ?? 0) + (secondary ?? 0);
+  if (groups.length) return groups.reduce((total, count) => total + count, 0);
   return Array.isArray(part.attributes.pinIds) && part.attributes.pinIds.length ? part.attributes.pinIds.length : null;
 }
 
@@ -127,6 +146,10 @@ export function pickerQueryTokens(query: string): string[] {
 
 export function pickerDisplayValue(record: PickerRecord, column: PickerColumn): string {
   if (column.applies && !column.applies(record.part)) return "Not applicable";
+  if (column.id === "positions") {
+    const breakdown = positionBreakdown(record.part);
+    if (breakdown) return breakdown;
+  }
   return record.values[column.id] === null ? "Not supplied" : String(record.values[column.id]);
 }
 
@@ -143,7 +166,7 @@ export function buildPickerIndex(parts: readonly LibraryComponentDto[]): PickerR
       .filter(value => typeof value === "string" || typeof value === "number" || typeof value === "boolean");
     return {
       part, values, partNumber: compact(part.partNumber),
-      searchText: normalize([...Object.values(values), part.partType, part.notes, ...attributes].join(" "))
+      searchText: normalize([...Object.values(values), positionBreakdown(part), part.partType, part.notes, ...attributes].join(" "))
     };
   });
 }

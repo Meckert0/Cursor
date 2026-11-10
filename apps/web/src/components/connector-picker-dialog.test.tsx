@@ -31,6 +31,23 @@ function mount(overrides: Partial<React.ComponentProps<typeof ConnectorPickerDia
 const tableRows = () => within(screen.getByRole("table", { name: "Parts matching your search" })).getAllByRole("row").slice(1);
 
 describe("ConnectorPickerDialog", () => {
+  it("shows and searches hybrid positions in the table and selected-part preview", () => {
+    mount({ parts: [...parts, part("HYBRID", { attributes: { positionCount: 108, pinCount: 100, pinCount2: 8 } })] });
+    fireEvent.change(screen.getByLabelText("Search the parts library"), { target: { value: "100/8" } });
+    expect(tableRows()).toHaveLength(1);
+    expect(within(tableRows()[0]).getByRole("cell", { name: "100/8", exact: true })).toBeVisible();
+    fireEvent.click(screen.getByRole("radio", { name: "Preview HYBRID" }));
+    const preview = screen.getByRole("region", { name: "Selected part specifications" });
+    expect(within(preview).getByText("Positions").nextElementSibling).toHaveTextContent("100/8");
+    fireEvent.click(screen.getByRole("button", { name: "Filter Positions" }));
+    const menu = screen.getByRole("dialog", { name: "Positions options" });
+    expect(menu).toHaveTextContent("Ranges and sorting use the total positions.");
+    fireEvent.change(within(menu).getByLabelText("Minimum"), { target: { value: "108" } });
+    fireEvent.change(within(menu).getByLabelText("Maximum"), { target: { value: "108" } });
+    fireEvent.click(within(menu).getByRole("button", { name: "Apply filter" }));
+    expect(tableRows()).toHaveLength(1);
+    expect(tableRows()[0]).toHaveTextContent("100/8");
+  });
   it("removes the redundant top dropdowns while retaining column sorting and filtering", () => {
     mount();
     const options = within(screen.getByRole("group", { name: "Filter and column options" }));

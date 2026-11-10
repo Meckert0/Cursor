@@ -21,6 +21,39 @@ async function dragPointer(page: Page, source: { x: number; y: number }, target:
   await page.mouse.up();
 }
 
+test("hybrid positions show contact groups in results and previews and filter by total", async ({ page, request }) => {
+  const token = uniqueToken(), prefix = `HYBRID-${token}`;
+  const common = { category: "module", partType: "MODULE", family: "iCon", side: "ITA", isActive: true, isReviewed: false, stockStatus: "in_stock" };
+  await ingestReviewedLibraryItems(request, [
+    { ...common, id: `${prefix}-MIXED`, partNumber: `${prefix}-MIXED`, description: "Signal and power hybrid", attributes: { positionCount: 108, pinCount: 100, pinCount2: 8 } },
+    { ...common, id: `${prefix}-GROUPED`, partNumber: `${prefix}-GROUPED`, description: "Hybrid with contact-size groups", attributes: { positionCount: 108, pinCount: 108, contactPositions: [{ contactSize: "20", pinCount: 100 }, { contactSize: "12", pinCount: 8 }] } },
+    { ...common, id: `${prefix}-SIGNAL`, partNumber: `${prefix}-SIGNAL`, description: "Signal module", attributes: { positionCount: 96 } }
+  ]);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const dialog = await openPicker(page, token);
+  await dialog.getByLabel("Search the parts library").fill(prefix);
+  const rows = dialog.locator("tbody tr");
+  await expect(rows).toHaveCount(3);
+  await expect(rows.getByRole("cell", { name: "100/8", exact: true })).toHaveCount(2);
+  await dialog.getByRole("button", { name: "Sort Positions ascending", exact: true }).click();
+  await expect(rows.first()).toContainText(`${prefix}-SIGNAL`);
+  await dialog.getByRole("button", { name: "Sort Positions descending", exact: true }).click();
+  await expect(rows.last()).toContainText(`${prefix}-SIGNAL`);
+  await dialog.getByRole("button", { name: "Filter Positions", exact: true }).click();
+  const menu = page.getByRole("dialog", { name: "Positions options", exact: true });
+  await expect(menu).toContainText("Ranges and sorting use the total positions.");
+  await menu.getByLabel("Minimum").fill("108");
+  await menu.getByLabel("Maximum").fill("108");
+  await menu.getByRole("button", { name: "Apply filter", exact: true }).click();
+  await expect(rows).toHaveCount(2);
+  await dialog.getByLabel("Search the parts library").fill("100/8");
+  await expect(rows.getByRole("cell", { name: "100/8", exact: true })).toHaveCount(2);
+  await dialog.getByRole("radio", { name: `Preview ${prefix}-MIXED`, exact: true }).check();
+  const preview = dialog.getByRole("region", { name: "Selected part specifications" });
+  await expect(preview.locator("dl div").filter({ has: page.getByText("Positions", { exact: true }) }).locator("dd")).toHaveText("100/8");
+  await dialog.screenshot({ path: test.info().outputPath("picker-hybrid-positions.png") });
+});
+
 test("picker columns resize, reorder, retain their layout, and isolate blank fillers by family", async ({ page, request }) => {
   const token = uniqueToken(), prefix = `LAYOUT-${token}`;
   const common = { category: "module", partType: "MODULE", isActive: true, isReviewed: false, stockStatus: "in_stock" };

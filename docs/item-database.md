@@ -107,6 +107,8 @@ The canvas part picker keeps Family and Side filters at the top. Positions and A
 
 Parts with the catalog side `DUAL` display **ITA & Receiver** in the picker. They appear under either ITA or Receiver in the Side filter, and count toward both options. Selecting both sides lists each part once.
 
+Hybrid modules display their contact-group positions as a breakdown, such as **100/8**, in the Positions column and selected-part preview. The picker reads primary/secondary counts or contact-position groups in catalog order. Search accepts the displayed breakdown; numeric ranges and sorting use the total count.
+
 Physical blank filler modules with no electrical positions or SIM slots use the **Blank insert** family. Their ITA/Receiver/Dual side is independent of this family. Existing entries receive the same classification when read through the library API and in picker facets; ingest, edits, and both VPC and CPQ imports store it for new or updated entries. Part IDs remain stable. SIM hosts awaiting inserts and modules with electrical contacts retain their existing families.
 
 Four kinds of relationships exist:

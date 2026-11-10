@@ -119,12 +119,44 @@ describe("connector picker discovery", () => {
       part("missing")
     ]);
     expect(index.map(r => r.values.positions)).toEqual([76, 100, 2, null, null]);
+    expect(pickerDisplayValue(index[0], pickerColumn("positions"))).toBe("64/12");
     expect(index[3].values.moduleCapacity).toBe(2);
     expect(pickerDisplayValue(index[3], pickerColumn("positions"))).toBe("Not applicable");
     expect(pickerDisplayValue(index[4], pickerColumn("positions"))).toBe("Not supplied");
     expect(pickerDisplayValue(index[3], pickerColumn("gender"))).toBe("Not applicable");
     expect(getPickerResults(index, "", { positions: { kind: "number", mode: "missing", min: "", max: "" } }, null).map(r => r.part.id)).toEqual(["missing"]);
     expect(getPickerResults(index, "", { positions: { kind: "number", mode: "notApplicable", min: "", max: "" } }, null).map(r => r.part.id)).toEqual(["frame"]);
+  });
+
+  it.each<[Record<string, unknown>, number | null, string]>([
+    [{ positionCount: 108, pinCount: 100, pinCount2: 8 }, 108, "100/8"],
+    [{ pinCount: "100", pinCount2: "8" }, 108, "100/8"],
+    [{ positionCount: 108, pinCount: 108, contactPositions: [{ contactSize: "20", pinCount: 100 }, { contactSize: "12", pinCount: 8 }] }, 108, "100/8"],
+    [{ pinCount: 0, contactPositions: [{ pinCount: 100 }, { pinCount: 8 }] }, 108, "100/8"],
+    [{ contactPositions: [{ pinCount: "100" }, { pinCount: 8 }, { pinCount: 2 }] }, 110, "100/8/2"],
+    [{ pinCount: 100, pinCount2: 8, contactPositions: [{ pinCount: 50 }, { pinCount: 58 }] }, 108, "100/8"],
+    [{ positionCount: 108, pinCount: 100 }, 108, "108"],
+    [{ pinCount: 100, pinCount2: 0 }, 100, "100"],
+    [{ contactPositions: [{ pinCount: 96 }] }, 96, "96"],
+    [{ positionCount: 0, pinCount: 0, pinCount2: 0 }, 0, "0"],
+    [{ contactPositions: [null, {}, { pinCount: -2 }, { pinCount: 1.5 }, { pinCount: "invalid" }] }, null, "Not supplied"]
+  ])("displays contact-group breakdowns while retaining numeric totals (%j)", (attributes, total, display) => {
+    const record = buildPickerIndex([part("module", { attributes })])[0];
+    expect(record.values.positions).toBe(total);
+    expect(pickerDisplayValue(record, pickerColumn("positions"))).toBe(display);
+  });
+
+  it("searches hybrid breakdowns and uses totals for numeric ranges and sorting", () => {
+    const index = buildPickerIndex([
+      part("HYBRID", { attributes: { positionCount: 108, pinCount: 100, pinCount2: 8 } }),
+      part("MIXED", { attributes: { pinCount: 64, pinCount2: 12 } }),
+      part("SIGNAL", { attributes: { pinCount: 96 } }), part("UNKNOWN")
+    ]);
+    expect(getPickerResults(index, "100/8", {}, null).map(r => r.part.id)).toEqual(["HYBRID"]);
+    expect(getPickerResults(index, "", { positions: range("108", "108") }, null).map(r => r.part.id)).toEqual(["HYBRID"]);
+    expect(getPickerResults(index, "", { positions: range("100", "100") }, null)).toEqual([]);
+    expect(getPickerResults(index, "", {}, { id: "positions", direction: "asc" }).map(r => r.part.id)).toEqual(["MIXED", "SIGNAL", "HYBRID", "UNKNOWN"]);
+    expect(getPickerResults(index, "", {}, { id: "positions", direction: "desc" }).map(r => r.part.id)).toEqual(["HYBRID", "SIGNAL", "MIXED", "UNKNOWN"]);
   });
 
   it("validates numeric bounds and uses inclusive ranges without treating missing values as zero", () => {

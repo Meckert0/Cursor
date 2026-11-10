@@ -146,7 +146,7 @@ function ColumnFilterMenu({ column, index, query, filters, sort, onApply, onClea
             <label htmlFor={`${id}-min`}>Minimum<input id={`${id}-min`} type="number" min="0" step="1" value={draft.min} placeholder="Any" onChange={event => setDraft({ ...draft, min: event.target.value })} /></label><span>–</span>
             <label htmlFor={`${id}-max`}>Maximum<input id={`${id}-max`} type="number" min="0" step="1" value={draft.max} placeholder="Any" onChange={event => setDraft({ ...draft, max: event.target.value })} /></label>
           </div> : null}
-          <p className={styles.help}>{column.id === "positions" ? "Electrical positions on modules and inserts." : column.id === "slotOccupancy" ? "Adjacent SIM slots occupied by an insert." : "Number of module slots in a frame."}</p>
+          <p className={styles.help}>{column.id === "positions" ? "Hybrid modules show each contact group, such as 100/8. Ranges and sorting use the total positions." : column.id === "slotOccupancy" ? "Adjacent SIM slots occupied by an insert." : "Number of module slots in a frame."}</p>
         </> : null}
         {error ? <p className={styles.error} role="alert">{error}</p> : null}
       </div>

@@ -1286,6 +1286,7 @@ export function CableCanvas({
                       const slotLibraryPart = moduleCatalog.find((part) =>
                         slot.libraryComponentId ? part.id === slot.libraryComponentId : part.partNumber === slot.partNumber
                       );
+                      const slotHasSimControls = isSimHost(slotLibraryPart) || Boolean(slot.simInserts?.length);
                       const backshellStatus = new Map(
                         moduleBackshellCompat
                           .filter((row) => row.modulePartId === slot.libraryComponentId)
@@ -1307,106 +1308,106 @@ export function CableCanvas({
                         strainStatus
                       );
                       return (
-                        <article key={slot.slotId} className={styles.slotBlock} aria-label={`Slot ${slot.slotId} module`}>
-                          <div className={styles.slotDefinition}>
-                            <div className={styles.moduleIdentityRow}>
-                              <div className={styles.slotIdentity}>
-                                {(selectedConnector.slots?.length ?? 0) === 1 ? (
-                                  <div className={styles.moduleName}><span>Module name</span><strong>{slot.reference}</strong></div>
-                                ) : (
-                                  <>
-                                    <label>
-                                      Slot {slot.slotId} name
-                                      <input
-                                        className={styles.slotNameInput}
-                                        value={slotNameDrafts[slot.slotId] ?? slot.reference}
-                                        disabled={readOnly}
-                                        onChange={(event) =>
-                                          setSlotNameDrafts((previous) => ({
-                                            ...previous,
-                                            [slot.slotId]: event.target.value
-                                          }))
-                                        }
-                                        onBlur={(event) => commitSlotName(slot.slotId, event.target.value)}
-                                        placeholder={`e.g. ${selectedConnector.reference}${slot.slotId}`}
-                                        aria-label={`Slot ${slot.slotId} module name`}
-                                      />
-                                    </label>
-                                    {slotNameErrors[slot.slotId] ? (
-                                      <span className={styles.quickAddError}>{slotNameErrors[slot.slotId]}</span>
-                                    ) : null}
-                                  </>
-                                )}
-                              </div>
-                              <div className={`${styles.modulePart} ${styles.partSummary}`}>
-                                {slotModuleDefined ? (
-                                  <button
-                                    type="button"
-                                    className={styles.changeConnectorButton}
-                                    onClick={() => {
-                                      setConnectorSearchTarget({ slotId: slot.slotId });
-                                      setShowConnectorSearchDialog(true);
-                                    }}
-                                    disabled={readOnly}
-                                    aria-label={`Change slot ${slot.slotId} module`}
-                                  >
-                                    {slot.partNumber ? `Part number: ${slot.partNumber}` : "Change module"}
-                                  </button>
-                                ) : (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setConnectorSearchTarget({ slotId: slot.slotId });
-                                      setShowConnectorSearchDialog(true);
-                                    }}
-                                    disabled={readOnly}
-                                    aria-label={`Define slot ${slot.slotId} module`}
-                                  >
-                                    Select module
-                                  </button>
-                                )}
-                                {slotLibraryPart?.description ? <span className={styles.partDescription}><span aria-hidden="true"> · </span>{slotLibraryPart.description}</span> : null}
-                              </div>
+                        <article key={slot.slotId} className={`${styles.slotBlock} ${slotHasSimControls ? styles.slotBlockWithSim : ""}`} aria-label={`Slot ${slot.slotId} module`}>
+                          <div className={styles.moduleIdentityRow}>
+                            <div className={styles.slotIdentity}>
+                              {(selectedConnector.slots?.length ?? 0) === 1 ? (
+                                <div className={styles.moduleName}><span>Module name</span><strong>{slot.reference}</strong></div>
+                              ) : (
+                                <>
+                                  <label>
+                                    Slot {slot.slotId} name
+                                    <input
+                                      className={styles.slotNameInput}
+                                      value={slotNameDrafts[slot.slotId] ?? slot.reference}
+                                      disabled={readOnly}
+                                      onChange={(event) =>
+                                        setSlotNameDrafts((previous) => ({
+                                          ...previous,
+                                          [slot.slotId]: event.target.value
+                                        }))
+                                      }
+                                      onBlur={(event) => commitSlotName(slot.slotId, event.target.value)}
+                                      placeholder={`e.g. ${selectedConnector.reference}${slot.slotId}`}
+                                      aria-label={`Slot ${slot.slotId} module name`}
+                                    />
+                                  </label>
+                                  {slotNameErrors[slot.slotId] ? (
+                                    <span className={styles.quickAddError}>{slotNameErrors[slot.slotId]}</span>
+                                  ) : null}
+                                </>
+                              )}
                             </div>
-                            {renderSimControls(slot, slotLibraryPart, slot.slotId)}
+                            <div className={`${styles.modulePart} ${styles.partSummary}`}>
+                              {slotModuleDefined ? (
+                                <button
+                                  type="button"
+                                  className={styles.changeConnectorButton}
+                                  onClick={() => {
+                                    setConnectorSearchTarget({ slotId: slot.slotId });
+                                    setShowConnectorSearchDialog(true);
+                                  }}
+                                  disabled={readOnly}
+                                  aria-label={`Change slot ${slot.slotId} module`}
+                                >
+                                  {slot.partNumber ? `Part number: ${slot.partNumber}` : "Change module"}
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setConnectorSearchTarget({ slotId: slot.slotId });
+                                    setShowConnectorSearchDialog(true);
+                                  }}
+                                  disabled={readOnly}
+                                  aria-label={`Define slot ${slot.slotId} module`}
+                                >
+                                  Select module
+                                </button>
+                              )}
+                              {slotLibraryPart?.description ? <span className={styles.partDescription}><span aria-hidden="true"> · </span>{slotLibraryPart.description}</span> : null}
+                            </div>
                           </div>
-                          <div className={styles.slotAccessoryFields}>
-                            <label>
-                              Backshell
-                              <select
-                                value={slot.backshellLibraryComponentId ?? ""}
-                                disabled={readOnly || !slotModuleDefined}
-                                aria-label={`Slot ${slot.slotId} backshell`}
-                                onChange={(event) =>
-                                  applySlotAccessorySelection(slot.slotId, "backshell", event.target.value)
-                                }
-                              >
-                                <option value="">No backshell</option>
-                                {slotBackshells.map((option) => (
-                                  <option key={option.component.id} value={option.component.id}>
-                                    {option.label}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-                            <label>
-                              Strain relief
-                              <select
-                                value={slot.strainReliefLibraryComponentId ?? ""}
-                                disabled={readOnly || !slotModuleDefined}
-                                aria-label={`Slot ${slot.slotId} strain relief`}
-                                onChange={(event) =>
-                                  applySlotAccessorySelection(slot.slotId, "strainRelief", event.target.value)
-                                }
-                              >
-                                <option value="">No strain relief</option>
-                                {slotStrainReliefs.map((option) => (
-                                  <option key={option.component.id} value={option.component.id}>
-                                    {option.label}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
+                          <div className={styles.slotConfiguration}>
+                            {renderSimControls(slot, slotLibraryPart, slot.slotId)}
+                            <div className={styles.slotAccessoryFields}>
+                              <label>
+                                Backshell
+                                <select
+                                  value={slot.backshellLibraryComponentId ?? ""}
+                                  disabled={readOnly || !slotModuleDefined}
+                                  aria-label={`Slot ${slot.slotId} backshell`}
+                                  onChange={(event) =>
+                                    applySlotAccessorySelection(slot.slotId, "backshell", event.target.value)
+                                  }
+                                >
+                                  <option value="">No backshell</option>
+                                  {slotBackshells.map((option) => (
+                                    <option key={option.component.id} value={option.component.id}>
+                                      {option.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                              <label>
+                                Strain relief
+                                <select
+                                  value={slot.strainReliefLibraryComponentId ?? ""}
+                                  disabled={readOnly || !slotModuleDefined}
+                                  aria-label={`Slot ${slot.slotId} strain relief`}
+                                  onChange={(event) =>
+                                    applySlotAccessorySelection(slot.slotId, "strainRelief", event.target.value)
+                                  }
+                                >
+                                  <option value="">No strain relief</option>
+                                  {slotStrainReliefs.map((option) => (
+                                    <option key={option.component.id} value={option.component.id}>
+                                      {option.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                            </div>
                           </div>
                         </article>
                       );

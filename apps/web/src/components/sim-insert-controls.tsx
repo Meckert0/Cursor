@@ -51,6 +51,7 @@ function SimModuleDialog(props: Props) {
   const closeRef = useRef<HTMLButtonElement>(null);
   const titleId = useId(), helpId = useId();
   const selected = simInsertAt(assignments, selectedSlot);
+  const displaySlot = (slotId: string) => layout.slots.flat().find(slot => sameSlot(slot.slotId, slotId))?.label ?? slotId;
   const part = catalog.find(item => item.id === selected?.libraryComponentId);
   const orphaned = assignments.filter(item => !slots.some(slot => sameSlot(slot, item.slotId)));
   const hasCatalogLayout = !!layout.profile || (Array.isArray(host?.attributes?.simSlotSections) && host.attributes.simSlotSections.some(section => Array.isArray(section) && section.length > 0));
@@ -79,7 +80,7 @@ function SimModuleDialog(props: Props) {
       <div className={styles.layoutHeading}><h2>Slot layout</h2><span role="status">{filled}/{capacity} filled{invalid ? ` · ${invalid} need attention` : ""}</span></div>
       <p id={helpId} className={styles.help}>Select a slot to add or change its insert.</p>
       {slots.length !== capacity || !slots.length ? <p className={styles.error}>{isSimHost(host) ? "Complete this module’s SIM slot layout in the library." : "Choose a SIM module or remove these inserts."}</p> : !hasCatalogLayout ? <p className={styles.help}>Physical layout unavailable; showing numbered slots.</p> : null}
-      <div className={styles.workspace}>
+      <div className={`${styles.workspace} ${layout.portrait ? styles.workspacePortrait : ""}`}>
         <section className={styles.layoutPanel} aria-label={`${reference} SIM slots`}>
           <div className={styles.layoutScroll} tabIndex={0} aria-label="Slot layout, scroll if needed">
             {slots.length ? <SimModuleFace layout={layout} assignments={assignments} valid={valid} reference={reference} selectedSlot={selectedSlot} onSelect={setSelectedSlot} /> : <p className={styles.help}>No slots defined</p>}
@@ -90,7 +91,8 @@ function SimModuleDialog(props: Props) {
         <section className={styles.selection} aria-label="Selected SIM slot">
           {selectedSlot ? <>
             <p className={styles.eyebrow}>{selected ? "INSTALLED INSERT" : "EMPTY SLOT"}</p>
-            <h2>{selected && selected.occupiedSlotIds.length > 1 ? `Slots ${selected.occupiedSlotIds.join(", ")}` : `Slot ${selectedSlot}`}</h2>
+            <h2>{selected && selected.occupiedSlotIds.length > 1 ? `Slots ${selected.occupiedSlotIds.map(displaySlot).join(", ")}` : `Slot ${displaySlot(selectedSlot)}`}</h2>
+            {layout.portrait && displaySlot(selected?.slotId ?? selectedSlot) !== (selected?.slotId ?? selectedSlot) ? <p className={styles.help}>Slot ID {selected?.slotId ?? selectedSlot}</p> : null}
             {selected ? <>
               <p className={styles.selectedPart}>{selected.partNumber}</p>
               {part?.description ? <p className={styles.help}>{part.description}</p> : null}

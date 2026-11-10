@@ -101,6 +101,8 @@ test("SIM modules configure nested inserts, preserve wiring, and count physical 
   const framePreview = await page.getByRole("button", { name: "Configure SIM inserts for J1A", exact: true }).boundingBox();
   const frameBackshell = await page.getByRole("combobox", { name: "Slot A backshell", exact: true }).boundingBox();
   expect(framePreview!.x + framePreview!.width).toBeLessThan(frameBackshell!.x);
+  expect(frameBackshell!.x - framePreview!.x - framePreview!.width).toBeLessThanOrEqual(28);
+  expect(frameBackshell!.width).toBeGreaterThanOrEqual(160);
   expect(framePreview!.y).toBeLessThan(frameBackshell!.y + frameBackshell!.height);
   expect(framePreview!.y + framePreview!.height).toBeGreaterThan(frameBackshell!.y);
   const frameControlsBefore = await page.getByTestId("canvas-controls").boundingBox();
@@ -160,6 +162,8 @@ test("SIM modules configure nested inserts, preserve wiring, and count physical 
   const standalonePreview = await page.getByRole("button", { name: "Configure SIM inserts for J2", exact: true }).boundingBox();
   const standaloneBackshell = await page.getByRole("combobox", { name: "Backshell", exact: true }).boundingBox();
   expect(standalonePreview!.x + standalonePreview!.width).toBeLessThan(standaloneBackshell!.x);
+  expect(standaloneBackshell!.x - standalonePreview!.x - standalonePreview!.width).toBeLessThanOrEqual(28);
+  expect(standaloneBackshell!.width).toBeGreaterThanOrEqual(160);
   expect(standalonePreview!.y).toBeLessThan(standaloneBackshell!.y + standaloneBackshell!.height);
   await page.getByRole("button", { name: "Configure SIM inserts for J2", exact: true }).click();
   await chooseInsert("J2", "1", pair);
@@ -258,7 +262,7 @@ test("iSeries SIM faces share drawing proportions and bank order in the preview 
   await page.goto(`/harnesses/${harness.id}/canvas`);
   await page.getByRole("button", { name: "Frame J1", exact: true }).click();
   await page.getByTestId("canvas-controls").screenshot({ path: test.info().outputPath("vpc-sim-frame-previews.png") });
-  for (const [reference, count, width, height, pn, bankSizes] of [["J1A", 16, 56.13, 12.45, "510161130", [8, 8]], ["J1B", 11, 50, 16, "510144001", [5, 5, 1]]] as const) {
+  for (const [reference, count, width, height, pn, bankSizes] of [["J1A", 16, 30.22, 56.13, "510161130", [8, 8]], ["J1B", 11, 50, 16, "510144001", [5, 5, 1]]] as const) {
     const preview = page.getByRole("button", { name: `Configure SIM inserts for ${reference}`, exact: true });
     await expect(preview.getByRole("img")).toHaveAttribute("viewBox", `0 0 ${width} ${height}`);
     await preview.click();
@@ -267,14 +271,23 @@ test("iSeries SIM faces share drawing proportions and bank order in the preview 
     await expect(face).toBeVisible();
     const bounds = await face.boundingBox();
     expect(bounds!.width / bounds!.height).toBeCloseTo(width / height, 1);
+    const slotName = (id: number) => `${reference} SIM slot ${id}${pn === "510161130" ? ` (${id <= 8 ? "A" : "B"}${(id - 1) % 8 + 1})` : ""}`;
+    if (pn === "510161130") {
+      const a1 = await dialog.getByRole("button", { name: slotName(1), exact: true }).boundingBox();
+      const a8 = await dialog.getByRole("button", { name: slotName(8), exact: true }).boundingBox();
+      const b1 = await dialog.getByRole("button", { name: slotName(9), exact: true }).boundingBox();
+      expect(a1!.x).toBeGreaterThan(a8!.x);
+      expect(a1!.y).toBeLessThan(b1!.y);
+      expect(bounds!.height).toBeGreaterThan(bounds!.width);
+    }
     for (const [bank, size] of bankSizes.entries()) await expect(dialog.getByRole("group", { name: `SIM section ${bank + 1}`, exact: true }).getByRole("button")).toHaveCount(size);
     await expect(dialog.getByRole("link", { name: "VPC drawing ↗", exact: true })).toHaveAttribute("href", `https://www.vpc.com/resources/files/${pn}-pdf/`);
-    await dialog.getByRole("button", { name: `${reference} SIM slot ${bankSizes[0]}`, exact: true }).click();
+    await dialog.getByRole("button", { name: slotName(bankSizes[0]), exact: true }).click();
     await dialog.getByRole("button", { name: `Select SIM insert ${bankSizes[0]} for ${reference}`, exact: true }).click();
     const picker = page.getByRole("dialog", { name: "Select SIM insert", exact: true });
     await expect(picker.getByRole("radio", { name: `Preview ${pair}`, exact: true })).toHaveCount(0);
     await picker.getByRole("button", { name: "Cancel", exact: true }).click();
-    await dialog.getByRole("button", { name: `${reference} SIM slot ${bankSizes[0] + 1}`, exact: true }).click();
+    await dialog.getByRole("button", { name: slotName(bankSizes[0] + 1), exact: true }).click();
     await dialog.getByRole("button", { name: `Select SIM insert ${bankSizes[0] + 1} for ${reference}`, exact: true }).click();
     await selectConnectorPickerPart(page, pair, "SIM insert");
     await expect(dialog.getByRole("status")).toContainText(`2/${count} filled`);
@@ -288,8 +301,9 @@ test("iSeries SIM faces share drawing proportions and bank order in the preview 
   const preview = page.getByRole("button", { name: "Configure SIM inserts for J2", exact: true });
   await preview.click();
   const dialog = page.getByRole("dialog", { name: "J2 · SIM inserts", exact: true });
-  await dialog.getByRole("button", { name: "J2 SIM slot 16", exact: true }).click();
-  await expect(dialog.getByRole("heading", { name: "Slot 16", exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "J2 SIM slot 16 (B8)", exact: true }).click();
+  await expect(dialog.getByRole("heading", { name: "Slot B8", exact: true })).toBeVisible();
+  await expect(dialog.getByText("Slot ID 16", { exact: true })).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Done", exact: true })).toBeInViewport();
   const bounds = await dialog.boundingBox();
   expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);

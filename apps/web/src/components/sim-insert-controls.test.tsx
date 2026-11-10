@@ -95,7 +95,7 @@ describe("SIM module editor", () => {
     expect(within(dialog).getByRole("button", { name: "J1A SIM slot 2" })).toBeVisible();
   });
 
-  it.each([ ["510161130", 16, 56.13, 12.45, [8, 8]], ["510144001", 11, 50, 16, [5, 5, 1]] ] as const)("uses the same VPC geometry in the %s preview and module editor", (partNumber, count, width, height, bankSizes) => {
+  it.each([ ["510161130", 16, 30.22, 56.13, [8, 8]], ["510144001", 11, 50, 16, [5, 5, 1]] ] as const)("uses the same VPC geometry in the %s preview and module editor", (partNumber, count, width, height, bankSizes) => {
     const { dialog, preview, onChoose } = mount({ host: { ...host, partNumber, attributes: { simSlotCount: count } } });
     const thumbnail = within(preview).getByRole("img", { name: "J1A SIM slot layout" });
     expect(thumbnail).toHaveAttribute("viewBox", `0 0 ${width} ${height}`);
@@ -104,13 +104,22 @@ describe("SIM module editor", () => {
     expect(within(dialog).queryByText("Physical layout unavailable; showing numbered slots.")).not.toBeInTheDocument();
     const banks = within(dialog).getAllByRole("group", { name: /^SIM section/ });
     expect(banks.map(bank => within(bank).getAllByRole("button").length)).toEqual(bankSizes);
-    const first = within(dialog).getByRole("button", { name: "J1A SIM slot 1", exact: true });
-    const nextBank = within(dialog).getByRole("button", { name: `J1A SIM slot ${bankSizes[0] + 1}`, exact: true });
+    const first = within(dialog).getByRole("button", { name: partNumber === "510161130" ? "J1A SIM slot 1 (A1)" : "J1A SIM slot 1", exact: true });
+    const nextBank = within(dialog).getByRole("button", { name: `J1A SIM slot ${bankSizes[0] + 1}${partNumber === "510161130" ? " (B1)" : ""}`, exact: true });
     expect(first.style.left).toBe(nextBank.style.left);
     expect(parseFloat(first.style.top)).toBeLessThan(parseFloat(nextBank.style.top));
     fireEvent.click(nextBank);
     fireEvent.click(within(dialog).getByRole("button", { name: `Select SIM insert ${bankSizes[0] + 1} for J1A` }));
     expect(onChoose).toHaveBeenCalledExactlyOnceWith(String(bankSizes[0] + 1));
+  });
+
+  it("shows mating-face labels while editing the saved slot IDs", () => {
+    const { dialog, onChoose } = mount({ host: { ...host, partNumber: "510161130", attributes: { simSlotCount: 16 } } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "J1A SIM slot 16 (B8)", exact: true }));
+    expect(within(dialog).getByRole("heading", { name: "Slot B8", exact: true })).toBeVisible();
+    expect(within(dialog).getByText("Slot ID 16")).toBeVisible();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Select SIM insert 16 for J1A" }));
+    expect(onChoose).toHaveBeenCalledExactlyOnceWith("16");
   });
 
   it("keeps the editor open when the last retained insert is removed from an unavailable host", () => {

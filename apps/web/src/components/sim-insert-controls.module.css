@@ -3,6 +3,7 @@
 .preview:hover { background: #eff4fc; }
 .preview:focus-visible { outline: 3px solid #86a8fb; outline-offset: 2px; }
 .thumbnail { display: block; width: 146px; height: 44px; flex: none; }
+.thumbnailPortrait { width: 40px; height: 76px; }
 .thumbnail svg, .moduleFace > svg { display: block; width: 100%; height: 100%; }
 .thumbnail text { font: 1.7px system-ui, sans-serif; fill: #334155; }
 .bankLabel { font: 1.7px system-ui, sans-serif; fill: #475569; }
@@ -38,9 +39,26 @@
 .layoutPanel { min-width: 0; align-self: start; padding: 14px 12px; border: 1px solid #e0e7f0; border-radius: 10px; background: #f5f7fb; }
 .layoutScroll { overflow: auto; padding: 4px; }
 .moduleFace { position: relative; margin: 12px 0; }
+.moduleFacePortrait { min-width: 240px; max-width: 100%; }
+.workspacePortrait { grid-template-columns: minmax(280px, 360px) minmax(220px, 1fr); }
 .moduleFace > svg { position: absolute; inset: 0; }
 .dialog .slot { position: absolute; display: flex; justify-content: center; align-items: center; padding: 0; border: 0; border-radius: 1px; color: #334155; background: transparent; }
 .slot strong { font-size: 11px; max-width: 100%; overflow-wrap: anywhere; }
+.moduleFacePortrait .slot { border-left: 1px dashed #cbd5e180; }
+.moduleFacePortrait .slot strong { padding: 2px; border-radius: 3px; color: #475569; background: #ffffffd9; }
+.portraitHousing { fill: #fff; stroke: #333; stroke-width: 1.25; stroke-linejoin: round; }
+.portraitFrame { fill: none; stroke: #333; stroke-width: 1.05; }
+.portraitOpening { fill: #fff; stroke: #333; stroke-width: 1.25; }
+.portraitMount { fill: #fff; stroke: #333; stroke-width: 1.1; }
+.portraitTeeth { fill: none; stroke: #444; stroke-width: .8; }
+.portraitInsert { fill: var(--slot-fill); }
+.pinIndicator { fill: #222; }
+.portraitNumbers text { font: 15px Arial, sans-serif; fill: #222; }
+.portraitBankLabels text { font: 24px Arial, sans-serif; fill: #fff; stroke: #222; stroke-width: .65; }
+.thumbnailPortrait .portraitHousing, .thumbnailPortrait .portraitFrame, .thumbnailPortrait .portraitOpening,
+.thumbnailPortrait .portraitMount circle, .thumbnailPortrait .portraitMount path { vector-effect: non-scaling-stroke; stroke-width: .4; }
+.thumbnailPortrait .portraitTeeth { vector-effect: non-scaling-stroke; stroke-width: .25; }
+.thumbnailPortrait .portraitBankLabels text { fill: #222; stroke: none; }
 .srOnly { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .dialog .slot.related { box-shadow: inset 0 0 0 1px #5b84d6; }
 .dialog .slot[aria-pressed="true"] { outline: 2px solid #285bd0; outline-offset: 1px; }

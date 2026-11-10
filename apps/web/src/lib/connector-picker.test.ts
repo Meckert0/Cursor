@@ -27,11 +27,34 @@ describe("connector picker discovery", () => {
     const host = part("HOST", { family: "iCon", description: "SIM host with no inserts", electricalMode: "INSERT_HOST", attributes: { simSlotCount: 16 } });
     const index = buildPickerIndex([blank, host]);
     expect(index[0].values.family).toBe("Blank insert");
-    expect(index[0].values.side).toBe("Dual");
+    expect(index[0].values.side).toBe("ITA & Receiver");
     expect(index[1].values.family).toBe("iCon");
     expect(getPickerFacetChoices(index, "", {}, "family")).toContainEqual({ value: "Blank insert", count: 1 });
     expect(getPickerResults(index, "", { family: values("Blank insert") }, null).map(record => record.part.id)).toEqual([blank.id]);
     expect(blank.family).toBe("ITA/RCV");
+  });
+  it("includes shared parts under each side and lists them once when both sides are selected", () => {
+    const shared = part("SHARED", { side: " dual " });
+    const index = buildPickerIndex([part("ITA"), part("RCV", { side: "RCV" }), shared, part("UNKNOWN", { side: "" })]);
+    expect(pickerDisplayValue(index[2], pickerColumn("side"))).toBe("ITA & Receiver");
+    expect(getPickerFacetChoices(index, "", {}, "side")).toEqual([
+      { value: "ITA", count: 2 }, { value: "Receiver", count: 2 }, { value: "Unspecified", count: 1 }
+    ]);
+    expect(getPickerResults(index, "", { side: values("ITA") }, null).map(r => r.part.id)).toEqual(["ITA", "SHARED"]);
+    expect(getPickerResults(index, "", { side: values("Receiver") }, null).map(r => r.part.id)).toEqual(["RCV", "SHARED"]);
+    expect(getPickerResults(index, "", { side: values("ITA", "Receiver") }, null).map(r => r.part.id)).toEqual(["ITA", "RCV", "SHARED"]);
+    expect(getPickerResults(index, "", { side: values("Unspecified") }, null).map(r => r.part.id)).toEqual(["UNKNOWN"]);
+    expect(shared.side).toBe(" dual ");
+  });
+  it("counts each side for shared-only catalogs and respects searches and other column filters", () => {
+    const index = buildPickerIndex([
+      part("SHARED", { side: "DUAL", family: "iCon" }),
+      part("OTHER", { side: "DUAL", family: "i1" })
+    ]);
+    const filters = { side: values("ITA"), family: values("iCon") };
+    expect(getPickerFacetChoices(index, "signal", filters, "side")).toEqual([{ value: "ITA", count: 1 }, { value: "Receiver", count: 1 }]);
+    expect(getPickerFacetChoices(index, "no-match", filters, "side")).toEqual([{ value: "ITA", count: 0 }, { value: "Receiver", count: 0 }]);
+    for (const query of ["ITA", "Receiver"]) expect(getPickerResults(index, query, { family: values("iCon") }, null).map(r => r.part.id)).toEqual(["SHARED"]);
   });
   it("keeps connector and housing eligibility separate, including legacy Receiver aliases", () => {
     const catalog = [

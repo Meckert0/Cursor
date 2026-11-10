@@ -85,7 +85,7 @@ export const CONNECTOR_PICKER_COLUMNS: readonly PickerColumn[] = [
   { id: "family", label: "Family", kind: "values", width: 120, value: p => text(catalogPartFamily(p)) },
   { id: "side", label: "Side", kind: "values", width: 110, value: p => {
     const side = normalizeCatalogSide(p.side);
-    return side === "RECEIVER" ? "Receiver" : side === "DUAL" ? "Dual" : side || "Unspecified";
+    return side === "RECEIVER" ? "Receiver" : side === "DUAL" ? "ITA & Receiver" : side || "Unspecified";
   } },
   { id: "positions", label: "Positions", kind: "number", width: 115, value: positions, applies: isModule },
   { id: "stockStatus", label: "Availability", kind: "values", width: 135, value: p => stockLabels[p.stockStatus] ?? "Unknown" },
@@ -130,6 +130,12 @@ export function pickerDisplayValue(record: PickerRecord, column: PickerColumn): 
   return record.values[column.id] === null ? "Not supplied" : String(record.values[column.id]);
 }
 
+function pickerFilterValues(record: PickerRecord, column: PickerColumn): string[] {
+  // Shared parts belong to each physical side, rather than a separate filter option.
+  return column.id === "side" && normalizeCatalogSide(record.part.side) === "DUAL"
+    ? ["ITA", "Receiver"] : [pickerDisplayValue(record, column)];
+}
+
 export function buildPickerIndex(parts: readonly LibraryComponentDto[]): PickerRecord[] {
   return parts.map(part => {
     const values = Object.fromEntries(CONNECTOR_PICKER_COLUMNS.map(c => [c.id, c.applies && !c.applies(part) ? null : c.value(part)])) as PickerRecord["values"];
@@ -163,7 +169,7 @@ function matchesFilter(record: PickerRecord, id: PickerColumnId, filter: PickerF
   if (!isActivePickerFilter(filter)) return true;
   const column = pickerColumn(id);
   const value = record.values[id];
-  if (filter.kind === "values") return filter.values.includes(pickerDisplayValue(record, column));
+  if (filter.kind === "values") return pickerFilterValues(record, column).some(value => filter.values.includes(value));
   if (filter.kind === "text") {
     const clean = id === "partNumber" ? compact : normalize;
     const needle = clean(filter.value.trim()) || normalize(filter.value.trim());
@@ -214,9 +220,11 @@ export function getPickerFacetChoices(index: readonly PickerRecord[], query: str
   const column = pickerColumn(id);
   const counts = new Map<string, number>();
   for (const record of index) {
-    const value = pickerDisplayValue(record, column);
-    if (!counts.has(value)) counts.set(value, 0);
-    if (matchesQuery(record, tokens) && matchesFilters(record, filters, id)) counts.set(value, (counts.get(value) ?? 0) + 1);
+    const matches = matchesQuery(record, tokens) && matchesFilters(record, filters, id);
+    for (const value of pickerFilterValues(record, column)) {
+      if (!counts.has(value)) counts.set(value, 0);
+      if (matches) counts.set(value, (counts.get(value) ?? 0) + 1);
+    }
   }
   const selected = filters[id];
   if (selected?.kind === "values") for (const value of selected.values) if (!counts.has(value)) counts.set(value, 0);

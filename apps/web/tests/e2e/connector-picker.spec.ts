@@ -27,7 +27,7 @@ test("picker columns resize, reorder, retain their layout, and isolate blank fil
   await ingestReviewedLibraryItems(request, [
     { ...common, id: `${prefix}-BLANK`, partNumber: `${prefix}-BLANK`, family: "ITA/RCV", description: "Blank module", side: "DUAL", attributes: { positionCount: 0 } },
     { ...common, id: `${prefix}-SIGNAL`, partNumber: `${prefix}-SIGNAL`, family: "iCon", description: "Signal module", side: "ITA", attributes: { positionCount: 96 } },
-    { ...common, id: `${prefix}-HOST`, partNumber: `${prefix}-HOST`, family: "iCon", description: "SIM module awaiting inserts", side: "ITA", electricalMode: "INSERT_HOST", attributes: { simSlotCount: 16 } }
+    { ...common, id: `${prefix}-HOST`, partNumber: `${prefix}-HOST`, family: "iCon", description: "SIM module awaiting inserts", side: "RECEIVER", electricalMode: "INSERT_HOST", attributes: { simSlotCount: 16 } }
   ]);
   await page.setViewportSize({ width: 1440, height: 1000 });
   let dialog = await openPicker(page, token);
@@ -65,10 +65,33 @@ test("picker columns resize, reorder, retain their layout, and isolate blank fil
   await expect(rows).toHaveCount(1);
   await expect(rows.first()).toContainText(`${prefix}-BLANK`);
   await expect(rows.first()).toContainText("Blank insert");
-  await expect(rows.first()).toContainText("Dual");
+  await expect(rows.first()).toContainText("ITA & Receiver");
   await dialog.screenshot({ path: test.info().outputPath("picker-blank-family.png") });
   await dialog.getByRole("button", { name: "Reset filters", exact: true }).click();
   await expect(rows).toHaveCount(3);
+  await dialog.getByRole("button", { name: "Side filter", exact: true }).click();
+  let sideMenu = page.getByRole("dialog", { name: "Side options", exact: true });
+  await expect(sideMenu.getByRole("checkbox", { name: /Dual|ITA & Receiver/ })).toHaveCount(0);
+  await sideMenu.getByRole("checkbox", { name: "ITA 2", exact: true }).check();
+  await sideMenu.getByRole("button", { name: "Apply filter", exact: true }).click();
+  await expect(rows).toHaveCount(2);
+  await expect(dialog.getByRole("radio", { name: `Preview ${prefix}-BLANK`, exact: true })).toBeVisible();
+  await expect(dialog.getByRole("radio", { name: `Preview ${prefix}-SIGNAL`, exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "Filter Side", exact: true }).click();
+  sideMenu = page.getByRole("dialog", { name: "Side options", exact: true });
+  await sideMenu.getByRole("checkbox", { name: "ITA 2", exact: true }).uncheck();
+  await sideMenu.getByRole("checkbox", { name: "Receiver 2", exact: true }).check();
+  await sideMenu.getByRole("button", { name: "Apply filter", exact: true }).click();
+  await expect(rows).toHaveCount(2);
+  await expect(dialog.getByRole("radio", { name: `Preview ${prefix}-BLANK`, exact: true })).toBeVisible();
+  await expect(dialog.getByRole("radio", { name: `Preview ${prefix}-HOST`, exact: true })).toBeVisible();
+  await dialog.screenshot({ path: test.info().outputPath("picker-shared-receiver-side.png") });
+  await dialog.getByRole("button", { name: "Side filter", exact: true }).click();
+  sideMenu = page.getByRole("dialog", { name: "Side options", exact: true });
+  await sideMenu.getByRole("checkbox", { name: "ITA 2", exact: true }).check();
+  await sideMenu.getByRole("button", { name: "Apply filter", exact: true }).click();
+  await expect(rows).toHaveCount(3);
+  await dialog.getByRole("button", { name: "Reset filters", exact: true }).click();
   await dialog.getByRole("button", { name: "Sort Family ascending", exact: true }).click();
   await expect(rows.first()).toContainText(`${prefix}-BLANK`);
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();

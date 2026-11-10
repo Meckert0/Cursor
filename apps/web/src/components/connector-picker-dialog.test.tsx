@@ -83,7 +83,27 @@ describe("ConnectorPickerDialog", () => {
     expect(tableRows()).toHaveLength(1);
     expect(tableRows()[0]).toHaveTextContent("BLANK-MODULE");
     expect(tableRows()[0]).toHaveTextContent("Blank insert");
-    expect(tableRows()[0]).toHaveTextContent("Dual");
+    expect(tableRows()[0]).toHaveTextContent("ITA & Receiver");
+  });
+  it("shares ITA and Receiver membership between top and column Side filters", () => {
+    mount({ parts: [part("ITA-ONLY"), part("RCV-ONLY", { side: "RECEIVER" }), part("SHARED", { side: "DUAL" })] });
+    fireEvent.click(screen.getByRole("button", { name: "Side filter" }));
+    expect(screen.queryByRole("checkbox", { name: /Dual|ITA & Receiver/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox", { name: "ITA 2", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply filter" }));
+    expect(tableRows().map(row => within(row).getByRole("radio").getAttribute("aria-label"))).toEqual(["Preview ITA-ONLY", "Preview SHARED"]);
+    expect(tableRows()[1]).toHaveTextContent("ITA & Receiver");
+    fireEvent.click(screen.getByRole("button", { name: "Filter Side" }));
+    expect(screen.getByRole("checkbox", { name: "ITA 2", exact: true })).toBeChecked();
+    fireEvent.click(screen.getByRole("checkbox", { name: "ITA 2", exact: true }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Receiver 2", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply filter" }));
+    expect(screen.getByRole("button", { name: "Side filter" })).toHaveTextContent("Receiver");
+    expect(tableRows().map(row => within(row).getByRole("radio").getAttribute("aria-label"))).toEqual(["Preview RCV-ONLY", "Preview SHARED"]);
+    fireEvent.click(screen.getByRole("button", { name: "Side filter" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "ITA 2", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply filter" }));
+    expect(tableRows()).toHaveLength(3);
   });
   it("limits SIM slot selection to inserts and includes sortable occupancy without offering host creation", () => {
     const insert = part("SIM-PAIR", { partType: "SIM_INSERT", attributes: { slotOccupancy: 2, pinCount: 4 } });

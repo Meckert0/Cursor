@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { availableSimInserts, catalogModulePins, flattenSimPins, isSimHost, isSimInsert, simAssignmentValid, simPlacement, simSlotIds, usableSimPins, type SimRelationship } from "./sim-modules.js";
+import { availableSimInserts, catalogModulePins, flattenSimPins, isSimHost, isSimInsert, simAssignmentValid, simPlacement, simSlotCapacity, simSlotIds, simSlotSections, usableSimPins, type SimRelationship } from "./sim-modules.js";
 import { makePart } from "./part-test-helpers.js";
 import { buildBom, createLibraryLookup } from "./bom.js";
 import { validateSnapshot } from "./validator.js";
@@ -40,6 +40,35 @@ test("multi-slot inserts stay within a section and cannot overlap occupied slots
   assert.deepEqual(availableSimInserts(host, "A2", selected, parts, relationships), []);
   assert.deepEqual(availableSimInserts(host, "A1", selected, parts, relationships).map(part => part.id), ["pair", "single"]);
   assert.equal(simAssignmentValid(host, { ...selected[0]!, occupiedSlotIds: ["A1"] }, selected, parts, relationships), false);
+});
+
+test("VPC SIM defaults follow the physical banks without renaming numbered slots", () => {
+  for (const [partNumber, count, bankSizes] of [["510160130", 16, [8, 8]], ["510161130", 16, [8, 8]], ["510143001", 11, [5, 5, 1]], ["510144001", 11, [5, 5, 1]]] as const) {
+    const module = { ...host, partNumber, attributes: { simSlotCount: count } };
+    const sections = simSlotSections(module);
+    assert.deepEqual(sections.map(section => section.length), bankSizes);
+    assert.deepEqual(simSlotIds(module), Array.from({ length: count }, (_, index) => String(index + 1)));
+    assert.equal(simPlacement(module, String(bankSizes[0]), pair), null);
+    assert.deepEqual(simPlacement(module, String(bankSizes[0] + 1), pair), [String(bankSizes[0] + 1), String(bankSizes[0] + 2)]);
+    if (count === 11) assert.equal(simPlacement(module, "11", pair), null);
+    assert.equal(simSlotCapacity({ ...module, attributes: {} }), count);
+    assert.equal(isSimHost({ ...module, electricalMode: "SELECTABLE", attributes: {} }), true);
+    assert.equal(isSimHost({ ...module, category: "frame" }), false);
+  }
+});
+
+test("a complete single-bank VPC catalog preserves named IDs while enforcing the bank break", () => {
+  const names = Array.from({ length: 16 }, (_, index) => `S${index + 1}`);
+  const module = { ...host, partNumber: "510161130", attributes: { simSlotCount: 16, simSlotSections: [names] } };
+  assert.deepEqual(simSlotSections(module), [names.slice(0, 8), names.slice(8)]);
+  assert.deepEqual(simSlotIds(module), names);
+  assert.equal(simPlacement(module, "S8", pair), null);
+  const incomplete = { ...module, attributes: { simSlotCount: 16, simSlotSections: [["A1", "A2"], ["B1", "B2"]] } };
+  assert.deepEqual(simSlotIds(incomplete), ["A1", "A2", "B1", "B2"]);
+  assert.equal(simSlotCapacity({ ...incomplete, attributes: { simSlotSections: incomplete.attributes.simSlotSections } }), 16);
+  const retained = { ...assignment("A1"), slotId: "8", occupiedSlotIds: ["8", "9"] };
+  assert.equal(simAssignmentValid({ ...module, attributes: { simSlotCount: 16 } }, retained, [retained], parts, [{ ...relationships[0]!, parentPartId: module.id }]), false);
+  assert.deepEqual(retained.occupiedSlotIds, ["8", "9"]);
 });
 
 test("insert choices honor side, position rules, review status and explicit prohibitions", () => {

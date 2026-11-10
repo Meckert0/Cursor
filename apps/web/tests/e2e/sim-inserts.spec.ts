@@ -98,6 +98,11 @@ test("SIM modules configure nested inserts, preserve wiring, and count physical 
   await page.getByRole("button", { name: "Define slot A module", exact: true }).click();
   await expect(page.getByRole("radio", { name: `Preview ${pair}`, exact: true })).toHaveCount(0);
   await selectConnectorPickerPart(page, host, "module");
+  const framePreview = await page.getByRole("button", { name: "Configure SIM inserts for J1A", exact: true }).boundingBox();
+  const frameBackshell = await page.getByRole("combobox", { name: "Slot A backshell", exact: true }).boundingBox();
+  expect(framePreview!.x + framePreview!.width).toBeLessThan(frameBackshell!.x);
+  expect(framePreview!.y).toBeLessThan(frameBackshell!.y + frameBackshell!.height);
+  expect(framePreview!.y + framePreview!.height).toBeGreaterThan(frameBackshell!.y);
   const frameControlsBefore = await page.getByTestId("canvas-controls").boundingBox();
   const canvasBefore = await page.getByTestId("cable-canvas").boundingBox();
   await page.getByRole("button", { name: "Configure SIM inserts for J1A", exact: true }).click();
@@ -152,6 +157,10 @@ test("SIM modules configure nested inserts, preserve wiring, and count physical 
   await page.getByLabel("Search the parts library").fill(prefix);
   await expect(page.getByRole("dialog").getByRole("radio")).toHaveCount(2);
   await selectConnectorPickerPart(page, host);
+  const standalonePreview = await page.getByRole("button", { name: "Configure SIM inserts for J2", exact: true }).boundingBox();
+  const standaloneBackshell = await page.getByRole("combobox", { name: "Backshell", exact: true }).boundingBox();
+  expect(standalonePreview!.x + standalonePreview!.width).toBeLessThan(standaloneBackshell!.x);
+  expect(standalonePreview!.y).toBeLessThan(standaloneBackshell!.y + standaloneBackshell!.height);
   await page.getByRole("button", { name: "Configure SIM inserts for J2", exact: true }).click();
   await chooseInsert("J2", "1", pair);
   await chooseInsert("J2", "3", single);
@@ -214,4 +223,77 @@ test("SIM modules configure nested inserts, preserve wiring, and count physical 
   await page.keyboard.press("Escape");
   await expect(moduleDialog("J2")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Configure SIM inserts for J2", exact: true })).toBeFocused();
+});
+
+test("iSeries SIM faces share drawing proportions and bank order in the preview and editor", async ({ page, request }) => {
+  const token = uniqueToken(), frame = `VPC-FRAME-${token}`, icon = `VPC-ICON-${token}`, i2mx = `VPC-I2MX-${token}`, pair = `VPC-PAIR-${token}`;
+  const common = { family: `VPC-SIM-${token}`, isActive: true, isReviewed: false, stockStatus: "in_stock", side: "ITA" };
+  await ingestReviewedLibraryItems(request, [
+    { ...common, id: frame, category: "frame", partType: "ITA", partNumber: frame, description: "Two-module housing", attributes: { moduleCapacity: 2, slotIds: ["A", "B"] } },
+    { ...common, id: icon, category: "module", partType: "MODULE", electricalMode: "INSERT_HOST", partNumber: "510161130", description: "iCon SIM module, 16 slots", attributes: { simSlotCount: 16 } },
+    { ...common, id: i2mx, category: "module", partType: "MODULE", electricalMode: "INSERT_HOST", partNumber: "510144001", description: "i2 MX SIM adapter rails, 11 slots", attributes: { simSlotCount: 11 } },
+    { ...common, id: pair, category: "module", partType: "SIM_INSERT", partNumber: pair, description: "Two-slot insert", attributes: { slotOccupancy: 2, pinIds: ["P", "N"] } }
+  ]);
+  for (const hostId of [icon, i2mx]) await putPartRelationship(request, { parentPartId: hostId, compatibleParts: [pair], relationshipType: "INSERT_ALLOWED", positionType: "SIM_SLOT", parentPositions: [], status: "allowed" });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await registerAndSignIn(page, { username: `vpc-sim-${token}`, email: `vpc-sim-${token}@example.com` });
+  await createProjectAndOpenProjectPage(page, `VPC SIM layout ${token}`);
+  const projectId = /\/projects\/([^/]+)/.exec(page.url())![1];
+  const harnessResponse = await apiAsPageUser(page, `/v1/projects/${projectId}/harnesses`, { method: "POST", data: { name: `VPC SIM ${token}`, createdBy: "vpc-sim-test" } });
+  expect(harnessResponse.ok()).toBeTruthy();
+  const harness = await harnessResponse.json();
+  const revisionResponse = await apiAsPageUser(page, `/v1/revisions/${harness.currentRevisionId}`);
+  const revision = await revisionResponse.json();
+  const seed = await apiAsPageUser(page, `/v1/revisions/${harness.currentRevisionId}/snapshot`, { method: "PATCH", data: {
+    expectedSnapshotHash: revision.snapshotHash,
+    snapshot: { ...revision.snapshot, connectors: [
+      { id: "vpc-frame", reference: "J1", partNumber: frame, libraryComponentId: frame, pins: [], slots: [
+        { slotId: "A", reference: "J1A", partNumber: "510161130", libraryComponentId: icon, pins: [], simInserts: [] },
+        { slotId: "B", reference: "J1B", partNumber: "510144001", libraryComponentId: i2mx, pins: [], simInserts: [] }
+      ] },
+      { id: "vpc-standalone", reference: "J2", partNumber: "510161130", libraryComponentId: icon, pins: [], simInserts: [] }
+    ] }
+  } });
+  expect(seed.ok()).toBeTruthy();
+  await page.goto(`/harnesses/${harness.id}/canvas`);
+  await page.getByRole("button", { name: "Frame J1", exact: true }).click();
+  await page.getByTestId("canvas-controls").screenshot({ path: test.info().outputPath("vpc-sim-frame-previews.png") });
+  for (const [reference, count, width, height, pn, bankSizes] of [["J1A", 16, 56.13, 12.45, "510161130", [8, 8]], ["J1B", 11, 50, 16, "510144001", [5, 5, 1]]] as const) {
+    const preview = page.getByRole("button", { name: `Configure SIM inserts for ${reference}`, exact: true });
+    await expect(preview.getByRole("img")).toHaveAttribute("viewBox", `0 0 ${width} ${height}`);
+    await preview.click();
+    const dialog = page.getByRole("dialog", { name: `${reference} · SIM inserts`, exact: true });
+    const face = dialog.locator(`svg[viewBox="0 0 ${width} ${height}"]`);
+    await expect(face).toBeVisible();
+    const bounds = await face.boundingBox();
+    expect(bounds!.width / bounds!.height).toBeCloseTo(width / height, 1);
+    for (const [bank, size] of bankSizes.entries()) await expect(dialog.getByRole("group", { name: `SIM section ${bank + 1}`, exact: true }).getByRole("button")).toHaveCount(size);
+    await expect(dialog.getByRole("link", { name: "VPC drawing ↗", exact: true })).toHaveAttribute("href", `https://www.vpc.com/resources/files/${pn}-pdf/`);
+    await dialog.getByRole("button", { name: `${reference} SIM slot ${bankSizes[0]}`, exact: true }).click();
+    await dialog.getByRole("button", { name: `Select SIM insert ${bankSizes[0]} for ${reference}`, exact: true }).click();
+    const picker = page.getByRole("dialog", { name: "Select SIM insert", exact: true });
+    await expect(picker.getByRole("radio", { name: `Preview ${pair}`, exact: true })).toHaveCount(0);
+    await picker.getByRole("button", { name: "Cancel", exact: true }).click();
+    await dialog.getByRole("button", { name: `${reference} SIM slot ${bankSizes[0] + 1}`, exact: true }).click();
+    await dialog.getByRole("button", { name: `Select SIM insert ${bankSizes[0] + 1} for ${reference}`, exact: true }).click();
+    await selectConnectorPickerPart(page, pair, "SIM insert");
+    await expect(dialog.getByRole("status")).toContainText(`2/${count} filled`);
+    await dialog.screenshot({ path: test.info().outputPath(`vpc-sim-${count}-editor.png`) });
+    await dialog.getByRole("button", { name: "Done", exact: true }).click();
+    await expect(preview).toBeFocused();
+  }
+  await page.getByRole("button", { name: "Connector J2", exact: true }).click();
+  await page.getByTestId("canvas-controls").screenshot({ path: test.info().outputPath("vpc-sim-standalone-preview.png") });
+  await page.setViewportSize({ width: 390, height: 960 });
+  const preview = page.getByRole("button", { name: "Configure SIM inserts for J2", exact: true });
+  await preview.click();
+  const dialog = page.getByRole("dialog", { name: "J2 · SIM inserts", exact: true });
+  await dialog.getByRole("button", { name: "J2 SIM slot 16", exact: true }).click();
+  await expect(dialog.getByRole("heading", { name: "Slot 16", exact: true })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Done", exact: true })).toBeInViewport();
+  const bounds = await dialog.boundingBox();
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
+  await dialog.screenshot({ path: test.info().outputPath("vpc-sim-mobile-editor.png") });
+  await page.keyboard.press("Escape");
+  await expect(preview).toBeFocused();
 });

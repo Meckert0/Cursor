@@ -213,10 +213,15 @@
 
 .slotBlock {
   display: grid;
-  grid-template-columns: minmax(85px, 105px) minmax(140px, 1fr) repeat(2, minmax(110px, 160px));
-  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) minmax(230px, 330px);
+  gap: 16px;
   align-items: start;
 }
+
+.slotDefinition, .accessoryGroup { display: grid; gap: 4px; min-width: 0; }
+.moduleIdentityRow { display: grid; grid-template-columns: minmax(85px, 105px) minmax(0, 1fr); gap: 10px; }
+.slotAccessoryFields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; min-width: 0; align-self: end; padding-bottom: 4px; }
+.partAccessoriesWithSim { grid-template-columns: minmax(0, 1fr) minmax(230px, 330px); align-items: start; gap: 16px; }
 
 .slotBlock + .slotBlock {
   padding-top: 8px;
@@ -271,8 +276,12 @@
   }
 
   .slotBlock {
-    grid-template-columns: minmax(85px, 110px) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
   }
+
+  .slotAccessoryFields { width: min(100%, 330px); justify-self: end; }
+  .partAccessoriesWithSim { grid-template-columns: minmax(0, 1fr); }
+  .partAccessoriesWithSim .accessoryGroup { width: min(100%, 330px); justify-self: end; }
 }
 
 @media (max-width: 700px) {
@@ -289,7 +298,7 @@
   }
 
   .slotBlock {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

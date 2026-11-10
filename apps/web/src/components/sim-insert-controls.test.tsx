@@ -95,6 +95,24 @@ describe("SIM module editor", () => {
     expect(within(dialog).getByRole("button", { name: "J1A SIM slot 2" })).toBeVisible();
   });
 
+  it.each([ ["510161130", 16, 56.13, 12.45, [8, 8]], ["510144001", 11, 50, 16, [5, 5, 1]] ] as const)("uses the same VPC geometry in the %s preview and module editor", (partNumber, count, width, height, bankSizes) => {
+    const { dialog, preview, onChoose } = mount({ host: { ...host, partNumber, attributes: { simSlotCount: count } } });
+    const thumbnail = within(preview).getByRole("img", { name: "J1A SIM slot layout" });
+    expect(thumbnail).toHaveAttribute("viewBox", `0 0 ${width} ${height}`);
+    expect(dialog.querySelector("svg")).toHaveAttribute("viewBox", thumbnail.getAttribute("viewBox"));
+    expect(within(dialog).getByRole("link", { name: "VPC drawing ↗" })).toHaveAttribute("href", `https://www.vpc.com/resources/files/${partNumber}-pdf/`);
+    expect(within(dialog).queryByText("Physical layout unavailable; showing numbered slots.")).not.toBeInTheDocument();
+    const banks = within(dialog).getAllByRole("group", { name: /^SIM section/ });
+    expect(banks.map(bank => within(bank).getAllByRole("button").length)).toEqual(bankSizes);
+    const first = within(dialog).getByRole("button", { name: "J1A SIM slot 1", exact: true });
+    const nextBank = within(dialog).getByRole("button", { name: `J1A SIM slot ${bankSizes[0] + 1}`, exact: true });
+    expect(first.style.left).toBe(nextBank.style.left);
+    expect(parseFloat(first.style.top)).toBeLessThan(parseFloat(nextBank.style.top));
+    fireEvent.click(nextBank);
+    fireEvent.click(within(dialog).getByRole("button", { name: `Select SIM insert ${bankSizes[0] + 1} for J1A` }));
+    expect(onChoose).toHaveBeenCalledExactlyOnceWith(String(bankSizes[0] + 1));
+  });
+
   it("keeps the editor open when the last retained insert is removed from an unavailable host", () => {
     function Harness() {
       const [open, setOpen] = useState(false);

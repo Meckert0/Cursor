@@ -3,7 +3,9 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { LibraryComponentDto } from "@/lib/api";
-import { isSimHost, simAssignmentValid, simSlotSections, simSlotCapacity, type SimInsertAssignment, type SimRelationship } from "@/lib/sim-modules";
+import { isSimHost, simAssignmentValid, simSlotCapacity, type SimInsertAssignment, type SimRelationship } from "@/lib/sim-modules";
+import { simModuleLayout } from "@/lib/sim-module-layout";
+import { SimModuleFace, simInsertAt } from "./sim-module-face";
 import styles from "./sim-insert-controls.module.css";
 
 interface Props {
@@ -21,42 +23,20 @@ interface Props {
 }
 
 const sameSlot = (left: string, right: string) => left.trim().toUpperCase() === right.trim().toUpperCase();
-const insertAt = (assignments: SimInsertAssignment[], slot: string) =>
-  assignments.find(item => sameSlot(item.slotId, slot)) ?? assignments.find(item => item.occupiedSlotIds.some(id => sameSlot(id, slot)));
-
 function moduleLayout({ host, assignments = [], catalog, relationships }: Props) {
-  const sections = simSlotSections(host);
+  const layout = simModuleLayout(host);
   const valid = assignments.filter(item => simAssignmentValid(host, item, assignments, catalog, relationships));
-  return { sections, valid, filled: new Set(valid.flatMap(item => item.occupiedSlotIds)).size, capacity: simSlotCapacity(host), invalid: assignments.length - valid.length };
-}
-
-function SlotThumbnail({ sections, assignments, valid, reference }: {
-  sections: string[][]; assignments: SimInsertAssignment[]; valid: SimInsertAssignment[]; reference: string;
-}) {
-  const columns = Math.max(1, ...sections.map(section => section.length));
-  const width = columns * 28 + 12, height = Math.max(1, sections.length) * 26 + 12;
-  return <svg className={styles.thumbnail} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${reference} SIM slot layout`}>
-    <rect x="1" y="1" width={width - 2} height={height - 2} rx="5" className={styles.housing} />
-    {sections.map((section, row) => section.map((slot, column) => {
-      const assignment = insertAt(assignments, slot);
-      const state = assignment ? valid.includes(assignment) ? styles.filled : styles.attention : styles.empty;
-      return <g key={slot} className={state}>
-        <rect x={8 + column * 28} y={8 + row * 26} width="24" height="22" rx="2" />
-        <text x={20 + column * 28} y={23 + row * 26} textAnchor="middle">{slot}</text>
-      </g>;
-    }))}
-    {!sections.length ? <text x={width / 2} y={height / 2 + 4} textAnchor="middle">?</text> : null}
-  </svg>;
+  return { layout, sections: layout.sections, valid, filled: new Set(valid.flatMap(item => item.occupiedSlotIds)).size, capacity: simSlotCapacity(host), invalid: assignments.length - valid.length };
 }
 
 export function SimInsertControls(props: Props) {
   const { host, assignments = [], reference, open, onOpen } = props;
   if (!isSimHost(host) && !assignments.length && !open) return null;
-  const { sections, valid, filled, capacity, invalid } = moduleLayout(props);
+  const { layout, valid, filled, capacity, invalid } = moduleLayout(props);
   return <div className={styles.controls}>
     <button className={styles.preview} type="button" aria-haspopup="dialog" aria-label={`Configure SIM inserts for ${reference}`} onClick={onOpen}>
-      <SlotThumbnail sections={sections} assignments={assignments} valid={valid} reference={reference} />
-      <span className={styles.previewText}><strong>SIM inserts <span aria-hidden="true">↗︎</span></strong><span>{filled}/{capacity} filled{invalid ? ` · ${invalid} need attention` : ""}</span></span>
+      <SimModuleFace layout={layout} assignments={assignments} valid={valid} reference={reference} />
+      <span className={styles.previewText}><strong>SIM inserts <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M 5 3 H 13 V 11 M 13 3 L 3 13" /></svg></strong><span>{filled}/{capacity} filled{invalid ? ` · ${invalid} need attention` : ""}</span></span>
     </button>
     {open ? <SimModuleDialog {...props} /> : null}
   </div>;
@@ -64,16 +44,16 @@ export function SimInsertControls(props: Props) {
 
 function SimModuleDialog(props: Props) {
   const { host, assignments = [], reference, catalog, onClose, onChoose, onRemove, readOnly } = props;
-  const { sections, valid, filled, capacity, invalid } = moduleLayout(props);
+  const { layout, sections, valid, filled, capacity, invalid } = moduleLayout(props);
   const slots = sections.flat();
   const [selectedSlot, setSelectedSlot] = useState(slots[0] ?? "");
   const dialogRef = useRef<HTMLDialogElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const titleId = useId(), helpId = useId();
-  const selected = insertAt(assignments, selectedSlot);
+  const selected = simInsertAt(assignments, selectedSlot);
   const part = catalog.find(item => item.id === selected?.libraryComponentId);
   const orphaned = assignments.filter(item => !slots.some(slot => sameSlot(slot, item.slotId)));
-  const hasCatalogLayout = Array.isArray(host?.attributes?.simSlotSections) && host.attributes.simSlotSections.some(section => Array.isArray(section) && section.length > 0);
+  const hasCatalogLayout = !!layout.profile || (Array.isArray(host?.attributes?.simSlotSections) && host.attributes.simSlotSections.some(section => Array.isArray(section) && section.length > 0));
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -102,22 +82,9 @@ function SimModuleDialog(props: Props) {
       <div className={styles.workspace}>
         <section className={styles.layoutPanel} aria-label={`${reference} SIM slots`}>
           <div className={styles.layoutScroll} tabIndex={0} aria-label="Slot layout, scroll if needed">
-            <div className={styles.moduleHousing}>
-              {sections.map((section, row) => <div key={row} className={styles.slotSection} role="group" aria-label={`SIM section ${row + 1}`}>
-                {section.map((slot, column) => {
-                  const assignment = insertAt(assignments, slot);
-                  const state = assignment ? valid.includes(assignment) ? styles.filled : styles.attention : styles.empty;
-                  const related = selected && assignment === selected;
-                  const descriptionId = `${titleId}-slot-${row}-${column}`;
-                  return <button type="button" key={slot} className={`${styles.slot} ${state} ${related ? styles.related : ""}`} aria-label={`${reference} SIM slot ${slot}`} aria-describedby={descriptionId} aria-pressed={sameSlot(selectedSlot, slot)} title={assignment ? `${assignment.partNumber} · Slots ${assignment.occupiedSlotIds.join(", ")}` : "Empty slot"} onClick={() => setSelectedSlot(slot)}>
-                    <strong>{slot}</strong><span>{assignment ? sameSlot(assignment.slotId, slot) ? "Insert" : `↤ ${assignment.slotId}` : "Empty"}</span>
-                    <span id={descriptionId} className={styles.srOnly}>{assignment ? `${assignment.partNumber}. Slots ${assignment.occupiedSlotIds.join(", ")}.${!valid.includes(assignment) ? " Needs attention." : ""}` : "Empty slot"}</span>
-                  </button>;
-                })}
-              </div>)}
-              {!slots.length ? <p className={styles.help}>No slots defined</p> : null}
-            </div>
+            {slots.length ? <SimModuleFace layout={layout} assignments={assignments} valid={valid} reference={reference} selectedSlot={selectedSlot} onSelect={setSelectedSlot} /> : <p className={styles.help}>No slots defined</p>}
           </div>
+          <p className={styles.faceCaption}><span>{layout.profile ? "Mating face · schematic" : "Catalog slot order"}</span>{layout.profile ? <a href={layout.profile.drawingUrl} target="_blank" rel="noreferrer">VPC drawing ↗</a> : null}</p>
           <div className={styles.legend}><span><i className={styles.empty} />Empty</span><span><i className={styles.filled} />Filled</span><span><i className={styles.attention} />Needs attention</span></div>
         </section>
         <section className={styles.selection} aria-label="Selected SIM slot">

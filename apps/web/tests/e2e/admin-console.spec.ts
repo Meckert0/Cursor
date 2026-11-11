@@ -22,6 +22,7 @@ test("admin console uses full width, groups database tools and persists section 
   expect(Math.abs(boxes[0]!.width - boxes[2]!.width)).toBeLessThanOrEqual(1);
   await expect(database.getByRole("tabpanel", { name: "Item Database Viewer", exact: true })).toBeVisible();
   await tabs.nth(2).click();
+  await database.locator("summary", { hasText: "Add image or file" }).click();
   await expect(database.getByLabel("Hosted file URL", { exact: true })).toBeVisible();
   await database.getByLabel("Caption", { exact: true }).fill("Keep this draft while changing tabs");
   await tabs.nth(2).press("Home");
@@ -60,13 +61,13 @@ test("admin console uses full width, groups database tools and persists section 
     for (const name of [renamed.items, renamed.compatibility, renamed.media]) await expect(database.getByRole("tab", { name, exact: true })).toBeVisible();
     const response = await apiAsPageUser(page, "/v1/ui/page-descriptions");
     expect((await response.json()).adminSectionTitles).toEqual(renamed);
-    await page.screenshot({ path: testInfo.outputPath("admin-console-desktop.png"), fullPage: true });
+    await page.screenshot({ path: testInfo.outputPath("admin-console-desktop.png"), fullPage: true, caret: "initial" });
     await page.setViewportSize({ width: 390, height: 844 });
     const mobile = await Promise.all([0, 1, 2].map(index => tabs.nth(index).boundingBox()));
     expect(mobile[0]!.y).toBe(mobile[1]!.y);
     expect(mobile[1]!.y).toBe(mobile[2]!.y);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
-    await page.screenshot({ path: testInfo.outputPath("admin-console-mobile.png"), fullPage: true });
+    await page.screenshot({ path: testInfo.outputPath("admin-console-mobile.png"), fullPage: true, caret: "initial" });
   } finally {
     const restore = await apiAsPageUser(page, "/v1/admin/ui/page-descriptions", {
       method: "PUT", data: { adminSectionTitles: DEFAULT_ADMIN_SECTION_TITLES }

@@ -9,7 +9,7 @@ import type {
   PartRelationshipDto
 } from "@/lib/api";
 
-interface DatabaseRecords {
+export interface DatabaseRecords {
   items: PartDto[];
   relationships: PartRelationshipDto[];
   aliases: PartAliasDto[];

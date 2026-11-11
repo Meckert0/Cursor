@@ -119,6 +119,14 @@
   overflow-x: auto;
 }
 
+.recordEditor {
+  margin-bottom: 12px;
+}
+
+.recordEditor > form {
+  margin-top: 12px;
+}
+
 .filters.databaseSearch {
   grid-template-columns: minmax(0, 3fr) minmax(160px, 1fr) auto auto;
   padding: 16px 20px;

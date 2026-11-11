@@ -30,6 +30,7 @@ test("catalog sections save label allowances, scoped compatibility, and oriented
   expect((await savedLabel.json()).attributes).toMatchObject({ fitDiameterMinIn: 0.04, fitDiameterMaxIn: 0.12, maxCharactersPerLine: 18, maxLines: 2, printProfile: "Mono 8 pt" });
 
   await page.getByRole("tab", { name: "Compatibility & Aliases", exact: true }).click();
+  await page.locator("summary", { hasText: "Add compatibility group" }).click();
   const groupForm = page.locator("form").filter({ has: page.getByRole("combobox", { name: "Relationship type", exact: true }) });
   await groupForm.getByRole("combobox", { name: "Parent part", exact: true }).selectOption(frameId);
   await groupForm.getByLabel("Compatible parts", { exact: true }).fill(modulePn);
@@ -46,6 +47,7 @@ test("catalog sections save label allowances, scoped compatibility, and oriented
   await page.route(imageUrl, route => route.fulfill({ contentType: "image/png", body: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jZ9kAAAAASUVORK5CYII=", "base64") }));
   await page.getByRole("tab", { name: "Images and Files", exact: true }).click();
   const mediaSection = page.locator("#catalog-media");
+  await mediaSection.locator("summary", { hasText: "Add image or file" }).click();
   await mediaSection.getByRole("combobox", { name: "Item", exact: true }).selectOption(moduleId);
   await mediaSection.getByRole("combobox", { name: "View", exact: true }).fill("mating_face");
   await mediaSection.getByLabel("Hosted file URL", { exact: true }).fill(imageUrl);
@@ -59,7 +61,7 @@ test("catalog sections save label allowances, scoped compatibility, and oriented
   await expect(page.getByRole("tab", { name: "Images and Files", exact: true })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("img", { name: "Catalog test mating face" })).toBeVisible();
   await expect(page.getByRole("img", { name: "Catalog test mating face" })).toHaveJSProperty("naturalWidth", 1);
-  await page.screenshot({ path: testInfo.outputPath("catalog-admin.png"), fullPage: true });
+  await page.screenshot({ path: testInfo.outputPath("catalog-admin.png"), fullPage: true, caret: "initial" });
   await page.goto(`/library/${moduleId}`);
   await expect(page.getByRole("heading", { name: "Images and Files", exact: true })).toBeVisible();
   await expect(page.getByRole("img", { name: "Catalog test mating face" })).toBeVisible();

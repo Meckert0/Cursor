@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
 import type {
   CompatStatus,
@@ -188,6 +188,7 @@ function CompatPairTable({
 }
 
 export function CompatibilityManager(props: CompatibilityManagerProps) {
+  const relationshipEditor = useRef<HTMLDetailsElement>(null);
   const [editingRelationship, setEditingRelationship] = useState<PartRelationshipDto | null>(null);
   const [tab, setTab] = useState<CompatKind>("relationships");
 
@@ -280,12 +281,15 @@ export function CompatibilityManager(props: CompatibilityManagerProps) {
 
       {tab === "contact-wire" ? (
         <div className={styles.compatPanel}>
+          <details className={styles.recordEditor}>
+            <summary className={styles.smallActionButton}>Add contact–wire pair</summary>
           <form action={props.upsertContactWireAction} className={styles.compatAddForm}>
             <PartSelect name="contactPartId" parts={contacts} label="Contact" />
             <PartSelect name="wirePartId" parts={wires} label="Wire" />
             <StatusSelect />
             <button type="submit">Add / update</button>
           </form>
+          </details>
           <CompatPairTable
             leftHeader="Contact PN"
             rightHeader="Wire PN"
@@ -299,12 +303,15 @@ export function CompatibilityManager(props: CompatibilityManagerProps) {
 
       {tab === "module-contact" ? (
         <div className={styles.compatPanel}>
+          <details className={styles.recordEditor}>
+            <summary className={styles.smallActionButton}>Add module–contact pair</summary>
           <form action={props.upsertModuleContactAction} className={styles.compatAddForm}>
             <PartSelect name="modulePartId" parts={modules} label="Module" />
             <PartSelect name="contactPartId" parts={contacts} label="Contact" />
             <StatusSelect />
             <button type="submit">Add / update</button>
           </form>
+          </details>
           <CompatPairTable
             leftHeader="Module PN"
             rightHeader="Contact PN"
@@ -318,12 +325,15 @@ export function CompatibilityManager(props: CompatibilityManagerProps) {
 
       {tab === "module-backshell" ? (
         <div className={styles.compatPanel}>
+          <details className={styles.recordEditor}>
+            <summary className={styles.smallActionButton}>Add module–backshell pair</summary>
           <form action={props.upsertModuleBackshellAction} className={styles.compatAddForm}>
             <PartSelect name="modulePartId" parts={modules} label="Module" />
             <PartSelect name="backshellPartId" parts={backshells} label="Backshell" />
             <StatusSelect />
             <button type="submit">Add / update</button>
           </form>
+          </details>
           <CompatPairTable
             leftHeader="Module PN"
             rightHeader="Backshell PN"
@@ -337,12 +347,15 @@ export function CompatibilityManager(props: CompatibilityManagerProps) {
 
       {tab === "module-strain-relief" ? (
         <div className={styles.compatPanel}>
+          <details className={styles.recordEditor}>
+            <summary className={styles.smallActionButton}>Add module–strain relief pair</summary>
           <form action={props.upsertModuleStrainReliefAction} className={styles.compatAddForm}>
             <PartSelect name="modulePartId" parts={modules} label="Module" />
             <PartSelect name="strainReliefPartId" parts={strainReliefs} label="Strain relief" />
             <StatusSelect />
             <button type="submit">Add / update</button>
           </form>
+          </details>
           <CompatPairTable
             leftHeader="Module PN"
             rightHeader="Strain-relief PN"
@@ -356,7 +369,9 @@ export function CompatibilityManager(props: CompatibilityManagerProps) {
 
       {tab === "relationships" ? (
         <div className={styles.compatPanel}>
-          <form key={editingRelationship?.id ?? "new"} action={async data => { await props.upsertRelationshipAction(data); setEditingRelationship(null); }} className={styles.compatAddForm}>
+          <details ref={relationshipEditor} className={styles.recordEditor}>
+            <summary className={styles.smallActionButton}>{editingRelationship ? "Edit compatibility group" : "Add compatibility group"}</summary>
+          <form key={editingRelationship?.id ?? "new"} action={async data => { await props.upsertRelationshipAction(data); setEditingRelationship(null); if (relationshipEditor.current) relationshipEditor.current.open = false; }} className={styles.compatAddForm}>
             {editingRelationship ? <input type="hidden" name="id" value={editingRelationship.id} /> : null}
             <input type="hidden" name="extra" value={JSON.stringify(editingRelationship?.extra ?? {})} />
             <label>Parent part<select name="parentPartId" required defaultValue={editingRelationship?.parentPartId ?? ""}>
@@ -399,8 +414,9 @@ export function CompatibilityManager(props: CompatibilityManagerProps) {
               <input name="notes" defaultValue={editingRelationship?.notes ?? ""} />
             </label>
             <button type="submit">Add / update</button>
-            {editingRelationship ? <button type="button" onClick={() => setEditingRelationship(null)}>Cancel edit</button> : null}
+            {editingRelationship ? <button type="button" onClick={() => { setEditingRelationship(null); if (relationshipEditor.current) relationshipEditor.current.open = false; }}>Cancel edit</button> : null}
           </form>
+          </details>
           <div className={styles.tableWrap}>
             <table className={`${styles.table} ${styles.compactTable}`}>
               <thead>
@@ -432,7 +448,7 @@ export function CompatibilityManager(props: CompatibilityManagerProps) {
                       <td>{row.parentPositions.length > 0 ? row.parentPositions.join(", ") : "—"}</td>
                       <td>{row.status}<br />{row.isExhaustive ? "Exhaustive list" : "Other parts unknown"}</td>
                       <td>
-                        {!row.legacyPairKey ? <button type="button" onClick={() => setEditingRelationship(row)}>Edit</button> : null}
+                        {!row.legacyPairKey ? <button type="button" onClick={() => { setEditingRelationship(row); if (relationshipEditor.current) relationshipEditor.current.open = true; }}>Edit</button> : null}
                         <form action={props.deleteRelationshipAction} className={styles.inlineAction}>
                           <input type="hidden" name="id" value={row.id} />
                           <ConfirmSubmitButton
@@ -455,6 +471,8 @@ export function CompatibilityManager(props: CompatibilityManagerProps) {
 
       {tab === "aliases" ? (
         <div className={styles.compatPanel}>
+          <details className={styles.recordEditor}>
+            <summary className={styles.smallActionButton}>Add alias</summary>
           <form action={props.upsertAliasAction} className={styles.compatAddForm}>
             <label>
               Part
@@ -488,6 +506,7 @@ export function CompatibilityManager(props: CompatibilityManagerProps) {
             </label>
             <button type="submit">Add / update</button>
           </form>
+          </details>
           <div className={styles.tableWrap}>
             <table className={`${styles.table} ${styles.compactTable}`}>
               <thead>

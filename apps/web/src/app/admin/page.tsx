@@ -42,12 +42,8 @@ import {
 } from "@/lib/api";
 import { requireAdminUser } from "@/lib/auth";
 import { collectAttributesFromFormData } from "@/lib/part-fields";
-import { CompatibilityManager } from "./compatibility-manager";
-import { MediaManager } from "./media-manager";
-import { ItemDatabaseViewer } from "./item-database-viewer";
-import { DatabaseSections } from "./database-sections";
+import { DatabaseManager } from "./database-manager";
 import { SectionNameEditor } from "./section-name-editor";
-import { databaseFamilies, searchDatabase } from "./database-search";
 import styles from "./page.module.css";
 
 const COMPAT_STATUSES: CompatStatus[] = ["allowed", "forbidden", "review"];
@@ -70,6 +66,7 @@ function requireFormField(formData: FormData, key: string): string {
 type AdminPageSearchParams = Promise<{
   q?: string;
   family?: string;
+  databaseTab?: string;
 }>;
 
 function parseOptionalDateTime(raw: string): string | undefined {
@@ -416,8 +413,11 @@ async function deleteMediaAction(formData: FormData) {
 export default async function AdminOverviewPage({ searchParams }: { searchParams: AdminPageSearchParams }) {
   const signedInUser = await requireAdminUser();
   const search = await searchParams;
-  const q = typeof search.q === "string" ? search.q.trim() : undefined;
-  const family = typeof search.family === "string" ? search.family.trim() : undefined;
+  const initialSearch = new URLSearchParams({
+    q: typeof search.q === "string" ? search.q : "",
+    family: typeof search.family === "string" ? search.family : "",
+    databaseTab: typeof search.databaseTab === "string" ? search.databaseTab : "items"
+  }).toString();
   const [users, projects, catalogItems, pageDescriptions, contactWire, moduleContact, moduleBackshell, moduleStrainRelief, aliases, relationships, media] =
     await Promise.all([
       listAdminUsers(),
@@ -433,9 +433,6 @@ export default async function AdminOverviewPage({ searchParams }: { searchParams
       listPartMedia()
     ]);
 
-  const results = searchDatabase({
-    items: catalogItems, relationships, aliases, contactWire, moduleContact, moduleBackshell, moduleStrainRelief, media
-  }, { q, family });
   const sectionTitles = { ...DEFAULT_ADMIN_SECTION_TITLES, ...pageDescriptions.adminSectionTitles };
 
   const projectsByUserId = new Map<
@@ -456,8 +453,7 @@ export default async function AdminOverviewPage({ searchParams }: { searchParams
     }
   }
 
-  const categoryOrder = LIBRARY_ITEM_CATEGORIES;
-  const categoryLabel: Record<(typeof categoryOrder)[number], string> = {
+  const categoryLabel: Record<LibraryItemCategory, string> = {
     contact: "Contact",
     wire: "Wire",
     "sleeve-tube-braid": "Sleeve/Tube/Braid",
@@ -468,7 +464,6 @@ export default async function AdminOverviewPage({ searchParams }: { searchParams
     splice: "Splice",
     frame: "Frame"
   };
-  const visibleCategories = q || family ? categoryOrder.filter(category => results.items.some(item => item.category === category)) : categoryOrder;
 
   return (
     <div className={styles.page}>
@@ -596,62 +591,23 @@ export default async function AdminOverviewPage({ searchParams }: { searchParams
           </details>
         </section>
 
-        <section id="database" className={`${styles.card} ${styles.sectionPanel}`}>
-          <details open>
-            <summary className={styles.sectionSummary}>
-              <span className={styles.sectionTitle}>{sectionTitles.database}</span>
-              <span className={styles.sectionHint}>{catalogItems.length} items · {relationships.length} compatibility groups · {media.length} files</span>
-            </summary>
-            <DatabaseSections
-              titles={sectionTitles}
-              counts={{ items: results.items.length, compatibility: results.relationships.length + results.aliases.length, media: results.media.length }}
-              q={q}
-              family={family}
-              families={databaseFamilies(catalogItems)}
-              items={
-                <ItemDatabaseViewer
-                  items={results.items}
-                  relationships={relationships}
-                  media={media}
-                  visibleCategories={visibleCategories}
-                  categoryLabel={categoryLabel}
-                  createAction={createItemAction}
-                  editAction={editItemAction}
-                  deleteAction={deleteItemAction}
-                  currentUserId={signedInUser.id}
-                />
-              }
-              compatibility={
-                <CompatibilityManager
-                  items={catalogItems}
-                  contactWire={results.contactWire}
-                  moduleContact={results.moduleContact}
-                  moduleBackshell={results.moduleBackshell}
-                  moduleStrainRelief={results.moduleStrainRelief}
-                  aliases={results.aliases}
-                  relationships={results.relationships}
-                  upsertContactWireAction={upsertContactWireAction}
-                  deleteContactWireAction={deleteContactWireAction}
-                  upsertModuleContactAction={upsertModuleContactAction}
-                  deleteModuleContactAction={deleteModuleContactAction}
-                  upsertModuleBackshellAction={upsertModuleBackshellAction}
-                  deleteModuleBackshellAction={deleteModuleBackshellAction}
-                  upsertModuleStrainReliefAction={upsertModuleStrainReliefAction}
-                  deleteModuleStrainReliefAction={deleteModuleStrainReliefAction}
-                  upsertAliasAction={upsertAliasAction}
-                  deleteAliasAction={deleteAliasAction}
-                  upsertRelationshipAction={upsertRelationshipAction}
-                  deleteRelationshipAction={deleteRelationshipAction}
-                />
-              }
-              media={
-                <div id="catalog-media">
-                  <MediaManager items={catalogItems} media={results.media} defaultPartId={results.items.length === 1 ? results.items[0].id : undefined} upsertAction={upsertMediaAction} deleteAction={deleteMediaAction} />
-                </div>
-              }
-            />
-          </details>
-        </section>
+        <DatabaseManager
+          titles={sectionTitles}
+          initialSearch={initialSearch}
+          records={{ items: catalogItems, relationships, aliases, contactWire, moduleContact, moduleBackshell, moduleStrainRelief, media }}
+          categoryLabel={categoryLabel}
+          currentUserId={signedInUser.id}
+          itemActions={{ createAction: createItemAction, editAction: editItemAction, deleteAction: deleteItemAction }}
+          compatibilityActions={{
+            upsertContactWireAction, deleteContactWireAction,
+            upsertModuleContactAction, deleteModuleContactAction,
+            upsertModuleBackshellAction, deleteModuleBackshellAction,
+            upsertModuleStrainReliefAction, deleteModuleStrainReliefAction,
+            upsertAliasAction, deleteAliasAction,
+            upsertRelationshipAction, deleteRelationshipAction
+          }}
+          mediaActions={{ upsertAction: upsertMediaAction, deleteAction: deleteMediaAction }}
+        />
       </main>
     </div>
   );

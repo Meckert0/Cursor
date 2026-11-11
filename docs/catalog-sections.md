@@ -6,6 +6,8 @@ The admin console uses the full page width. Its Database section groups Item Dat
 
 One search bar above the three tabs provides text search and a Family dropdown. Applying a search filters items, all compatibility tables/aliases, and images/files together; each tab opens with those results already selected. The query, family, and selected tab survive reloads in the URL. Compatibility rows match either related item and retain their full target lists, positions and metadata for editing. Item selectors in create/edit forms still use the complete catalog. Family choices also come from the complete catalog. Use **Clear search** to restore all results while staying in the same tab.
 
+Typing or changing Family filters all three tabs immediately using one shared search state, including tabs that are currently hidden. Tab switches preserve the same query without another search request. The compatibility and image tabs open with results; add/edit fields are tucked behind explicitly labeled record editors so they cannot be confused with separate search controls. There are no search bars inside the three tab panels.
+
 ## Items
 
 `parts` remains the common identity/lifecycle/audit record, with one typed detail record per category. Existing categories and IDs are retained. A category is immutable for an existing ID; create a new identity when introducing a different kind of part. Part numbers are text, including leading zeros. Add more items through the existing editors/imports. Adding a new category involves its detail table, domain/API schema and editor metadata; compatibility and media continue referencing the common part ID.

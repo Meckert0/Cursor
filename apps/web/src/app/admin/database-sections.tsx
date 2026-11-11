@@ -1,34 +1,24 @@
 "use client";
 
 import type { KeyboardEvent, ReactNode } from "react";
-import { useSearchParams } from "next/navigation";
 import type { AdminSectionTitles } from "@/lib/api";
+import { DATABASE_TABS as TABS, type DatabaseTab } from "./database-location";
 import styles from "./page.module.css";
 
-const TABS = ["items", "compatibility", "media"] as const;
-type DatabaseTab = typeof TABS[number];
-
-export function DatabaseSections({ titles, counts, q, family, families, items, compatibility, media }: {
+export function DatabaseSections({ titles, counts, q, family, families, activeTab, onSearchChange, onTabChange, items, compatibility, media }: {
   titles: AdminSectionTitles;
   counts: Record<DatabaseTab, number>;
-  q?: string;
-  family?: string;
+  q: string;
+  family: string;
   families: string[];
+  activeTab: DatabaseTab;
+  onSearchChange: (input: { q: string; family: string }) => void;
+  onTabChange: (tab: DatabaseTab) => void;
   items: ReactNode;
   compatibility: ReactNode;
   media: ReactNode;
 }) {
-  const searchParams = useSearchParams();
-  const requested = searchParams.get("databaseTab");
-  const activeTab = TABS.find(tab => tab === requested) ?? "items";
   const panels = { items, compatibility, media };
-  const selectedFamily = family?.toLowerCase() ?? "";
-
-  function select(tab: DatabaseTab) {
-    const url = new URL(window.location.href);
-    url.searchParams.set("databaseTab", tab);
-    window.history.replaceState(null, "", url);
-  }
 
   function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
     let next: number;
@@ -38,29 +28,29 @@ export function DatabaseSections({ titles, counts, q, family, families, items, c
     else if (event.key === "End") next = TABS.length - 1;
     else return;
     event.preventDefault();
-    select(TABS[next]);
+    onTabChange(TABS[next]);
     document.getElementById(`database-tab-${TABS[next]}`)?.focus();
   }
 
   return (
     <div className={styles.databaseSections}>
-      <form key={`${q ?? ""}:${selectedFamily}`} role="search" aria-label="Database search" method="GET" action="/admin" className={`${styles.filters} ${styles.databaseSearch}`}>
+      <form role="search" aria-label="Database search" method="GET" action="/admin" className={`${styles.filters} ${styles.databaseSearch}`} onSubmit={event => event.preventDefault()}>
         <input type="hidden" name="databaseTab" value={activeTab} />
         <label>
           Search
-          <input name="q" type="search" defaultValue={q ?? ""} placeholder="part number, family, description" />
+          <input name="q" type="search" value={q} onChange={event => onSearchChange({ q: event.target.value, family })} placeholder="part number, family, description" />
         </label>
         <label>
           Family
-          <select name="family" defaultValue={selectedFamily}>
+          <select name="family" value={family} onChange={event => onSearchChange({ q, family: event.target.value })}>
             <option value="">All families</option>
-            {selectedFamily && !families.some(value => value.toLowerCase() === selectedFamily)
-              ? <option value={selectedFamily}>{family}</option> : null}
+            {family && !families.some(value => value.toLowerCase() === family)
+              ? <option value={family}>{family}</option> : null}
             {families.map(value => <option key={value.toLowerCase()} value={value.toLowerCase()}>{value}</option>)}
           </select>
         </label>
         <button type="submit">Search</button>
-        {q || family ? <a href={`/admin?databaseTab=${activeTab}`} className={styles.actionButton}>Clear search</a> : null}
+        {q || family ? <a href={`/admin?databaseTab=${activeTab}`} className={styles.actionButton} onClick={event => { event.preventDefault(); onSearchChange({ q: "", family: "" }); }}>Clear search</a> : null}
       </form>
       <div role="tablist" aria-label={titles.database} className={styles.databaseTabs}>
         {TABS.map((tab, index) => (
@@ -74,7 +64,7 @@ export function DatabaseSections({ titles, counts, q, family, families, items, c
             aria-selected={activeTab === tab}
             tabIndex={activeTab === tab ? 0 : -1}
             className={styles.databaseTab}
-            onClick={() => select(tab)}
+            onClick={() => onTabChange(tab)}
             onKeyDown={event => handleKeyDown(event, index)}
           >
             <span>{titles[tab]}</span>

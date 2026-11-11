@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
 import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
 import type { PartDto, PartMediaDto } from "@/lib/api";
@@ -18,26 +18,31 @@ function SaveMediaButton() {
   return <button type="submit" disabled={pending}>{pending ? "Saving…" : "Save image or file"}</button>;
 }
 
-export function MediaManager({ items, media, defaultPartId, upsertAction, deleteAction }: {
+export interface MediaManagerProps {
   items: PartDto[];
   media: PartMediaDto[];
   defaultPartId?: string;
   upsertAction: (data: FormData) => void | Promise<void>;
   deleteAction: (data: FormData) => void | Promise<void>;
-}) {
+}
+
+export function MediaManager({ items, media, defaultPartId, upsertAction, deleteAction }: MediaManagerProps) {
+  const editor = useRef<HTMLDetailsElement>(null);
   const [editing, setEditing] = useState<PartMediaDto | null>(null);
   const [error, setError] = useState<string | null>(null);
   const parts = useMemo(() => new Map(items.map(item => [item.id, item])), [items]);
 
   async function save(data: FormData) {
     setError(null);
-    try { await upsertAction(data); setEditing(null); }
+    try { await upsertAction(data); setEditing(null); if (editor.current) editor.current.open = false; }
     catch (failure) { setError(failure instanceof Error ? failure.message : "The image or file could not be saved."); }
   }
 
   return <div className={styles.sectionContent}>
     <p>Add hosted images and documents to an item. Side profiles and mating faces can each have several views and a primary image.</p>
-    <form key={editing?.id ?? `new-${defaultPartId ?? ""}`} action={save} className={styles.compatAddForm}>
+    <details ref={editor} className={styles.recordEditor}>
+      <summary className={styles.smallActionButton}>{editing ? "Edit image or file" : "Add image or file"}</summary>
+      <form key={editing?.id ?? `new-${defaultPartId ?? ""}`} action={save} className={styles.compatAddForm}>
       {editing ? <input type="hidden" name="id" value={editing.id} /> : null}
       <label>Item
         <select name="partId" required defaultValue={editing?.partId ?? defaultPartId ?? ""}>
@@ -57,9 +62,10 @@ export function MediaManager({ items, media, defaultPartId, upsertAction, delete
       <label>Pixel height<input name="pixelHeight" type="number" min="1" step="1" defaultValue={editing?.pixelHeight ?? ""} /></label>
       <label><input name="isPrimary" type="checkbox" defaultChecked={editing?.isPrimary ?? false} /> Primary for this view and direction</label>
       <SaveMediaButton />
-      {editing ? <button type="button" onClick={() => { setEditing(null); setError(null); }}>Cancel edit</button> : null}
+      {editing ? <button type="button" onClick={() => { setEditing(null); setError(null); if (editor.current) editor.current.open = false; }}>Cancel edit</button> : null}
       {error ? <p role="alert">{error}</p> : null}
-    </form>
+      </form>
+    </details>
     <div className={styles.tableWrap}><table className={styles.table}>
       <thead><tr><th>Preview</th><th>Item</th><th>View and direction</th><th>Reference</th><th>Actions</th></tr></thead>
       <tbody>{media.length ? media.map(row => <tr key={row.id}>
@@ -69,7 +75,7 @@ export function MediaManager({ items, media, defaultPartId, upsertAction, delete
         <td>{parts.get(row.partId)?.partNumber ?? row.partId}</td>
         <td>{row.viewType}{row.orientation ? ` · ${row.orientation}` : ""}{row.isPrimary ? " · primary" : ""}</td>
         <td>{row.caption}<br />{row.source}{row.revision ? ` · ${row.revision}` : ""}</td>
-        <td><button type="button" onClick={() => { setEditing(row); setError(null); }}>Edit</button>
+        <td><button type="button" onClick={() => { setEditing(row); setError(null); if (editor.current) editor.current.open = true; }}>Edit</button>
           <form action={deleteAction} className={styles.inlineAction}>
             <input type="hidden" name="id" value={row.id} /><input type="hidden" name="partId" value={row.partId} />
             <ConfirmSubmitButton type="submit" confirmMessage="Remove this image or file from the item?">Remove</ConfirmSubmitButton>

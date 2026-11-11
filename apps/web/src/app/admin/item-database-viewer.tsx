@@ -50,7 +50,7 @@ function normalizeRuntimeCategory(rawCategory: unknown): Category | null {
   return null;
 }
 
-interface ItemDatabaseViewerProps {
+export interface ItemDatabaseViewerProps {
   items: LibraryComponentDto[];
   visibleCategories: readonly Category[];
   categoryLabel: Record<Category, string>;

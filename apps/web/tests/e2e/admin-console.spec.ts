@@ -56,16 +56,47 @@ test("admin console uses full width, groups database tools and persists section 
     media: "Drawings and images"
   };
   try {
-    await page.locator("summary", { hasText: "Edit section names" }).click();
-    for (const [label, value] of [
-      ["Page descriptions section", renamed.pageDescriptions],
-      ["Users and projects section", renamed.userAccess],
-      ["Database section", renamed.database],
-      ["Item viewer tab", renamed.items],
-      ["Compatibility tab", renamed.compatibility],
-      ["Images and files tab", renamed.media]
-    ]) await page.getByLabel(label, { exact: true }).fill(value);
-    await page.getByRole("button", { name: "Save section names", exact: true }).click();
+    await expect(page.getByText("Edit section names", { exact: true })).toHaveCount(0);
+    const userName = page.locator('[data-section-name="userAccess"]');
+    const userSummary = userName.locator("..");
+    await userName.click({ button: "right" });
+    await expect(page.getByRole("menu", { name: "Section name actions" })).toBeVisible();
+    await expect(userSummary.locator("..")).not.toHaveAttribute("open");
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("menu")).toHaveCount(0);
+    await expect(userSummary).toBeFocused();
+    await userSummary.press("Shift+F10");
+    await page.getByRole("menuitem", { name: "Rename", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Rename section", exact: true });
+    await expect(dialog.getByRole("textbox", { name: "Section name", exact: true })).toBeFocused();
+    await dialog.getByRole("textbox", { name: "Section name", exact: true }).fill("Unsaved name");
+    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(userName).toHaveText(DEFAULT_ADMIN_SECTION_TITLES.userAccess);
+    await userName.click({ button: "right" });
+    await page.getByRole("heading", { name: "Admin console", exact: true }).click();
+    await expect(page.getByRole("menu")).toHaveCount(0);
+
+    for (const [key, value] of Object.entries(renamed)) {
+      const name = page.locator(`[data-section-name="${key}"]`);
+      await name.click({ button: "right" });
+      await expect(page.locator("#database-tab-compatibility")).toHaveAttribute("aria-selected", "true");
+      await expect(database.locator(":scope > details")).toHaveAttribute("open", "");
+      if (key === "pageDescriptions") {
+        await page.screenshot({ path: testInfo.outputPath("section-rename-menu.png"), caret: "initial" });
+      }
+      await page.getByRole("menuitem", { name: "Rename", exact: true }).click();
+      if (key === "pageDescriptions") {
+        await page.screenshot({ path: testInfo.outputPath("section-rename-dialog.png"), caret: "initial" });
+        await dialog.getByRole("textbox", { name: "Section name", exact: true }).fill("   ");
+        await dialog.getByRole("button", { name: "Save name", exact: true }).click();
+        await expect(dialog.getByRole("alert")).toContainText("1 and 80 characters");
+      }
+      await dialog.getByRole("textbox", { name: "Section name", exact: true }).fill(value);
+      await dialog.getByRole("button", { name: "Save name", exact: true }).click();
+      await expect(dialog).toHaveCount(0);
+      await expect(name).toHaveText(value);
+    }
     await expect(database.locator(":scope > details > summary")).toContainText(renamed.database);
     await page.reload();
     await expect(page.locator("main > section > details > summary").nth(0)).toContainText(renamed.pageDescriptions);
@@ -80,6 +111,12 @@ test("admin console uses full width, groups database tools and persists section 
     expect(mobile[0]!.y).toBe(mobile[1]!.y);
     expect(mobile[1]!.y).toBe(mobile[2]!.y);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+    await page.locator('[data-section-name="media"]').click({ button: "right" });
+    const menuBounds = await page.getByRole("menu", { name: "Section name actions" }).boundingBox();
+    expect(menuBounds!.x).toBeGreaterThanOrEqual(0);
+    expect(menuBounds!.x + menuBounds!.width).toBeLessThanOrEqual(390);
+    expect(menuBounds!.y + menuBounds!.height).toBeLessThanOrEqual(844);
+    await page.keyboard.press("Escape");
     await page.screenshot({ path: testInfo.outputPath("admin-console-mobile.png"), fullPage: true, caret: "initial" });
   } finally {
     const restore = await apiAsPageUser(page, "/v1/admin/ui/page-descriptions", {

@@ -3,6 +3,7 @@
 import type { KeyboardEvent, ReactNode } from "react";
 import type { AdminSectionTitles } from "@/lib/api";
 import { DATABASE_TABS as TABS, type DatabaseTab } from "./database-location";
+import { SectionName } from "./section-name-editor";
 import styles from "./page.module.css";
 
 export function DatabaseSections({ titles, counts, q, family, families, activeTab, onSearchChange, onTabChange, items, compatibility, media }: {
@@ -67,7 +68,7 @@ export function DatabaseSections({ titles, counts, q, family, families, activeTa
             onClick={() => onTabChange(tab)}
             onKeyDown={event => handleKeyDown(event, index)}
           >
-            <span>{titles[tab]}</span>
+            <SectionName name={tab} />
             <span className={styles.databaseTabCount} aria-hidden="true">{counts[tab]}</span>
           </button>
         ))}

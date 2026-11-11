@@ -6,7 +6,7 @@ import {
   LIBRARY_ITEM_CATEGORIES,
   ADMIN_SECTION_KEYS,
   DEFAULT_ADMIN_SECTION_TITLES,
-  type AdminSectionTitles,
+  type AdminSectionKey,
   type CompatStatus,
   type LibraryItemCategory,
   deleteAdminUser,
@@ -43,7 +43,7 @@ import {
 import { requireAdminUser } from "@/lib/auth";
 import { collectAttributesFromFormData } from "@/lib/part-fields";
 import { DatabaseManager } from "./database-manager";
-import { SectionNameEditor } from "./section-name-editor";
+import { SectionName, SectionNamesProvider } from "./section-name-editor";
 import styles from "./page.module.css";
 
 const COMPAT_STATUSES: CompatStatus[] = ["allowed", "forbidden", "review"];
@@ -225,12 +225,14 @@ async function updatePageDescriptionsAction(formData: FormData) {
   revalidatePath("/");
 }
 
-async function updateSectionNamesAction(formData: FormData) {
+async function updateSectionNameAction(formData: FormData) {
   "use server";
   await requireAdminUser();
-  const adminSectionTitles = Object.fromEntries(ADMIN_SECTION_KEYS.map(key => [key, requireFormField(formData, key)])) as AdminSectionTitles;
-  if (Object.values(adminSectionTitles).some(title => title.length > 80)) throw new Error("Section names must be 1–80 characters.");
-  await updateAdminPageDescriptions({ adminSectionTitles });
+  const key = requireFormField(formData, "sectionKey") as AdminSectionKey;
+  const title = requireFormField(formData, "title");
+  if (!ADMIN_SECTION_KEYS.includes(key)) throw new Error("Unknown section name.");
+  if (title.length > 80) throw new Error("Section names must be 1–80 characters.");
+  await updateAdminPageDescriptions({ adminSectionTitles: { [key]: title } });
   revalidatePath("/admin");
 }
 
@@ -466,6 +468,7 @@ export default async function AdminOverviewPage({ searchParams }: { searchParams
   };
 
   return (
+    <SectionNamesProvider titles={sectionTitles} saveAction={updateSectionNameAction}>
     <div className={styles.page}>
       <main className={styles.main}>
         <PageHeader className={styles.header} user={signedInUser}>
@@ -482,13 +485,12 @@ export default async function AdminOverviewPage({ searchParams }: { searchParams
               Datastore queue
             </Link>
           </div>
-          <SectionNameEditor titles={sectionTitles} saveAction={updateSectionNamesAction} />
         </PageHeader>
 
         <section className={`${styles.card} ${styles.sectionPanel}`}>
           <details>
             <summary className={styles.sectionSummary}>
-              <span className={styles.sectionTitle}>{sectionTitles.pageDescriptions}</span>
+              <SectionName name="pageDescriptions" className={styles.sectionTitle} />
               <span className={styles.sectionHint}>admin editable copy - expand panel</span>
             </summary>
             <div className={styles.sectionContent}>
@@ -520,7 +522,7 @@ export default async function AdminOverviewPage({ searchParams }: { searchParams
         <section className={`${styles.card} ${styles.sectionPanel}`}>
           <details>
             <summary className={styles.sectionSummary}>
-              <span className={styles.sectionTitle}>{sectionTitles.userAccess}</span>
+              <SectionName name="userAccess" className={styles.sectionTitle} />
               <span className={styles.sectionHint}>{users.length} users - expand panel</span>
             </summary>
             <div className={styles.sectionContent}>
@@ -610,5 +612,6 @@ export default async function AdminOverviewPage({ searchParams }: { searchParams
         />
       </main>
     </div>
+    </SectionNamesProvider>
   );
 }

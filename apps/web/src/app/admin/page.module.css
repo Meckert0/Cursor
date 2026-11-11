@@ -58,24 +58,75 @@
   padding: 16px 20px 20px;
 }
 
-.sectionNameEditor {
-  margin-top: 14px;
+.sectionNameTarget {
+  cursor: context-menu;
 }
 
-.sectionNamesForm {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
-  gap: 12px;
-  margin-top: 14px;
+.renameMenu {
+  position: fixed;
+  z-index: 100;
+  width: 160px;
+  max-width: calc(100vw - 16px);
+  padding: 4px;
+  border: 1px solid #cdd3de;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 6px 20px rgb(15 23 42 / 16%);
 }
 
-.sectionNamesForm label {
+.renameMenu button {
+  width: 100%;
+  border: 0;
+  border-radius: 4px;
+  padding: 8px 10px;
+  background: #fff;
+  color: #171717;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.renameMenu button:hover,
+.renameMenu button:focus-visible {
+  background: #eff6ff;
+  outline: 2px solid #2563eb;
+}
+
+.renameDialog {
+  width: min(420px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  margin: auto;
+  padding: 20px;
+  border: 1px solid #d7deea;
+  border-radius: 12px;
+  background: #fff;
+  color: #171717;
+}
+
+.renameDialog::backdrop {
+  background: rgb(15 23 42 / 44%);
+}
+
+.renameDialog h2 {
+  margin: 0 0 16px;
+  font-size: 20px;
+}
+
+.renameForm,
+.renameForm label {
   display: grid;
+}
+
+.renameForm {
+  gap: 14px;
+}
+
+.renameForm label {
   gap: 6px;
   font-size: 14px;
 }
 
-.sectionNamesForm input {
+.renameForm input {
   min-width: 0;
   border: 1px solid #cdd3de;
   border-radius: 8px;
@@ -83,15 +134,15 @@
   font: inherit;
 }
 
-.sectionNamesActions {
-  grid-column: 1 / -1;
+.renameActions {
   display: flex;
+  justify-content: flex-end;
   align-items: center;
   flex-wrap: wrap;
   gap: 10px;
 }
 
-.sectionNamesActions button {
+.renameActions button {
   border: 1px solid #1d4ed8;
   background: #eff6ff;
   color: #1d4ed8;
@@ -101,12 +152,12 @@
   cursor: pointer;
 }
 
-.sectionNamesActions button:disabled {
+.renameActions button:disabled {
   cursor: wait;
   opacity: 0.6;
 }
 
-.sectionNamesActions p {
+.renameError {
   color: #b91c1c;
 }
 

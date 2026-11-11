@@ -6,6 +6,7 @@ import { ItemDatabaseViewer, type ItemDatabaseViewerProps } from "./item-databas
 import { CompatibilityManager, type CompatibilityManagerProps } from "./compatibility-manager";
 import { MediaManager, type MediaManagerProps } from "./media-manager";
 import { DatabaseSections } from "./database-sections";
+import { SectionName } from "./section-name-editor";
 import { databaseFamilies, searchDatabase, type DatabaseRecords } from "./database-search";
 import { parseDatabaseLocation, readDatabaseLocation, subscribeDatabaseLocation, updateDatabaseLocation } from "./database-location";
 import styles from "./page.module.css";
@@ -33,7 +34,7 @@ export function DatabaseManager({ titles, records, initialSearch, categoryLabel,
     <section id="database" className={`${styles.card} ${styles.sectionPanel}`}>
       <details open>
         <summary className={styles.sectionSummary}>
-          <span className={styles.sectionTitle}>{titles.database}</span>
+          <SectionName name="database" className={styles.sectionTitle} />
           <span className={styles.sectionHint}>{results.items.length} items · {results.relationships.length} compatibility groups · {results.media.length} files</span>
         </summary>
         <DatabaseSections

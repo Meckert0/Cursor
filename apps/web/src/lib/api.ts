@@ -1,3 +1,7 @@
+import type { AdminSectionTitles } from "../../../../src/domain/ui-settings.ts";
+export { ADMIN_SECTION_KEYS, DEFAULT_ADMIN_SECTION_TITLES } from "../../../../src/domain/ui-settings.ts";
+export type { AdminSectionKey, AdminSectionTitles } from "../../../../src/domain/ui-settings.ts";
+
 export interface HealthResponse {
   ok: boolean;
   service: string;
@@ -44,6 +48,7 @@ interface ListAdminUsersResponse {
 export interface PageDescriptionsDto {
   projectsHeaderDescription: string;
   harnessHeaderDescription: string;
+  adminSectionTitles?: AdminSectionTitles;
 }
 
 export const LIBRARY_ITEM_CATEGORIES = [
@@ -562,12 +567,14 @@ export function getPageDescriptions(): Promise<PageDescriptionsDto> {
 export function updateAdminPageDescriptions(input: {
   projectsHeaderDescription?: string;
   harnessHeaderDescription?: string;
+  adminSectionTitles?: Partial<AdminSectionTitles>;
 }): Promise<PageDescriptionsDto> {
   return apiRequest<PageDescriptionsDto>("/v1/admin/ui/page-descriptions", {
     method: "PUT",
     body: {
       projectsHeaderDescription: input.projectsHeaderDescription,
-      harnessHeaderDescription: input.harnessHeaderDescription
+      harnessHeaderDescription: input.harnessHeaderDescription,
+      adminSectionTitles: input.adminSectionTitles
     }
   });
 }

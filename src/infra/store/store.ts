@@ -39,19 +39,11 @@ import type {
   PartRelationshipInput
 } from "../../domain/library.js";
 import type { TablePreferencesRecord } from "../../domain/table-preferences.js";
+import type { UiCopySettings, UiCopySettingsUpdate } from "../../domain/ui-settings.js";
 
 export interface Store {
-  getUiCopySettings(): Promise<{
-    projectsHeaderDescription: string;
-    harnessHeaderDescription: string;
-  }>;
-  updateUiCopySettings(input: {
-    projectsHeaderDescription?: string;
-    harnessHeaderDescription?: string;
-  }): Promise<{
-    projectsHeaderDescription: string;
-    harnessHeaderDescription: string;
-  }>;
+  getUiCopySettings(): Promise<UiCopySettings>;
+  updateUiCopySettings(input: UiCopySettingsUpdate): Promise<UiCopySettings>;
   deleteUserData(userId: string): Promise<void>;
   listProjects(): Promise<Project[]>;
   getProject(projectId: string): Promise<Project | null>;

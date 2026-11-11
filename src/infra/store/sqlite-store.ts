@@ -29,6 +29,7 @@ import type {
   PartWithAttributes
 } from "../../domain/library.js";
 import type { TablePreferencesRecord } from "../../domain/table-preferences.js";
+import type { UiCopySettings, UiCopySettingsUpdate } from "../../domain/ui-settings.js";
 import { MemoryStore, type MemoryStoreState } from "./memory-store.js";
 
 type SqliteBootstrap = {
@@ -77,14 +78,11 @@ export class SqliteStore extends MemoryStore {
     return result;
   }
 
-  override async getUiCopySettings(): Promise<{ projectsHeaderDescription: string; harnessHeaderDescription: string }> {
+  override async getUiCopySettings(): Promise<UiCopySettings> {
     return super.getUiCopySettings();
   }
 
-  override async updateUiCopySettings(input: {
-    projectsHeaderDescription?: string;
-    harnessHeaderDescription?: string;
-  }): Promise<{ projectsHeaderDescription: string; harnessHeaderDescription: string }> {
+  override async updateUiCopySettings(input: UiCopySettingsUpdate): Promise<UiCopySettings> {
     const result = await super.updateUiCopySettings(input);
     this.persistState();
     return result;

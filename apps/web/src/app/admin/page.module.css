@@ -1,13 +1,13 @@
 .page {
   min-height: 100vh;
-  padding: 32px 16px;
+  padding: 24px 0;
   background: #f6f7fb;
 }
 
 .main {
   width: 100%;
-  max-width: min(1520px, calc(100vw - 6%));
-  margin: 0 auto;
+  min-width: 0;
+  margin: 0;
   display: grid;
   gap: 16px;
 }
@@ -44,6 +44,8 @@
 
 .sectionTitle {
   font-size: 18px;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .sectionHint {
@@ -54,6 +56,114 @@
 
 .sectionContent {
   padding: 16px 20px 20px;
+}
+
+.sectionNameEditor {
+  margin-top: 14px;
+}
+
+.sectionNamesForm {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.sectionNamesForm label {
+  display: grid;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.sectionNamesForm input {
+  min-width: 0;
+  border: 1px solid #cdd3de;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+}
+
+.sectionNamesActions {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.sectionNamesActions button {
+  border: 1px solid #1d4ed8;
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.sectionNamesActions button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.sectionNamesActions p {
+  color: #b91c1c;
+}
+
+.databaseSections,
+.databasePanel {
+  min-width: 0;
+}
+
+.databaseTablePanel .tableWrap {
+  overflow-x: auto;
+}
+
+.databaseTabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-bottom: 1px solid #d9dfeb;
+  background: #f8faff;
+}
+
+.databaseTab {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  padding: 16px 12px;
+  background: transparent;
+  color: #4f5666;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.databaseTab + .databaseTab {
+  border-left: 1px solid #e8e8ef;
+}
+
+.databaseTab[aria-selected="true"] {
+  border-bottom-color: #2563eb;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.databaseTab:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: -4px;
+}
+
+.databaseTabCount {
+  border-radius: 12px;
+  padding: 2px 8px;
+  background: #e8edf5;
+  font-size: 12px;
 }
 
 .pageDescriptionForm {
@@ -600,6 +710,13 @@
   display: grid;
   gap: 6px;
   font-size: 13px;
+  min-width: 0;
+}
+
+.compatAddForm input:not([type="checkbox"]),
+.compatAddForm select {
+  width: 100%;
+  min-width: 0;
 }
 
 .compatAddForm input,

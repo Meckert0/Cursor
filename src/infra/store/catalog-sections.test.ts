@@ -43,6 +43,15 @@ for (const backend of ["memory", "sqlite", "postgres"] as const) {
     const pg = backend === "postgres" ? await postgres() : undefined;
     let store: Store = pg?.store ?? (backend === "sqlite" ? new SqliteStore(path.join(directory, "app.db")) : new MemoryStore());
     try {
+      const originalCopy = await store.getUiCopySettings();
+      assert.equal(originalCopy.adminSectionTitles.database, "Database");
+      await store.updateUiCopySettings({ adminSectionTitles: { database: "Part catalog", media: "Reference views" } });
+      const updatedCopy = await store.updateUiCopySettings({ projectsHeaderDescription: "Custom projects description" });
+      assert.equal(updatedCopy.adminSectionTitles.database, "Part catalog");
+      assert.equal(updatedCopy.adminSectionTitles.items, "Item Database Viewer");
+      assert.equal(updatedCopy.harnessHeaderDescription, originalCopy.harnessHeaderDescription);
+      updatedCopy.adminSectionTitles.database = "Unsaved external change";
+      assert.equal((await store.getUiCopySettings()).adminSectionTitles.database, "Part catalog");
       const result = await store.ingestLibraryComponents({ requestedByUserId: "test", dryRun: false, items: fixtures });
       assert.equal(result.summary.committed, fixtures.length);
       const group = await store.upsertPartRelationship({ parentPartId: "frame", relationshipType: "MODULE_ALLOWED", compatibleParts: "M-1", parentPositions: ["A"], status: "allowed", source: "manufacturer-drawing" });
@@ -101,6 +110,9 @@ for (const backend of ["memory", "sqlite", "postgres"] as const) {
         store.close();
         store = new SqliteStore(path.join(directory, "app.db"));
       } else if (store instanceof MemoryStore) store = MemoryStore.fromState(store.exportState());
+      assert.equal((await store.getUiCopySettings()).adminSectionTitles.database, "Part catalog");
+      assert.equal((await store.getUiCopySettings()).adminSectionTitles.media, "Reference views");
+      assert.equal((await store.getUiCopySettings()).projectsHeaderDescription, "Custom projects description");
       const media = await store.listPartMedia({ partId: "module" });
       assert.equal(media.length, 3);
       assert.equal(media.find(row => row.id === first.id)?.isPrimary, false);
@@ -121,6 +133,10 @@ test("migration preserves legacy sources, unresolved targets, scoped rules and n
   const { db, pool, store } = await postgres(true);
   try {
     await assert.rejects(assertCatalogSchemaReady(pool), /CATALOG_SCHEMA_NOT_READY: Apply 032_catalog_sections.sql/);
+    await db.query("INSERT INTO app_settings (key, value) VALUES ('ui.projectsHeaderDescription', 'Existing page copy') ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value");
+    const legacyCopy = await store.getUiCopySettings();
+    assert.equal(legacyCopy.projectsHeaderDescription, "Existing page copy");
+    assert.equal(legacyCopy.adminSectionTitles.database, "Database", "Existing databases need no settings migration");
     assert.equal((await db.query<{ name: string | null }>("SELECT to_regclass('compatibility_groups') AS name")).rows[0].name, null,
       "The deployment check must not apply migrations");
     for (const part of fixtures) {

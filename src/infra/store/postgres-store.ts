@@ -50,6 +50,7 @@ import type {
 import { emptyAttributesForCategory, normalizePartRelationship } from "../../domain/library.js";
 import { hashDesignSnapshot } from "../../domain/snapshot-hash.js";
 import type { TablePreferencesRecord } from "../../domain/table-preferences.js";
+import { ADMIN_SECTION_KEYS, resolveUiCopySettings, type AdminSectionTitles, type UiCopySettings, type UiCopySettingsUpdate } from "../../domain/ui-settings.js";
 import type { Store } from "./store.js";
 
 const PART_COLUMNS = `id, category, family, part_number, description, is_active, stock_status, import_batch_id,
@@ -65,17 +66,6 @@ const EMPTY_SNAPSHOT: DesignSnapshot = {
   pinMappings: [],
   bundles: [],
   annotations: []
-};
-
-type UiCopySettings = {
-  projectsHeaderDescription: string;
-  harnessHeaderDescription: string;
-};
-
-const DEFAULT_UI_COPY_SETTINGS: UiCopySettings = {
-  projectsHeaderDescription: "Projects are collections of cable designs. They can be used to keep cable designs separate.",
-  harnessHeaderDescription:
-    "Drag connectors to define a visual harness shape. Connector positions are carried forward in Details. Use node handles to drag-connect paths directly on canvas, including connector-to-junction topology."
 };
 
 type ProjectRow = {
@@ -1433,43 +1423,41 @@ export class PostgresStore implements Store {
     }
   }
 
-  async getUiCopySettings(): Promise<{ projectsHeaderDescription: string; harnessHeaderDescription: string }> {
+  async getUiCopySettings(): Promise<UiCopySettings> {
     const result = await this.pool.query<{ key: string; value: string }>(
       `SELECT key, value
        FROM app_settings
        WHERE key = ANY($1::text[])`,
-      [["ui.projectsHeaderDescription", "ui.harnessHeaderDescription"]]
+      [["ui.projectsHeaderDescription", "ui.harnessHeaderDescription", ...ADMIN_SECTION_KEYS.map(key => `ui.adminSectionTitles.${key}`)]]
     );
     const byKey = new Map(result.rows.map((row) => [row.key, row.value]));
-    return {
-      projectsHeaderDescription:
-        byKey.get("ui.projectsHeaderDescription") ?? DEFAULT_UI_COPY_SETTINGS.projectsHeaderDescription,
-      harnessHeaderDescription:
-        byKey.get("ui.harnessHeaderDescription") ?? DEFAULT_UI_COPY_SETTINGS.harnessHeaderDescription
-    };
+    return resolveUiCopySettings({
+      projectsHeaderDescription: byKey.get("ui.projectsHeaderDescription"),
+      harnessHeaderDescription: byKey.get("ui.harnessHeaderDescription"),
+      adminSectionTitles: Object.fromEntries(ADMIN_SECTION_KEYS.map(key => [
+        key, byKey.get(`ui.adminSectionTitles.${key}`)
+      ])) as Partial<AdminSectionTitles>
+    });
   }
 
-  async updateUiCopySettings(input: {
-    projectsHeaderDescription?: string;
-    harnessHeaderDescription?: string;
-  }): Promise<{ projectsHeaderDescription: string; harnessHeaderDescription: string }> {
-    const current = await this.getUiCopySettings();
-    const next = {
-      projectsHeaderDescription:
-        input.projectsHeaderDescription?.trim() || current.projectsHeaderDescription,
-      harnessHeaderDescription:
-        input.harnessHeaderDescription?.trim() || current.harnessHeaderDescription
-    };
-    await this.pool.query(
+  async updateUiCopySettings(input: UiCopySettingsUpdate): Promise<UiCopySettings> {
+    const entries: Array<[string, string]> = [];
+    for (const key of ["projectsHeaderDescription", "harnessHeaderDescription"] as const) {
+      const value = input[key]?.trim();
+      if (value) entries.push([`ui.${key}`, value]);
+    }
+    for (const key of ADMIN_SECTION_KEYS) {
+      const value = input.adminSectionTitles?.[key]?.trim();
+      if (value) entries.push([`ui.adminSectionTitles.${key}`, value]);
+    }
+    if (entries.length) await this.pool.query(
       `INSERT INTO app_settings (key, value, updated_at)
-       VALUES
-         ('ui.projectsHeaderDescription', $1, NOW()),
-         ('ui.harnessHeaderDescription', $2, NOW())
+       SELECT key, value, NOW() FROM unnest($1::text[], $2::text[]) AS settings(key, value)
        ON CONFLICT (key)
        DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
-      [next.projectsHeaderDescription, next.harnessHeaderDescription]
+      [entries.map(([key]) => key), entries.map(([, value]) => value)]
     );
-    return next;
+    return this.getUiCopySettings();
   }
 
   async deleteUserData(userId: string): Promise<void> {

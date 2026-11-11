@@ -2,6 +2,8 @@
 
 The catalog has three sections in one database: Items, Compatibility, and Images and Files. Automatic label selection is deferred; no selection-rule engine or inferred manufacturer approvals are introduced.
 
+The admin console uses the full page width. Its Database section groups Item Database Viewer, Compatibility & Aliases, and Images and Files in three equal tabs across the top. The selected tab is retained in the `databaseTab` URL parameter, and switching tabs keeps unsaved form entries. Use **Edit section names** in the console header to rename the three major sections and the three database tabs. Names are shared across admins, saved in the existing `app_settings` records (`ui.adminSectionTitles.*`), and default when absent. No additional database migration is required. The existing page-description API accepts partial `adminSectionTitles` updates; only admins can save names, with 1–80 characters per name.
+
 ## Items
 
 `parts` remains the common identity/lifecycle/audit record, with one typed detail record per category. Existing categories and IDs are retained. A category is immutable for an existing ID; create a new identity when introducing a different kind of part. Part numbers are text, including leading zeros. Add more items through the existing editors/imports. Adding a new category involves its detail table, domain/API schema and editor metadata; compatibility and media continue referencing the common part ID.

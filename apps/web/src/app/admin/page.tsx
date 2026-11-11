@@ -4,6 +4,9 @@ import { revalidatePath } from "next/cache";
 import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
 import {
   LIBRARY_ITEM_CATEGORIES,
+  ADMIN_SECTION_KEYS,
+  DEFAULT_ADMIN_SECTION_TITLES,
+  type AdminSectionTitles,
   type CompatStatus,
   type LibraryItemCategory,
   deleteAdminUser,
@@ -42,6 +45,8 @@ import { collectAttributesFromFormData } from "@/lib/part-fields";
 import { CompatibilityManager } from "./compatibility-manager";
 import { MediaManager } from "./media-manager";
 import { ItemDatabaseViewer } from "./item-database-viewer";
+import { DatabaseSections } from "./database-sections";
+import { SectionNameEditor } from "./section-name-editor";
 import styles from "./page.module.css";
 
 const COMPAT_STATUSES: CompatStatus[] = ["allowed", "forbidden", "review"];
@@ -211,6 +216,7 @@ async function createItemAction(formData: FormData) {
 
 async function updatePageDescriptionsAction(formData: FormData) {
   "use server";
+  await requireAdminUser();
   const projectsHeaderDescription = String(formData.get("projectsHeaderDescription") ?? "").trim();
   const harnessHeaderDescription = String(formData.get("harnessHeaderDescription") ?? "").trim();
   if (!projectsHeaderDescription || !harnessHeaderDescription) {
@@ -222,6 +228,15 @@ async function updatePageDescriptionsAction(formData: FormData) {
   });
   revalidatePath("/admin");
   revalidatePath("/");
+}
+
+async function updateSectionNamesAction(formData: FormData) {
+  "use server";
+  await requireAdminUser();
+  const adminSectionTitles = Object.fromEntries(ADMIN_SECTION_KEYS.map(key => [key, requireFormField(formData, key)])) as AdminSectionTitles;
+  if (Object.values(adminSectionTitles).some(title => title.length > 80)) throw new Error("Section names must be 1–80 characters.");
+  await updateAdminPageDescriptions({ adminSectionTitles });
+  revalidatePath("/admin");
 }
 
 async function deleteUserAction(formData: FormData) {
@@ -426,6 +441,7 @@ export default async function AdminOverviewPage({ searchParams }: { searchParams
     ]);
 
   const catalogItems = unfilteredItems ?? items;
+  const sectionTitles = { ...DEFAULT_ADMIN_SECTION_TITLES, ...pageDescriptions.adminSectionTitles };
 
   const projectsByUserId = new Map<
     string,
@@ -476,12 +492,13 @@ export default async function AdminOverviewPage({ searchParams }: { searchParams
               Datastore queue
             </Link>
           </div>
+          <SectionNameEditor titles={sectionTitles} saveAction={updateSectionNamesAction} />
         </PageHeader>
 
         <section className={`${styles.card} ${styles.sectionPanel}`}>
           <details>
             <summary className={styles.sectionSummary}>
-              <span className={styles.sectionTitle}>Section 0: Global Page Descriptions</span>
+              <span className={styles.sectionTitle}>{sectionTitles.pageDescriptions}</span>
               <span className={styles.sectionHint}>admin editable copy - expand panel</span>
             </summary>
             <div className={styles.sectionContent}>
@@ -513,7 +530,7 @@ export default async function AdminOverviewPage({ searchParams }: { searchParams
         <section className={`${styles.card} ${styles.sectionPanel}`}>
           <details>
             <summary className={styles.sectionSummary}>
-              <span className={styles.sectionTitle}>Section 1: Users, Projects, and Canvas Access</span>
+              <span className={styles.sectionTitle}>{sectionTitles.userAccess}</span>
               <span className={styles.sectionHint}>{users.length} users - expand panel</span>
             </summary>
             <div className={styles.sectionContent}>
@@ -584,70 +601,62 @@ export default async function AdminOverviewPage({ searchParams }: { searchParams
           </details>
         </section>
 
-        <section className={`${styles.card} ${styles.sectionPanel}`}>
-          <details>
+        <section id="database" className={`${styles.card} ${styles.sectionPanel}`}>
+          <details open>
             <summary className={styles.sectionSummary}>
-              <span className={styles.sectionTitle}>Items — Item Database Viewer</span>
-              <span className={styles.sectionHint}>{items.length} items - expand panel</span>
+              <span className={styles.sectionTitle}>{sectionTitles.database}</span>
+              <span className={styles.sectionHint}>{catalogItems.length} items · {relationships.length} compatibility groups · {media.length} files</span>
             </summary>
-            <ItemDatabaseViewer
-              items={items}
-              relationships={relationships}
-              media={media}
-              visibleCategories={visibleCategories}
-              categoryLabel={categoryLabel}
-              q={q}
-              category={category}
-              family={family}
-              awg={awg}
-              color={color}
-              createAction={createItemAction}
-              editAction={editItemAction}
-              deleteAction={deleteItemAction}
-              currentUserId={signedInUser.id}
+            <DatabaseSections
+              titles={sectionTitles}
+              counts={{ items: items.length, compatibility: relationships.length + aliases.length, media: media.length }}
+              items={
+                <ItemDatabaseViewer
+                  items={items}
+                  relationships={relationships}
+                  media={media}
+                  visibleCategories={visibleCategories}
+                  categoryLabel={categoryLabel}
+                  q={q}
+                  category={category}
+                  family={family}
+                  awg={awg}
+                  color={color}
+                  createAction={createItemAction}
+                  editAction={editItemAction}
+                  deleteAction={deleteItemAction}
+                  currentUserId={signedInUser.id}
+                />
+              }
+              compatibility={
+                <CompatibilityManager
+                  items={catalogItems}
+                  contactWire={contactWire}
+                  moduleContact={moduleContact}
+                  moduleBackshell={moduleBackshell}
+                  moduleStrainRelief={moduleStrainRelief}
+                  aliases={aliases}
+                  relationships={relationships}
+                  upsertContactWireAction={upsertContactWireAction}
+                  deleteContactWireAction={deleteContactWireAction}
+                  upsertModuleContactAction={upsertModuleContactAction}
+                  deleteModuleContactAction={deleteModuleContactAction}
+                  upsertModuleBackshellAction={upsertModuleBackshellAction}
+                  deleteModuleBackshellAction={deleteModuleBackshellAction}
+                  upsertModuleStrainReliefAction={upsertModuleStrainReliefAction}
+                  deleteModuleStrainReliefAction={deleteModuleStrainReliefAction}
+                  upsertAliasAction={upsertAliasAction}
+                  deleteAliasAction={deleteAliasAction}
+                  upsertRelationshipAction={upsertRelationshipAction}
+                  deleteRelationshipAction={deleteRelationshipAction}
+                />
+              }
+              media={
+                <div id="catalog-media">
+                  <MediaManager items={catalogItems} media={media} upsertAction={upsertMediaAction} deleteAction={deleteMediaAction} />
+                </div>
+              }
             />
-          </details>
-        </section>
-
-        <section className={`${styles.card} ${styles.sectionPanel}`}>
-          <details>
-            <summary className={styles.sectionSummary}>
-              <span className={styles.sectionTitle}>Compatibility &amp; Aliases</span>
-              <span className={styles.sectionHint}>
-                {relationships.length + aliases.length}{" "}
-                rows - expand panel
-              </span>
-            </summary>
-            <CompatibilityManager
-              items={catalogItems}
-              contactWire={contactWire}
-              moduleContact={moduleContact}
-              moduleBackshell={moduleBackshell}
-              moduleStrainRelief={moduleStrainRelief}
-              aliases={aliases}
-              relationships={relationships}
-              upsertContactWireAction={upsertContactWireAction}
-              deleteContactWireAction={deleteContactWireAction}
-              upsertModuleContactAction={upsertModuleContactAction}
-              deleteModuleContactAction={deleteModuleContactAction}
-              upsertModuleBackshellAction={upsertModuleBackshellAction}
-              deleteModuleBackshellAction={deleteModuleBackshellAction}
-              upsertModuleStrainReliefAction={upsertModuleStrainReliefAction}
-              deleteModuleStrainReliefAction={deleteModuleStrainReliefAction}
-              upsertAliasAction={upsertAliasAction}
-              deleteAliasAction={deleteAliasAction}
-              upsertRelationshipAction={upsertRelationshipAction}
-              deleteRelationshipAction={deleteRelationshipAction}
-            />
-          </details>
-        </section>
-        <section id="catalog-media" className={`${styles.card} ${styles.sectionPanel}`}>
-          <details>
-            <summary className={styles.sectionSummary}>
-              <span className={styles.sectionTitle}>Images and Files</span>
-              <span className={styles.sectionHint}>{media.length} files - expand panel</span>
-            </summary>
-            <MediaManager items={catalogItems} media={media} upsertAction={upsertMediaAction} deleteAction={deleteMediaAction} />
           </details>
         </section>
       </main>

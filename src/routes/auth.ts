@@ -23,7 +23,15 @@ const loginPayloadSchema = z.object({
 
 const updatePageDescriptionsPayloadSchema = z.object({
   projectsHeaderDescription: z.string().trim().min(1).max(600).optional(),
-  harnessHeaderDescription: z.string().trim().min(1).max(600).optional()
+  harnessHeaderDescription: z.string().trim().min(1).max(600).optional(),
+  adminSectionTitles: z.object({
+    pageDescriptions: z.string().trim().min(1).max(80).optional(),
+    userAccess: z.string().trim().min(1).max(80).optional(),
+    database: z.string().trim().min(1).max(80).optional(),
+    items: z.string().trim().min(1).max(80).optional(),
+    compatibility: z.string().trim().min(1).max(80).optional(),
+    media: z.string().trim().min(1).max(80).optional()
+  }).strict().optional()
 });
 
 function allowLegacyHeaderAuth(): boolean {
@@ -175,13 +183,16 @@ export function registerAuthRoutes(app: FastifyInstance) {
     if (!requireAdmin(request, reply).ok) {
       return;
     }
-    const body = updatePageDescriptionsPayloadSchema.parse(request.body);
-    if (!body.projectsHeaderDescription && !body.harnessHeaderDescription) {
-      return reply.badRequest("At least one description is required.");
+    const parsed = updatePageDescriptionsPayloadSchema.safeParse(request.body);
+    if (!parsed.success) return reply.badRequest("Descriptions must be 1–600 characters and section names 1–80 characters.");
+    const body = parsed.data;
+    if (!body.projectsHeaderDescription && !body.harnessHeaderDescription && !Object.keys(body.adminSectionTitles ?? {}).length) {
+      return reply.badRequest("At least one description or section name is required.");
     }
     return await app.store.updateUiCopySettings({
       projectsHeaderDescription: body.projectsHeaderDescription,
-      harnessHeaderDescription: body.harnessHeaderDescription
+      harnessHeaderDescription: body.harnessHeaderDescription,
+      adminSectionTitles: body.adminSectionTitles
     });
   });
 

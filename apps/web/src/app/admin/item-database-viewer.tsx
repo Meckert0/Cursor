@@ -1007,7 +1007,7 @@ function EditItemModal({
         <details className={styles.sectionContent}><summary>Compatibility and images</summary>
           <ul>{relationships.filter(row => row.parentPartId === item.id || row.targetPartIds?.includes(item.id)).map(row => <li key={row.id}>{row.relationshipType} · {row.compatibleParts.join(", ")} · {row.parentPositions.length ? row.parentPositions.join(", ") : "all positions"} · {row.status}</li>)}</ul>
           <ul>{media.filter(file => file.partId === item.id).map(file => <li key={file.id}><a href={file.url} target="_blank" rel="noreferrer">{file.caption ?? file.viewType}</a>{file.orientation ? ` · ${file.orientation}` : ""}</li>)}</ul>
-          <p>Manage relationships in Compatibility &amp; Aliases and views in Images and Files.</p>
+          <p>Manage relationships and images in their database tabs.</p>
         </details>
       </div>
     </div>

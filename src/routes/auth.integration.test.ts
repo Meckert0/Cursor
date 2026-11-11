@@ -404,6 +404,29 @@ test("admin can update page descriptions and non-admin cannot", async () => {
     };
     assert.equal(payload.projectsHeaderDescription, "Admin managed projects copy.");
     assert.equal(payload.harnessHeaderDescription, "Admin managed harness copy.");
+
+    const rename = await app.inject({
+      method: "PUT", url: "/v1/admin/ui/page-descriptions", headers: { cookie: admin.cookie },
+      payload: { adminSectionTitles: { database: "  Parts catalog  ", media: "Drawings" } }
+    });
+    assert.equal(rename.statusCode, 200);
+    assert.equal(rename.json().adminSectionTitles.database, "Parts catalog");
+    assert.equal(rename.json().adminSectionTitles.media, "Drawings");
+    assert.equal(rename.json().adminSectionTitles.items, "Item Database Viewer");
+    assert.equal(rename.json().projectsHeaderDescription, payload.projectsHeaderDescription);
+    assert.equal((await app.inject({
+      method: "PUT", url: "/v1/admin/ui/page-descriptions", headers: { cookie: regular.cookie },
+      payload: { adminSectionTitles: { database: "Blocked rename" } }
+    })).statusCode, 403);
+    for (const invalidTitles of [{ database: "   " }, { database: "x".repeat(81) }, { unknownSection: "No" }]) {
+      assert.equal((await app.inject({
+        method: "PUT", url: "/v1/admin/ui/page-descriptions", headers: { cookie: admin.cookie },
+        payload: { projectsHeaderDescription: "Must not be saved", adminSectionTitles: invalidTitles }
+      })).statusCode, 400);
+    }
+    const finalRead = await app.inject({ method: "GET", url: "/v1/ui/page-descriptions", headers: { cookie: regular.cookie } });
+    assert.equal(finalRead.json().adminSectionTitles.database, "Parts catalog");
+    assert.equal(finalRead.json().projectsHeaderDescription, payload.projectsHeaderDescription);
   } finally {
     await app.close();
   }

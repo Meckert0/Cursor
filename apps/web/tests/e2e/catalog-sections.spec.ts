@@ -15,7 +15,7 @@ test("catalog sections save label allowances, scoped compatibility, and oriented
   ]);
   await registerAndSignIn(page, { username: `catalog-admin-${token}`, email: "meckert@vpc.com" });
   await page.goto("/admin?category=label");
-  await page.locator("summary", { hasText: "Item Database Viewer" }).click();
+  await expect(page.getByRole("tab", { name: "Item Database Viewer", exact: true })).toHaveAttribute("aria-selected", "true");
   const row = page.getByRole("row").filter({ has: page.getByRole("cell", { name: labelPn, exact: true }) });
   await row.getByRole("button", { name: "Edit", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: `Edit ${labelPn}`, exact: true });
@@ -29,7 +29,7 @@ test("catalog sections save label allowances, scoped compatibility, and oriented
   const savedLabel = await apiAsPageUser(page, `/v1/library/components/${labelId}`);
   expect((await savedLabel.json()).attributes).toMatchObject({ fitDiameterMinIn: 0.04, fitDiameterMaxIn: 0.12, maxCharactersPerLine: 18, maxLines: 2, printProfile: "Mono 8 pt" });
 
-  await page.locator("summary", { hasText: "Compatibility & Aliases" }).click();
+  await page.getByRole("tab", { name: "Compatibility & Aliases", exact: true }).click();
   const groupForm = page.locator("form").filter({ has: page.getByRole("combobox", { name: "Relationship type", exact: true }) });
   await groupForm.getByRole("combobox", { name: "Parent part", exact: true }).selectOption(frameId);
   await groupForm.getByLabel("Compatible parts", { exact: true }).fill(modulePn);
@@ -44,7 +44,7 @@ test("catalog sections save label allowances, scoped compatibility, and oriented
 
   const imageUrl = "https://catalog.example.test/mating.png";
   await page.route(imageUrl, route => route.fulfill({ contentType: "image/png", body: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jZ9kAAAAASUVORK5CYII=", "base64") }));
-  await page.locator("summary", { hasText: "Images and Files" }).click();
+  await page.getByRole("tab", { name: "Images and Files", exact: true }).click();
   const mediaSection = page.locator("#catalog-media");
   await mediaSection.getByRole("combobox", { name: "Filter by item", exact: true }).selectOption(moduleId);
   await mediaSection.getByRole("combobox", { name: "View", exact: true }).fill("mating_face");
@@ -56,7 +56,7 @@ test("catalog sections save label allowances, scoped compatibility, and oriented
   await mediaSection.getByRole("button", { name: "Save image or file", exact: true }).click();
   await expect(mediaSection.getByRole("img", { name: "Catalog test mating face" })).toBeVisible();
   await page.reload();
-  await page.locator("summary", { hasText: "Images and Files" }).click();
+  await expect(page.getByRole("tab", { name: "Images and Files", exact: true })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("img", { name: "Catalog test mating face" })).toBeVisible();
   await expect(page.getByRole("img", { name: "Catalog test mating face" })).toHaveJSProperty("naturalWidth", 1);
   await page.screenshot({ path: testInfo.outputPath("catalog-admin.png"), fullPage: true });

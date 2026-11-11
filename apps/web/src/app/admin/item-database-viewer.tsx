@@ -54,11 +54,6 @@ interface ItemDatabaseViewerProps {
   items: LibraryComponentDto[];
   visibleCategories: readonly Category[];
   categoryLabel: Record<Category, string>;
-  q?: string;
-  category?: Category;
-  family?: string;
-  awg?: string;
-  color?: string;
   createAction: (formData: FormData) => void | Promise<void>;
   editAction: (formData: FormData) => void | Promise<void>;
   deleteAction: (formData: FormData) => void | Promise<void>;
@@ -1437,11 +1432,6 @@ export function ItemDatabaseViewer({
   items,
   visibleCategories,
   categoryLabel,
-  q,
-  category,
-  family,
-  awg,
-  color,
   createAction,
   editAction,
   deleteAction,
@@ -1468,37 +1458,6 @@ export function ItemDatabaseViewer({
 
   return (
     <div className={styles.sectionContent}>
-      <form className={styles.filters} method="GET">
-        <label>
-          Search
-          <input name="q" type="text" defaultValue={q ?? ""} placeholder="part number, family, description" />
-        </label>
-        <label>
-          Category
-          <select name="category" defaultValue={category ?? ""}>
-            <option value="">All</option>
-            {LIBRARY_ITEM_CATEGORIES.map((optionCategory) => (
-              <option key={optionCategory} value={optionCategory}>
-                {categoryLabel[optionCategory]}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Family
-          <input name="family" type="text" defaultValue={family ?? ""} placeholder="e.g. Micro-D" />
-        </label>
-        <label>
-          AWG
-          <input name="awg" type="text" defaultValue={awg ?? ""} placeholder="e.g. 22" />
-        </label>
-        <label>
-          Color
-          <input name="color" type="text" defaultValue={color ?? ""} placeholder="e.g. white" />
-        </label>
-        <button type="submit">Apply filters</button>
-      </form>
-
       {items.length === 0 ? <p>No items found for current filters.</p> : null}
       <div className={styles.categorySections}>
         {visibleCategories.map((currentCategory) => {

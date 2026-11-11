@@ -18,17 +18,16 @@ function SaveMediaButton() {
   return <button type="submit" disabled={pending}>{pending ? "Saving…" : "Save image or file"}</button>;
 }
 
-export function MediaManager({ items, media, upsertAction, deleteAction }: {
+export function MediaManager({ items, media, defaultPartId, upsertAction, deleteAction }: {
   items: PartDto[];
   media: PartMediaDto[];
+  defaultPartId?: string;
   upsertAction: (data: FormData) => void | Promise<void>;
   deleteAction: (data: FormData) => void | Promise<void>;
 }) {
-  const [partFilter, setPartFilter] = useState("");
   const [editing, setEditing] = useState<PartMediaDto | null>(null);
   const [error, setError] = useState<string | null>(null);
   const parts = useMemo(() => new Map(items.map(item => [item.id, item])), [items]);
-  const visible = media.filter(row => !partFilter || row.partId === partFilter);
 
   async function save(data: FormData) {
     setError(null);
@@ -38,16 +37,10 @@ export function MediaManager({ items, media, upsertAction, deleteAction }: {
 
   return <div className={styles.sectionContent}>
     <p>Add hosted images and documents to an item. Side profiles and mating faces can each have several views and a primary image.</p>
-    <label>Filter by item
-      <select value={partFilter} onChange={event => setPartFilter(event.target.value)}>
-        <option value="">All items</option>
-        {items.map(part => <option key={part.id} value={part.id}>{part.partNumber} · {part.category}</option>)}
-      </select>
-    </label>
-    <form key={editing?.id ?? `new-${partFilter}`} action={save} className={styles.compatAddForm}>
+    <form key={editing?.id ?? `new-${defaultPartId ?? ""}`} action={save} className={styles.compatAddForm}>
       {editing ? <input type="hidden" name="id" value={editing.id} /> : null}
       <label>Item
-        <select name="partId" required defaultValue={editing?.partId ?? partFilter}>
+        <select name="partId" required defaultValue={editing?.partId ?? defaultPartId ?? ""}>
           <option value="" disabled>Select an item…</option>
           {items.map(part => <option key={part.id} value={part.id}>{part.partNumber} · {part.category}</option>)}
         </select>
@@ -69,7 +62,7 @@ export function MediaManager({ items, media, upsertAction, deleteAction }: {
     </form>
     <div className={styles.tableWrap}><table className={styles.table}>
       <thead><tr><th>Preview</th><th>Item</th><th>View and direction</th><th>Reference</th><th>Actions</th></tr></thead>
-      <tbody>{visible.length ? visible.map(row => <tr key={row.id}>
+      <tbody>{media.length ? media.map(row => <tr key={row.id}>
         <td>{row.mimeType?.startsWith("image/") || /\.(png|jpe?g|webp)(?:\?|$)/i.test(row.url)
           ? <Image unoptimized src={row.url} alt={row.altText ?? row.caption ?? `${row.viewType} of ${parts.get(row.partId)?.partNumber ?? row.partId}`} width={140} height={95} style={{ objectFit: "contain" }} />
           : <a href={row.url} target="_blank" rel="noreferrer">Open file</a>}</td>
@@ -82,7 +75,7 @@ export function MediaManager({ items, media, upsertAction, deleteAction }: {
             <ConfirmSubmitButton type="submit" confirmMessage="Remove this image or file from the item?">Remove</ConfirmSubmitButton>
           </form>
         </td>
-      </tr>) : <tr><td colSpan={5}>No images or files linked yet.</td></tr>}</tbody>
+      </tr>) : <tr><td colSpan={5}>No images or files found.</td></tr>}</tbody>
     </table></div>
   </div>;
 }

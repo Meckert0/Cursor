@@ -14,7 +14,7 @@ test("catalog sections save label allowances, scoped compatibility, and oriented
     { id: labelId, category: "label", family: "Catalog test", partNumber: labelPn, description: "Label", isActive: true, stockStatus: "in_stock", attributes: { diaIn: 0.25 } }
   ]);
   await registerAndSignIn(page, { username: `catalog-admin-${token}`, email: "meckert@vpc.com" });
-  await page.goto("/admin?category=label");
+  await page.goto("/admin");
   await expect(page.getByRole("tab", { name: "Item Database Viewer", exact: true })).toHaveAttribute("aria-selected", "true");
   const row = page.getByRole("row").filter({ has: page.getByRole("cell", { name: labelPn, exact: true }) });
   await row.getByRole("button", { name: "Edit", exact: true }).click();
@@ -46,7 +46,7 @@ test("catalog sections save label allowances, scoped compatibility, and oriented
   await page.route(imageUrl, route => route.fulfill({ contentType: "image/png", body: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jZ9kAAAAASUVORK5CYII=", "base64") }));
   await page.getByRole("tab", { name: "Images and Files", exact: true }).click();
   const mediaSection = page.locator("#catalog-media");
-  await mediaSection.getByRole("combobox", { name: "Filter by item", exact: true }).selectOption(moduleId);
+  await mediaSection.getByRole("combobox", { name: "Item", exact: true }).selectOption(moduleId);
   await mediaSection.getByRole("combobox", { name: "View", exact: true }).fill("mating_face");
   await mediaSection.getByLabel("Hosted file URL", { exact: true }).fill(imageUrl);
   await mediaSection.getByLabel("View direction (e.g. looking into mating face)", { exact: true }).fill("looking_into_mating_face");

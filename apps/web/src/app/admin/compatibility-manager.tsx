@@ -157,7 +157,7 @@ function CompatPairTable({
         <tbody>
           {rows.length === 0 ? (
             <tr>
-              <td colSpan={4}>No pairs yet.</td>
+              <td colSpan={4}>No matching pairs found.</td>
             </tr>
           ) : (
             rows.map((row) => (
@@ -416,7 +416,7 @@ export function CompatibilityManager(props: CompatibilityManagerProps) {
               <tbody>
                 {props.relationships.length === 0 ? (
                   <tr>
-                    <td colSpan={6}>No compatibility groups yet.</td>
+                    <td colSpan={6}>No compatibility groups found.</td>
                   </tr>
                 ) : (
                   props.relationships.map((row) => (
@@ -501,7 +501,7 @@ export function CompatibilityManager(props: CompatibilityManagerProps) {
               <tbody>
                 {props.aliases.length === 0 ? (
                   <tr>
-                    <td colSpan={4}>No aliases yet.</td>
+                    <td colSpan={4}>No aliases found.</td>
                   </tr>
                 ) : (
                   props.aliases.map((alias) => (

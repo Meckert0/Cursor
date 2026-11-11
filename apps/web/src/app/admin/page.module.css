@@ -119,6 +119,30 @@
   overflow-x: auto;
 }
 
+.filters.databaseSearch {
+  grid-template-columns: minmax(0, 3fr) minmax(160px, 1fr) auto auto;
+  padding: 16px 20px;
+  margin-bottom: 0;
+  border-bottom: 1px solid #e8e8ef;
+}
+
+.databaseSearch label,
+.databaseSearch input,
+.databaseSearch select {
+  min-width: 0;
+  width: 100%;
+}
+
+@media (max-width: 640px) {
+  .filters.databaseSearch {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .databaseSearch label {
+    grid-column: 1 / -1;
+  }
+}
+
 .databaseTabs {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

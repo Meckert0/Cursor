@@ -47,6 +47,7 @@ import { MediaManager } from "./media-manager";
 import { ItemDatabaseViewer } from "./item-database-viewer";
 import { DatabaseSections } from "./database-sections";
 import { SectionNameEditor } from "./section-name-editor";
+import { databaseFamilies, searchDatabase } from "./database-search";
 import styles from "./page.module.css";
 
 const COMPAT_STATUSES: CompatStatus[] = ["allowed", "forbidden", "review"];
@@ -68,10 +69,7 @@ function requireFormField(formData: FormData, key: string): string {
 
 type AdminPageSearchParams = Promise<{
   q?: string;
-  category?: LibraryItemCategory;
   family?: string;
-  awg?: string;
-  color?: string;
 }>;
 
 function parseOptionalDateTime(raw: string): string | undefined {
@@ -417,18 +415,14 @@ async function deleteMediaAction(formData: FormData) {
 
 export default async function AdminOverviewPage({ searchParams }: { searchParams: AdminPageSearchParams }) {
   const signedInUser = await requireAdminUser();
-  const { q, category, family, awg, color } = await searchParams;
-  const [users, projects, items, pageDescriptions, contactWire, moduleContact, moduleBackshell, moduleStrainRelief, aliases, relationships, media, unfilteredItems] =
+  const search = await searchParams;
+  const q = typeof search.q === "string" ? search.q.trim() : undefined;
+  const family = typeof search.family === "string" ? search.family.trim() : undefined;
+  const [users, projects, catalogItems, pageDescriptions, contactWire, moduleContact, moduleBackshell, moduleStrainRelief, aliases, relationships, media] =
     await Promise.all([
       listAdminUsers(),
       listAdminProjectOverview(),
-      listLibraryComponents({
-        q,
-        category,
-        family,
-        awg,
-        color
-      }),
+      listLibraryComponents(),
       getPageDescriptions(),
       listContactWireCompat(),
       listModuleContactCompat(),
@@ -436,11 +430,12 @@ export default async function AdminOverviewPage({ searchParams }: { searchParams
       listModuleStrainReliefCompat(),
       listPartAliases(),
       listPartRelationships(),
-      listPartMedia(),
-      q || category || family || awg || color ? listLibraryComponents() : Promise.resolve(null)
+      listPartMedia()
     ]);
 
-  const catalogItems = unfilteredItems ?? items;
+  const results = searchDatabase({
+    items: catalogItems, relationships, aliases, contactWire, moduleContact, moduleBackshell, moduleStrainRelief, media
+  }, { q, family });
   const sectionTitles = { ...DEFAULT_ADMIN_SECTION_TITLES, ...pageDescriptions.adminSectionTitles };
 
   const projectsByUserId = new Map<
@@ -473,7 +468,7 @@ export default async function AdminOverviewPage({ searchParams }: { searchParams
     splice: "Splice",
     frame: "Frame"
   };
-  const visibleCategories = category ? [category] : categoryOrder;
+  const visibleCategories = q || family ? categoryOrder.filter(category => results.items.some(item => item.category === category)) : categoryOrder;
 
   return (
     <div className={styles.page}>
@@ -609,19 +604,17 @@ export default async function AdminOverviewPage({ searchParams }: { searchParams
             </summary>
             <DatabaseSections
               titles={sectionTitles}
-              counts={{ items: items.length, compatibility: relationships.length + aliases.length, media: media.length }}
+              counts={{ items: results.items.length, compatibility: results.relationships.length + results.aliases.length, media: results.media.length }}
+              q={q}
+              family={family}
+              families={databaseFamilies(catalogItems)}
               items={
                 <ItemDatabaseViewer
-                  items={items}
+                  items={results.items}
                   relationships={relationships}
                   media={media}
                   visibleCategories={visibleCategories}
                   categoryLabel={categoryLabel}
-                  q={q}
-                  category={category}
-                  family={family}
-                  awg={awg}
-                  color={color}
                   createAction={createItemAction}
                   editAction={editItemAction}
                   deleteAction={deleteItemAction}
@@ -631,12 +624,12 @@ export default async function AdminOverviewPage({ searchParams }: { searchParams
               compatibility={
                 <CompatibilityManager
                   items={catalogItems}
-                  contactWire={contactWire}
-                  moduleContact={moduleContact}
-                  moduleBackshell={moduleBackshell}
-                  moduleStrainRelief={moduleStrainRelief}
-                  aliases={aliases}
-                  relationships={relationships}
+                  contactWire={results.contactWire}
+                  moduleContact={results.moduleContact}
+                  moduleBackshell={results.moduleBackshell}
+                  moduleStrainRelief={results.moduleStrainRelief}
+                  aliases={results.aliases}
+                  relationships={results.relationships}
                   upsertContactWireAction={upsertContactWireAction}
                   deleteContactWireAction={deleteContactWireAction}
                   upsertModuleContactAction={upsertModuleContactAction}
@@ -653,7 +646,7 @@ export default async function AdminOverviewPage({ searchParams }: { searchParams
               }
               media={
                 <div id="catalog-media">
-                  <MediaManager items={catalogItems} media={media} upsertAction={upsertMediaAction} deleteAction={deleteMediaAction} />
+                  <MediaManager items={catalogItems} media={results.media} defaultPartId={results.items.length === 1 ? results.items[0].id : undefined} upsertAction={upsertMediaAction} deleteAction={deleteMediaAction} />
                 </div>
               }
             />

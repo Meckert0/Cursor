@@ -8,9 +8,12 @@ import styles from "./page.module.css";
 const TABS = ["items", "compatibility", "media"] as const;
 type DatabaseTab = typeof TABS[number];
 
-export function DatabaseSections({ titles, counts, items, compatibility, media }: {
+export function DatabaseSections({ titles, counts, q, family, families, items, compatibility, media }: {
   titles: AdminSectionTitles;
   counts: Record<DatabaseTab, number>;
+  q?: string;
+  family?: string;
+  families: string[];
   items: ReactNode;
   compatibility: ReactNode;
   media: ReactNode;
@@ -19,6 +22,7 @@ export function DatabaseSections({ titles, counts, items, compatibility, media }
   const requested = searchParams.get("databaseTab");
   const activeTab = TABS.find(tab => tab === requested) ?? "items";
   const panels = { items, compatibility, media };
+  const selectedFamily = family?.toLowerCase() ?? "";
 
   function select(tab: DatabaseTab) {
     const url = new URL(window.location.href);
@@ -40,6 +44,24 @@ export function DatabaseSections({ titles, counts, items, compatibility, media }
 
   return (
     <div className={styles.databaseSections}>
+      <form key={`${q ?? ""}:${selectedFamily}`} role="search" aria-label="Database search" method="GET" action="/admin" className={`${styles.filters} ${styles.databaseSearch}`}>
+        <input type="hidden" name="databaseTab" value={activeTab} />
+        <label>
+          Search
+          <input name="q" type="search" defaultValue={q ?? ""} placeholder="part number, family, description" />
+        </label>
+        <label>
+          Family
+          <select name="family" defaultValue={selectedFamily}>
+            <option value="">All families</option>
+            {selectedFamily && !families.some(value => value.toLowerCase() === selectedFamily)
+              ? <option value={selectedFamily}>{family}</option> : null}
+            {families.map(value => <option key={value.toLowerCase()} value={value.toLowerCase()}>{value}</option>)}
+          </select>
+        </label>
+        <button type="submit">Search</button>
+        {q || family ? <a href={`/admin?databaseTab=${activeTab}`} className={styles.actionButton}>Clear search</a> : null}
+      </form>
       <div role="tablist" aria-label={titles.database} className={styles.databaseTabs}>
         {TABS.map((tab, index) => (
           <button

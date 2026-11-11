@@ -1,3 +1,7 @@
+import { normalizeWireAttributes, validateCatalogAttributes, CatalogError } from "../../domain/catalog-attributes.js";
+import { listPairs, upsertPair, deletePair, pairRelationship } from "./compatibility-adapters.js";
+import { resolveRelationshipInput, validatePartMedia } from "../../domain/catalog-integrity.js";
+import type { PartMedia, PartMediaInput } from "../../domain/library.js";
 import type {
   AuditEvent,
   Design,
@@ -89,6 +93,7 @@ export interface MemoryStoreState {
   moduleBackshellCompat?: ModuleBackshellCompat[];
   moduleStrainReliefCompat?: ModuleStrainReliefCompat[];
   partRelationships?: PartRelationship[];
+  partMedia?: PartMedia[];
   awgCmaReference?: AwgCmaReference[];
   userTablePreferences: TablePreferencesRecord[];
 }
@@ -109,10 +114,7 @@ export class MemoryStore implements Store {
   private readonly libraryIngestResultsByIdempotencyKey = new Map<string, LibraryIngestResult>();
   private readonly parts = new Map<string, StoredPart>();
   private readonly partAliases = new Map<string, PartAlias>();
-  private readonly contactWireCompat = new Map<string, ContactWireCompat>();
-  private readonly moduleContactCompat = new Map<string, ModuleContactCompat>();
-  private readonly moduleBackshellCompat = new Map<string, ModuleBackshellCompat>();
-  private readonly moduleStrainReliefCompat = new Map<string, ModuleStrainReliefCompat>();
+  private readonly partMedia = new Map<string, PartMedia>();
   private readonly partRelationships = new Map<string, PartRelationship>();
   private readonly awgCmaReference = new Map<string, AwgCmaReference>();
   private readonly userTablePreferences = new Map<string, TablePreferencesRecord>();
@@ -163,11 +165,8 @@ export class MemoryStore implements Store {
       })),
       parts: Array.from(this.parts.values()),
       partAliases: Array.from(this.partAliases.values()),
-      contactWireCompat: Array.from(this.contactWireCompat.values()),
-      moduleContactCompat: Array.from(this.moduleContactCompat.values()),
-      moduleBackshellCompat: Array.from(this.moduleBackshellCompat.values()),
-      moduleStrainReliefCompat: Array.from(this.moduleStrainReliefCompat.values()),
       partRelationships: Array.from(this.partRelationships.values()),
+      partMedia: Array.from(this.partMedia.values()),
       awgCmaReference: Array.from(this.awgCmaReference.values()),
       userTablePreferences: Array.from(this.userTablePreferences.values())
     };
@@ -262,36 +261,49 @@ export class MemoryStore implements Store {
       });
     }
 
+    for (const [id, part] of this.parts) if (part.category === "wire") this.parts.set(id, { ...part, attributes: normalizeWireAttributes(part.attributes) });
+
     this.partAliases.clear();
     for (const alias of state.partAliases ?? []) {
       this.partAliases.set(`${alias.codeSystem}:${alias.code}`, alias);
     }
 
-    this.contactWireCompat.clear();
-    for (const row of state.contactWireCompat ?? []) {
-      this.contactWireCompat.set(`${row.contactPartId}:${row.wirePartId}`, row);
-    }
-
-    this.moduleContactCompat.clear();
-    for (const row of state.moduleContactCompat ?? []) {
-      this.moduleContactCompat.set(`${row.modulePartId}:${row.contactPartId}`, row);
-    }
-
-    this.moduleBackshellCompat.clear();
-    for (const row of state.moduleBackshellCompat ?? []) {
-      this.moduleBackshellCompat.set(`${row.modulePartId}:${row.backshellPartId}`, row);
-    }
-
-    this.moduleStrainReliefCompat.clear();
-    for (const row of state.moduleStrainReliefCompat ?? []) {
-      this.moduleStrainReliefCompat.set(`${row.modulePartId}:${row.strainReliefPartId}`, row);
-    }
-
     this.partRelationships.clear();
+    const parts = Array.from(this.parts.values());
     for (const row of state.partRelationships ?? []) {
-      const normalized = normalizePartRelationship(row);
+      const normalized = resolveRelationshipInput(row, parts, true);
       this.partRelationships.set(partRelationshipNaturalKey(normalized), normalized);
     }
+    for (const pair of state.contactWireCompat ?? []) {
+      const normalized = resolveRelationshipInput(pairRelationship("contact-wire", pair), parts, true);
+      // VPC pairs were aggregates of the scoped source rules, not new evidence.
+      const aggregate = "source" in pair && pair.source === "vpc-catalog" &&
+        [...this.partRelationships.values()].some(row => !row.legacyPairKey && row.parentPartId === normalized.parentPartId && row.relationshipType === normalized.relationshipType && row.targetPartIds?.includes(pair.wirePartId));
+      if (!aggregate) this.partRelationships.set(partRelationshipNaturalKey(normalized), normalized);
+    }
+    for (const pair of state.moduleContactCompat ?? []) {
+      const normalized = resolveRelationshipInput(pairRelationship("module-contact", pair), parts, true);
+      // VPC pairs were aggregates of the scoped source rules, not new evidence.
+      const aggregate = "source" in pair && pair.source === "vpc-catalog" &&
+        [...this.partRelationships.values()].some(row => !row.legacyPairKey && row.parentPartId === normalized.parentPartId && row.relationshipType === normalized.relationshipType && row.targetPartIds?.includes(pair.contactPartId));
+      if (!aggregate) this.partRelationships.set(partRelationshipNaturalKey(normalized), normalized);
+    }
+    for (const pair of state.moduleBackshellCompat ?? []) {
+      const normalized = resolveRelationshipInput(pairRelationship("module-backshell", pair), parts, true);
+      // VPC pairs were aggregates of the scoped source rules, not new evidence.
+      const aggregate = "source" in pair && pair.source === "vpc-catalog" &&
+        [...this.partRelationships.values()].some(row => !row.legacyPairKey && row.parentPartId === normalized.parentPartId && row.relationshipType === normalized.relationshipType && row.targetPartIds?.includes(pair.backshellPartId));
+      if (!aggregate) this.partRelationships.set(partRelationshipNaturalKey(normalized), normalized);
+    }
+    for (const pair of state.moduleStrainReliefCompat ?? []) {
+      const normalized = resolveRelationshipInput(pairRelationship("module-strain-relief", pair), parts, true);
+      // VPC pairs were aggregates of the scoped source rules, not new evidence.
+      const aggregate = "source" in pair && pair.source === "vpc-catalog" &&
+        [...this.partRelationships.values()].some(row => !row.legacyPairKey && row.parentPartId === normalized.parentPartId && row.relationshipType === normalized.relationshipType && row.targetPartIds?.includes(pair.strainReliefPartId));
+      if (!aggregate) this.partRelationships.set(partRelationshipNaturalKey(normalized), normalized);
+    }
+    this.partMedia.clear();
+    for (const media of state.partMedia ?? []) this.partMedia.set(media.id, media);
 
     this.awgCmaReference.clear();
     for (const row of state.awgCmaReference ?? []) {
@@ -970,20 +982,12 @@ export class MemoryStore implements Store {
     input.items.forEach((item, index) => {
       const rowNumber = index + 1;
       const componentId = item.id?.trim() || `cmp-${item.category}-${crypto.randomUUID().slice(0, 8)}`;
-      if (item.category === "wire") {
-        const awg = "awg" in item.attributes ? String(item.attributes.awg ?? "").trim() : "";
-        const color = "color" in item.attributes ? String(item.attributes.color ?? "").trim() : "";
-        if (!awg || !color) {
-          results.push({
-            rowNumber,
-            status: "rejected",
-            componentId,
-            message: "WIRE_FIELDS_REQUIRED"
-          });
-          return;
-        }
+      if (this.parts.has(componentId) && this.parts.get(componentId)!.category !== item.category) throw new CatalogError("CATALOG_PART_CATEGORY_IMMUTABLE: Create a new part identity for a different category.");
+      try { validateCatalogAttributes(item.category, item.attributes); } catch (error) {
+        results.push({ rowNumber, status: "rejected", componentId, message: error instanceof Error ? error.message : String(error) });
+        return;
       }
-      const candidateKey = `${item.category}:${item.family.trim().toLowerCase()}:${item.partNumber.trim().toLowerCase()}`;
+      const candidateKey = `${item.category}:${item.partNumber.trim().toLowerCase()}`;
       if (seenKeys.has(candidateKey)) {
         results.push({
           rowNumber,
@@ -998,7 +1002,6 @@ export class MemoryStore implements Store {
           !existing.isArchived &&
           existing.id !== componentId &&
           existing.category === item.category &&
-          existing.family.toLowerCase() === item.family.trim().toLowerCase() &&
           existing.partNumber.toLowerCase() === item.partNumber.trim().toLowerCase()
       );
       if (duplicate) {
@@ -1029,10 +1032,8 @@ export class MemoryStore implements Store {
       for (const entry of accepted) {
         const existing = entry.existing;
         const item = entry.item;
-        const attributes = {
-          ...emptyAttributesForCategory(item.category),
-          ...item.attributes
-        } as CategoryAttributesMap[LibraryCategory];
+        const merged = { ...emptyAttributesForCategory(item.category), ...existing?.attributes, ...item.attributes } as CategoryAttributesMap[LibraryCategory];
+        const attributes = item.category === "wire" ? normalizeWireAttributes(merged as import("../../domain/library.js").WireAttributes) : merged;
         const editedReviewedEntry =
           Boolean(existing?.isReviewed) &&
           Boolean(
@@ -1263,16 +1264,14 @@ export class MemoryStore implements Store {
   }
 
   async deleteLibraryComponent(input: { componentId: string }): Promise<boolean> {
-    const part = this.parts.get(input.componentId);
-    if (!part) {
-      return false;
+    if (!this.parts.has(input.componentId)) return false;
+    if ([...this.partRelationships.values()].some(row => row.parentPartId !== input.componentId && row.targetPartIds?.includes(input.componentId))) {
+      throw new CatalogError("CATALOG_PART_IN_USE: Archive the item or remove its compatibility references first.", 409);
     }
     this.parts.delete(input.componentId);
-    for (const [key, row] of this.partRelationships.entries()) {
-      if (row.parentPartId === input.componentId || row.compatibleParts.includes(part.partNumber)) {
-        this.partRelationships.delete(key);
-      }
-    }
+    for (const [key, row] of this.partRelationships) if (row.parentPartId === input.componentId) this.partRelationships.delete(key);
+    for (const [key, row] of this.partAliases) if (row.partId === input.componentId) this.partAliases.delete(key);
+    for (const [key, row] of this.partMedia) if (row.partId === input.componentId) this.partMedia.delete(key);
     return true;
   }
 
@@ -1306,13 +1305,8 @@ export class MemoryStore implements Store {
       ...part.attributes,
       ...(input.attributes ?? {})
     } as CategoryAttributesMap[LibraryCategory];
-    if (part.category === "wire") {
-      const awg = "awg" in nextAttributes ? String(nextAttributes.awg ?? "").trim() : "";
-      const color = "color" in nextAttributes ? String(nextAttributes.color ?? "").trim() : "";
-      if (!awg || !color) {
-        throw new Error("WIRE_FIELDS_REQUIRED");
-      }
-    }
+    validateCatalogAttributes(part.category, nextAttributes);
+    if (part.category === "wire") Object.assign(nextAttributes, normalizeWireAttributes(nextAttributes as import("../../domain/library.js").WireAttributes));
     const nextIsReviewed = input.isReviewed ?? part.isReviewed;
     const nextReviewedByUserId = nextIsReviewed ? (input.reviewedByUserId ?? part.reviewedByUserId) : undefined;
     const nextReviewedAt = nextIsReviewed ? (input.reviewedAt ?? part.reviewedAt) : undefined;
@@ -1376,138 +1370,67 @@ export class MemoryStore implements Store {
   }
 
   async listContactWireCompat(): Promise<ContactWireCompat[]> {
-    return Array.from(this.contactWireCompat.values());
+    return listPairs(this, "contact-wire");
   }
 
   async upsertContactWireCompat(input: ContactWireCompat): Promise<ContactWireCompat> {
-    const row: ContactWireCompat = {
-      contactPartId: input.contactPartId,
-      wirePartId: input.wirePartId,
-      status: input.status,
-      ...(input.notes !== undefined ? { notes: input.notes } : {}),
-      ...(input.crimpClass !== undefined ? { crimpClass: input.crimpClass } : {})
-    };
-    this.contactWireCompat.set(`${row.contactPartId}:${row.wirePartId}`, row);
-    return row;
+    return upsertPair(this, "contact-wire", input);
   }
 
   async bulkUpsertContactWireCompat(input: { rows: ContactWireCompat[] }): Promise<{ upserted: number }> {
-    for (const row of input.rows) {
-      this.contactWireCompat.set(`${row.contactPartId}:${row.wirePartId}`, {
-        contactPartId: row.contactPartId,
-        wirePartId: row.wirePartId,
-        status: row.status,
-        ...(row.notes !== undefined ? { notes: row.notes } : {}),
-        ...(row.crimpClass !== undefined ? { crimpClass: row.crimpClass } : {})
-      });
-    }
-    return { upserted: input.rows.length };
+    return this.bulkUpsertPartRelationships({ rows: input.rows.map(row => pairRelationship("contact-wire", row)) });
   }
 
   async deleteContactWireCompat(input: { contactPartId: string; wirePartId: string }): Promise<boolean> {
-    return this.contactWireCompat.delete(`${input.contactPartId}:${input.wirePartId}`);
+    return deletePair(this, "contact-wire", input);
   }
 
   async listModuleContactCompat(): Promise<ModuleContactCompat[]> {
-    return Array.from(this.moduleContactCompat.values());
+    return listPairs(this, "module-contact");
   }
 
   async upsertModuleContactCompat(input: ModuleContactCompat): Promise<ModuleContactCompat> {
-    const row: ModuleContactCompat = {
-      modulePartId: input.modulePartId,
-      contactPartId: input.contactPartId,
-      status: input.status,
-      ...(input.notes !== undefined ? { notes: input.notes } : {}),
-      ...(input.source !== undefined ? { source: input.source } : {})
-    };
-    this.moduleContactCompat.set(`${row.modulePartId}:${row.contactPartId}`, row);
-    return row;
+    return upsertPair(this, "module-contact", input);
   }
 
   async bulkUpsertModuleContactCompat(input: { rows: ModuleContactCompat[] }): Promise<{ upserted: number }> {
-    for (const row of input.rows) {
-      this.moduleContactCompat.set(`${row.modulePartId}:${row.contactPartId}`, {
-        modulePartId: row.modulePartId,
-        contactPartId: row.contactPartId,
-        status: row.status,
-        ...(row.notes !== undefined ? { notes: row.notes } : {}),
-        ...(row.source !== undefined ? { source: row.source } : {})
-      });
-    }
-    return { upserted: input.rows.length };
+    return this.bulkUpsertPartRelationships({ rows: input.rows.map(row => pairRelationship("module-contact", row)) });
   }
 
   async deleteModuleContactCompat(input: { modulePartId: string; contactPartId: string }): Promise<boolean> {
-    return this.moduleContactCompat.delete(`${input.modulePartId}:${input.contactPartId}`);
+    return deletePair(this, "module-contact", input);
   }
 
   async listModuleBackshellCompat(): Promise<ModuleBackshellCompat[]> {
-    return Array.from(this.moduleBackshellCompat.values());
+    return listPairs(this, "module-backshell");
   }
 
   async upsertModuleBackshellCompat(input: ModuleBackshellCompat): Promise<ModuleBackshellCompat> {
-    const row: ModuleBackshellCompat = {
-      modulePartId: input.modulePartId,
-      backshellPartId: input.backshellPartId,
-      status: input.status,
-      ...(input.notes !== undefined ? { notes: input.notes } : {}),
-      ...(input.source !== undefined ? { source: input.source } : {})
-    };
-    this.moduleBackshellCompat.set(`${row.modulePartId}:${row.backshellPartId}`, row);
-    return row;
+    return upsertPair(this, "module-backshell", input);
   }
 
   async bulkUpsertModuleBackshellCompat(input: { rows: ModuleBackshellCompat[] }): Promise<{ upserted: number }> {
-    for (const row of input.rows) {
-      this.moduleBackshellCompat.set(`${row.modulePartId}:${row.backshellPartId}`, {
-        modulePartId: row.modulePartId,
-        backshellPartId: row.backshellPartId,
-        status: row.status,
-        ...(row.notes !== undefined ? { notes: row.notes } : {}),
-        ...(row.source !== undefined ? { source: row.source } : {})
-      });
-    }
-    return { upserted: input.rows.length };
+    return this.bulkUpsertPartRelationships({ rows: input.rows.map(row => pairRelationship("module-backshell", row)) });
   }
 
   async deleteModuleBackshellCompat(input: { modulePartId: string; backshellPartId: string }): Promise<boolean> {
-    return this.moduleBackshellCompat.delete(`${input.modulePartId}:${input.backshellPartId}`);
+    return deletePair(this, "module-backshell", input);
   }
 
   async listModuleStrainReliefCompat(): Promise<ModuleStrainReliefCompat[]> {
-    return Array.from(this.moduleStrainReliefCompat.values());
+    return listPairs(this, "module-strain-relief");
   }
 
   async upsertModuleStrainReliefCompat(input: ModuleStrainReliefCompat): Promise<ModuleStrainReliefCompat> {
-    const row: ModuleStrainReliefCompat = {
-      modulePartId: input.modulePartId,
-      strainReliefPartId: input.strainReliefPartId,
-      status: input.status,
-      ...(input.notes !== undefined ? { notes: input.notes } : {}),
-      ...(input.source !== undefined ? { source: input.source } : {})
-    };
-    this.moduleStrainReliefCompat.set(`${row.modulePartId}:${row.strainReliefPartId}`, row);
-    return row;
+    return upsertPair(this, "module-strain-relief", input);
   }
 
   async bulkUpsertModuleStrainReliefCompat(input: { rows: ModuleStrainReliefCompat[] }): Promise<{ upserted: number }> {
-    for (const row of input.rows) {
-      this.moduleStrainReliefCompat.set(`${row.modulePartId}:${row.strainReliefPartId}`, {
-        modulePartId: row.modulePartId,
-        strainReliefPartId: row.strainReliefPartId,
-        status: row.status,
-        ...(row.notes !== undefined ? { notes: row.notes } : {}),
-        ...(row.source !== undefined ? { source: row.source } : {})
-      });
-    }
-    return { upserted: input.rows.length };
+    return this.bulkUpsertPartRelationships({ rows: input.rows.map(row => pairRelationship("module-strain-relief", row)) });
   }
 
-  async deleteModuleStrainReliefCompat(input: {
-    modulePartId: string;
-    strainReliefPartId: string;
-  }): Promise<boolean> {
-    return this.moduleStrainReliefCompat.delete(`${input.modulePartId}:${input.strainReliefPartId}`);
+  async deleteModuleStrainReliefCompat(input: { modulePartId: string; strainReliefPartId: string }): Promise<boolean> {
+    return deletePair(this, "module-strain-relief", input);
   }
 
   async listAwgCmaReference(): Promise<AwgCmaReference[]> {
@@ -1546,7 +1469,7 @@ export class MemoryStore implements Store {
     compatiblePart?: string;
     relationshipType?: string;
   }): Promise<PartRelationship[]> {
-    return Array.from(this.partRelationships.values()).filter((row) => {
+    return Array.from(this.partRelationships.values()).map(row => ({ ...row, compatibleParts: (row.targetPartIds ?? []).map(id => this.parts.get(id)?.partNumber).filter((pn): pn is string => pn !== undefined) })).filter((row) => {
       if (input?.parentPartId && row.parentPartId !== input.parentPartId) {
         return false;
       }
@@ -1560,31 +1483,29 @@ export class MemoryStore implements Store {
     });
   }
 
-  async upsertPartRelationship(input: PartRelationshipInput): Promise<PartRelationship> {
-    const normalized = normalizePartRelationship(input);
+  private putRelationship(rows: Map<string, PartRelationship>, normalized: PartRelationship): PartRelationship {
     const naturalKey = partRelationshipNaturalKey(normalized);
-    const existingByNaturalKey = this.partRelationships.get(naturalKey);
-    const row: PartRelationship = {
-      ...normalized,
-      id: existingByNaturalKey?.id ?? normalized.id
-    };
-    if (existingByNaturalKey && existingByNaturalKey.id !== row.id) {
-      this.partRelationships.delete(naturalKey);
+    const existing = rows.get(naturalKey);
+    if (existing && existing.id !== normalized.id && [...rows.values()].some(row => row.id === normalized.id)) {
+      throw new CatalogError("COMPATIBILITY_GROUP_CONFLICT: A group already exists for this scope and status.", 409);
     }
-    for (const [key, existing] of this.partRelationships.entries()) {
-      if (existing.id === row.id && key !== naturalKey) {
-        this.partRelationships.delete(key);
-      }
-    }
-    this.partRelationships.set(naturalKey, row);
+    const row = { ...normalized, id: existing?.id ?? normalized.id };
+    for (const [key, value] of rows) if (value.id === row.id && key !== naturalKey) rows.delete(key);
+    rows.set(naturalKey, row);
     return row;
   }
 
+  async upsertPartRelationship(input: PartRelationshipInput): Promise<PartRelationship> {
+    return this.putRelationship(this.partRelationships, resolveRelationshipInput(input, [...this.parts.values()]));
+  }
+
   async bulkUpsertPartRelationships(input: { rows: PartRelationshipInput[] }): Promise<{ upserted: number }> {
-    for (const row of input.rows) {
-      await this.upsertPartRelationship(row);
-    }
-    return { upserted: input.rows.length };
+    const normalized = input.rows.map(row => resolveRelationshipInput(row, [...this.parts.values()]));
+    const staged = new Map(this.partRelationships);
+    for (const row of normalized) this.putRelationship(staged, row);
+    this.partRelationships.clear();
+    for (const [key, row] of staged) this.partRelationships.set(key, row);
+    return { upserted: normalized.length };
   }
 
   async deletePartRelationship(input: { id: string }): Promise<boolean> {
@@ -1595,6 +1516,27 @@ export class MemoryStore implements Store {
       }
     }
     return false;
+  }
+
+  async listPartMedia(input?: { partId?: string }): Promise<PartMedia[]> {
+    return [...this.partMedia.values()].filter(row => !input?.partId || row.partId === input.partId)
+      .sort((a, b) => a.sortOrder - b.sortOrder || a.id.localeCompare(b.id));
+  }
+
+  async upsertPartMedia(input: PartMediaInput): Promise<PartMedia> {
+    validatePartMedia(input);
+    if (!this.parts.has(input.partId)) throw new CatalogError("CATALOG_PART_NOT_FOUND");
+    if (input.id && this.partMedia.has(input.id) && this.partMedia.get(input.id)!.partId !== input.partId) throw new CatalogError("CATALOG_MEDIA_PART_MISMATCH");
+    const row = { ...input, id: input.id ?? `media-${crypto.randomUUID()}`, sortOrder: input.sortOrder ?? 0, isPrimary: input.isPrimary ?? false };
+    if (row.isPrimary) for (const [id, other] of this.partMedia) {
+      if (other.partId === row.partId && other.viewType === row.viewType && (other.orientation ?? "") === (row.orientation ?? "")) this.partMedia.set(id, { ...other, isPrimary: false });
+    }
+    this.partMedia.set(row.id, row);
+    return row;
+  }
+
+  async deletePartMedia(input: { id: string; partId: string }): Promise<boolean> {
+    return this.partMedia.get(input.id)?.partId === input.partId && this.partMedia.delete(input.id);
   }
 
   async getUserTablePreferences(input: { userId: string; scope: string }): Promise<TablePreferencesRecord | null> {

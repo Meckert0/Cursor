@@ -1,3 +1,5 @@
+import { writeRelationship } from "../src/infra/store/postgres-catalog.js";
+import { resolveRelationshipInput } from "../src/domain/catalog-integrity.js";
 /**
  * VPC i1/iCon workbook -> Postgres catalog loader.
  *
@@ -27,7 +29,6 @@ import type {
   ContactAttributes,
   FrameAttributes,
   ModuleAttributes,
-  ModuleContactCompat,
   PartImportProvenance,
   PartRelationshipInput
 } from "../src/domain/library.js";
@@ -233,67 +234,11 @@ async function upsertParts(client: import("pg").PoolClient, parts: VpcCatalogPar
 }
 
 async function replaceRelationships(
-  client: import("pg").PoolClient,
-  partIds: string[],
-  rows: PartRelationshipInput[]
+  client: import("pg").PoolClient, parts: VpcCatalogPart[], rows: PartRelationshipInput[]
 ): Promise<void> {
-  // Full replace at the Excel grain so stale exploded/grouped ids never linger.
-  if (partIds.length > 0) {
-    await client.query(`DELETE FROM part_relationships WHERE parent_part_id = ANY($1::text[])`, [partIds]);
-  }
-  for (const row of rows) {
-    const compatibleParts = Array.isArray(row.compatibleParts)
-      ? row.compatibleParts
-      : (row.compatibleParts ?? "").split(",").map((entry) => entry.trim()).filter(Boolean);
-    await client.query(
-      `INSERT INTO part_relationships (
-         id, parent_part_id, compatible_parts, relationship_type, position_type,
-         parent_positions_json, status, source_status, notes, extra_json
-       ) VALUES (
-         $1, $2, $3, $4, $5,
-         $6::jsonb, $7, $8, $9, $10::jsonb
-       )
-       ON CONFLICT (id) DO UPDATE SET
-         parent_part_id = EXCLUDED.parent_part_id,
-         compatible_parts = EXCLUDED.compatible_parts,
-         relationship_type = EXCLUDED.relationship_type,
-         position_type = EXCLUDED.position_type,
-         parent_positions_json = EXCLUDED.parent_positions_json,
-         status = EXCLUDED.status,
-         source_status = EXCLUDED.source_status,
-         notes = EXCLUDED.notes,
-         extra_json = EXCLUDED.extra_json`,
-      [
-        row.id ?? `rel-${crypto.randomUUID()}`,
-        row.parentPartId,
-        compatibleParts.length > 0 ? compatibleParts.join(",") : null,
-        row.relationshipType,
-        row.positionType ?? null,
-        json(row.parentPositions),
-        row.status,
-        row.sourceStatus ?? null,
-        row.notes ?? null,
-        json(row.extra ?? {})
-      ]
-    );
-  }
-}
-
-async function upsertModuleContactCompat(
-  client: import("pg").PoolClient,
-  rows: ModuleContactCompat[]
-): Promise<void> {
-  for (const row of rows) {
-    await client.query(
-      `INSERT INTO module_contact_compat (module_part_id, contact_part_id, status, notes, source)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (module_part_id, contact_part_id) DO UPDATE SET
-         status = EXCLUDED.status,
-         notes = EXCLUDED.notes,
-         source = EXCLUDED.source`,
-      [row.modulePartId, row.contactPartId, row.status, row.notes ?? null, row.source ?? "vpc-catalog"]
-    );
-  }
+  const partIds = parts.map(part => part.id);
+  if (partIds.length) await client.query(`DELETE FROM compatibility_groups WHERE parent_part_id = ANY($1::text[]) AND source = 'vpc-catalog' AND legacy_pair_key IS NULL`, [partIds]);
+  for (const row of rows) await writeRelationship(client, resolveRelationshipInput({ ...row, source: "vpc-catalog" }, parts));
 }
 
 async function replaceProvenance(
@@ -331,10 +276,9 @@ async function commitCatalog(
     await upsertParts(client, build.parts, now);
     await replaceRelationships(
       client,
-      build.parts.map((part) => part.id),
+      build.parts,
       build.relationships
     );
-    await upsertModuleContactCompat(client, build.moduleContactCompat);
     await replaceProvenance(
       client,
       build.parts.map((part) => part.id),

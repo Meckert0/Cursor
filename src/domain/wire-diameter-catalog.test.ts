@@ -58,7 +58,7 @@ test("wire diameter catalog keeps every supplied part number and TBD diameter", 
   assert.ok(
     items.every((item) => {
       const attributes = wireAttributes(item);
-      return item.category === "wire" && attributes.awg.trim() && attributes.color.trim() && (attributes.overallDia ?? 0) > 0;
+      return item.category === "wire" && (attributes.awg?.trim() || attributes.cableDesignation) && attributes.color.trim() && (attributes.overallDia ?? 0) > 0;
     })
   );
 });

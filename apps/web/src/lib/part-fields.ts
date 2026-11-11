@@ -139,6 +139,8 @@ export const PART_FIELDS_BY_CATEGORY: Record<LibraryItemCategory, PartFieldMeta[
     attr("acceptedFamilies", "Accepted wire families", "string-list"),
     attr("acceptedGauges", "Accepted gauges", "string-list"),
     attr("wireInterface", "Wire interface", "text"),
+    attr("acceptedInsulationDiaMinIn", "Accepted insulation diameter min (in)", "number"),
+    attr("acceptedInsulationDiaMaxIn", "Accepted insulation diameter max (in)", "number"),
     ...AUDIT_AND_REVIEW_FIELDS
   ],
   wire: [
@@ -146,7 +148,7 @@ export const PART_FIELDS_BY_CATEGORY: Record<LibraryItemCategory, PartFieldMeta[
     IDENTITY_CORE[1],
     { ...IDENTITY_CORE[2], isVisibleInViewer: false },
     attr("milSpec", "Mil spec", "text"),
-    attr("awg", "AWG", "text", { required: true, showInSearch: true }),
+    attr("awg", "AWG", "text", { showInSearch: true }),
     attr("color", "Color", "text", { required: true, showInSearch: true }),
     attr("cma", "CMA", "number", { isVisibleInViewer: false }),
     attr("wireType", "Wire type", "text", { isVisibleInViewer: false }),
@@ -168,6 +170,9 @@ export const PART_FIELDS_BY_CATEGORY: Record<LibraryItemCategory, PartFieldMeta[
     IDENTITY_CORE[3],
     IDENTITY_CORE[4],
     ...IDENTITY_CORE.slice(5),
+    attr("cableDesignation", "Cable designation", "text"),
+    attr("construction", "Construction", "text"),
+    attr("insulatedConductorDiaIn", "Insulated conductor diameter (in)", "number"),
     ...AUDIT_AND_REVIEW_FIELDS
   ],
   label: [
@@ -176,7 +181,17 @@ export const PART_FIELDS_BY_CATEGORY: Record<LibraryItemCategory, PartFieldMeta[
     attr("awgMin", "AWG min", "number"),
     attr("awgMax", "AWG max", "number"),
     attr("lengthIn", "Length (in)", "number", { isVisibleInViewer: false }),
-    attr("diaIn", "Diameter (in)", "number", { isVisibleInViewer: false }),
+    attr("diaIn", "Nominal diameter (in)", "number", { isVisibleInViewer: false }),
+    attr("labelStyle", "Label style", "text"),
+    attr("material", "Material", "text"),
+    attr("fitDiameterMinIn", "Fits diameter min (in)", "number"),
+    attr("fitDiameterMaxIn", "Fits diameter max (in)", "number"),
+    attr("printableWidthIn", "Printable width (in)", "number"),
+    attr("printableHeightIn", "Printable height (in)", "number"),
+    attr("maxCharactersPerLine", "Characters per line", "number"),
+    attr("maxLines", "Maximum lines", "number"),
+    attr("printProfile", "Print profile / font settings", "text"),
+    attr("textAllowanceNotes", "Text allowance notes", "text"),
     ...AUDIT_AND_REVIEW_FIELDS
   ],
   "sleeve-tube-braid": [...IDENTITY_CORE, ...AUDIT_AND_REVIEW_FIELDS],
@@ -281,6 +296,7 @@ export function collectAttributesFromFormData(
     }
     const parsed = parseAttributeFormValue(field.inputType, String(raw));
     if (parsed === undefined) {
+      if (["acceptedInsulationDiaMinIn", "acceptedInsulationDiaMaxIn", "cableDesignation", "construction", "insulatedConductorDiaIn", "labelStyle", "material", "fitDiameterMinIn", "fitDiameterMaxIn", "printableWidthIn", "printableHeightIn", "maxCharactersPerLine", "maxLines", "printProfile", "textAllowanceNotes"].includes(field.key)) attributes[field.key] = null;
       continue;
     }
     attributes[field.key] = parsed;

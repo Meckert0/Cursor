@@ -28,3 +28,17 @@ test("createCompatLookup treats empty input as no rows", () => {
   assert.equal(lookup.moduleBackshell("a", "b"), undefined);
   assert.equal(lookup.moduleStrainRelief("a", "b"), undefined);
 });
+
+test("canonical rules distinguish unknown from exhaustive exclusion and preserve direction and scopes", async () => {
+  const { compatibilityStatus } = await import("./compatibility-rules.js");
+  const rule = { parentPartId: "module", relationshipType: "CONTACT_ALLOWED", compatibleParts: ["OLD-PN"], targetPartIds: ["contact"], parentPositions: [], status: "allowed", isExhaustive: false };
+  const input = { rules: [rule], parentPartId: "module", relationshipType: "CONTACT_ALLOWED", targetPartId: "contact", targetPartNumber: "RENAMED-PN", position: "1" };
+  assert.equal(compatibilityStatus(input), "allowed");
+  assert.equal(compatibilityStatus({ ...input, targetPartId: "other" }), undefined);
+  assert.equal(compatibilityStatus({ ...input, targetPartId: "other", rules: [{ ...rule, isExhaustive: true }] }), "forbidden");
+  assert.equal(compatibilityStatus({ ...input, parentPartId: "contact", targetPartId: "module" }), undefined);
+  const forbid = { ...rule, parentPositions: ["1"], status: "forbidden" };
+  assert.equal(compatibilityStatus({ ...input, rules: [rule, forbid] }), "forbidden");
+  assert.equal(compatibilityStatus({ ...input, position: "2", rules: [rule, forbid] }), "allowed");
+  assert.equal(compatibilityStatus({ ...input, rules: [rule, { ...forbid, status: "review" }] }), "review");
+});

@@ -1,3 +1,4 @@
+import { compatibilityStatus } from "./compatibility-rules.ts";
 import type { ConnectorPin, SimInsertAssignment } from "./types.js";
 
 export interface SimPart {
@@ -46,6 +47,9 @@ export interface SimRelationship {
   parentPartId: string;
   relationshipType: string;
   compatibleParts: string[];
+  targetPartIds?: string[];
+  isExhaustive?: boolean;
+  unresolvedParts?: string[];
   parentPositions: string[];
   status: string;
 }
@@ -105,12 +109,10 @@ export function simInsertAllowed(host: SimPart, insert: SimPart, occupied: strin
   const side = (value?: string) => key(value ?? "") === "RCV" ? "RECEIVER" : key(value ?? "");
   const hostSide = side(host.side), insertSide = side(insert.side);
   if (hostSide && insertSide && hostSide !== "DUAL" && insertSide !== "DUAL" && hostSide !== insertSide) return false;
-  const rules = relationships.filter(rule => rule.parentPartId === host.id && rule.relationshipType === "INSERT_ALLOWED" &&
-    rule.compatibleParts.some(pn => key(pn) === key(insert.partNumber)));
-  const covers = (rule: SimRelationship, slot: string) => !rule.parentPositions.length || rule.parentPositions.some(position => key(position) === key(slot));
-  return occupied.length > 0 && occupied.every(slot =>
-    !rules.some(rule => rule.status === "forbidden" && covers(rule, slot)) &&
-    rules.some(rule => rule.status === "allowed" && covers(rule, slot)));
+  return occupied.length > 0 && occupied.every(slot => compatibilityStatus({
+    rules: relationships, parentPartId: host.id, relationshipType: "INSERT_ALLOWED",
+    targetPartId: insert.id, targetPartNumber: insert.partNumber, position: slot, requireAllowance: true
+  }) === "allowed");
 }
 
 export function availableSimInserts<T extends SimPart>(host: SimPart, slotId: string, assignments: SimInsertAssignment[], parts: T[], relationships: SimRelationship[]): T[] {

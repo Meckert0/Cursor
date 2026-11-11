@@ -921,12 +921,12 @@ describe("verifyWirelistContact", () => {
     });
   });
 
-  it("marks a contact with no chart row as incompatible with the position", () => {
+  it("marks a contact with no chart row as unknown", () => {
     expect(
       verifyWirelistContact("CNT-1", "J1 - 1", connectors, contactCatalog, [
         { modulePartId: "mod-other", contactPartId: "cnt-1", status: "allowed" }
       ])
-    ).toEqual({ state: "invalid", message: "Contact is not compatible with this position" });
+    ).toEqual({ state: "partial", message: "Contact compatibility is unknown" });
   });
 
   describe("with CONTACT_ALLOWED relationships", () => {

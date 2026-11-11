@@ -124,6 +124,7 @@ export interface DesignSnapshot {
     wireGroup?: string;
     toContact?: string;
     toSignalDescription?: string;
+    labelComponentId?: string;
     labelPartNumber?: string;
     labelText?: string;
     notes?: string;

@@ -463,6 +463,7 @@ export function parseVpcCatalog(input: {
 
     const rel: PartRelationshipInput & { compatibleParts: string[] } = {
       parentPartId: parent.id,
+      source: "vpc-catalog",
       compatibleParts,
       relationshipType,
       positionType,

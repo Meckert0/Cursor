@@ -1,3 +1,4 @@
+import { compatibilityStatus } from "../../../../src/domain/compatibility-rules";
 import { isSimHost } from "./sim-modules";
 import type { LibraryComponentDto, RevisionDto, SimInsertAssignmentDto } from "./api";
 import {
@@ -33,6 +34,7 @@ export type WirelistRow = {
   toLocation: string;
   toContact: string;
   toSignalDescription: string;
+  labelComponentId?: string;
   labelPartNumber: string;
   labelText: string;
   notes: string;
@@ -358,6 +360,7 @@ export function snapshotToWirelistRows(snapshot: RevisionDto["snapshot"]): Wirel
     toLocation: path.toLocation ?? "",
     toContact: path.toContact ?? "",
     toSignalDescription: path.toSignalDescription ?? "",
+    labelComponentId: path.labelComponentId,
     labelPartNumber: path.labelPartNumber ?? "",
     labelText: path.labelText ?? "",
     notes: path.notes ?? "",
@@ -476,6 +479,7 @@ export function wirelistRowsToSnapshot(
       wireGroup: row.wireGroup.trim() || undefined,
       toContact: toContact || undefined,
       toSignalDescription: row.toSignalDescription.trim() || undefined,
+      labelComponentId: row.labelPartNumber.trim() === (replacedPath?.labelPartNumber ?? "").trim() ? row.labelComponentId ?? replacedPath?.labelComponentId : undefined,
       labelPartNumber: row.labelPartNumber.trim() || undefined,
       labelText: row.labelText.trim() || undefined,
       notes: row.notes.trim() || undefined,
@@ -728,6 +732,8 @@ export type WirelistContactRelationshipRow = {
   parentPartId: string;
   /** Compatible contact part numbers (Excel-style list). */
   compatibleParts: string[];
+  targetPartIds?: string[];
+  isExhaustive?: boolean;
   relationshipType?: string;
   /** Module pin ids the contact may occupy; empty means every pin. */
   parentPositions: string[];
@@ -809,38 +815,23 @@ export function verifyWirelistContact(
       (row.relationshipType ?? "CONTACT_ALLOWED").trim().toUpperCase() === "CONTACT_ALLOWED"
   );
   if (moduleRelationships.length > 0) {
-    const contactKey = trimmedContact.toLowerCase();
-    const matching = moduleRelationships.filter((row) =>
-      row.compatibleParts.some((partNumber) => partNumber.trim().toLowerCase() === contactKey)
-    );
-    if (matching.length === 0) {
-      return { state: "invalid", message: CONTACT_POSITION_MESSAGE };
-    }
-    const pinKey = (connector?.pinNumber ?? parseWirelistLocation(locationValue).pinNumber).trim().toLowerCase();
-    // Rows without parentPositions allow the contact on every pin of the module.
-    const pinMatched = matching.filter((row) => {
-      if (row.parentPositions.length === 0) {
-        return true;
-      }
-      return (
-        pinKey.length > 0 &&
-        row.parentPositions.some((position) => position.trim().toLowerCase() === pinKey)
-      );
+    const status = compatibilityStatus({
+      rules: moduleRelationships.map(row => ({ ...row, relationshipType: row.relationshipType ?? "CONTACT_ALLOWED" })),
+      parentPartId: modulePartId, relationshipType: "CONTACT_ALLOWED", targetPartId: contact.id, targetPartNumber: contact.partNumber,
+      position: connector?.pinNumber ?? parseWirelistLocation(locationValue).pinNumber,
+      requireAllowance: moduleRelationships.some(row => row.isExhaustive !== false)
     });
-    if (pinMatched.length === 0 || pinMatched.some((row) => row.status === "forbidden")) {
-      return { state: "invalid", message: CONTACT_POSITION_MESSAGE };
-    }
-    if (pinMatched.some((row) => row.status === "review")) {
-      return { state: "partial", message: "Contact compatibility requires review" };
-    }
-    return { state: "valid", message: null };
+    if (status === "forbidden") return { state: "invalid", message: CONTACT_POSITION_MESSAGE };
+    if (status === "review") return { state: "partial", message: "Contact compatibility requires review" };
+    if (status === "allowed") return { state: "valid", message: null };
+    return { state: "partial", message: "Contact compatibility is unknown" };
   }
 
   const compat = moduleContactCompat.find(
     (row) => row.modulePartId === modulePartId && row.contactPartId === contact.id
   );
   if (!compat) {
-    return { state: "invalid", message: CONTACT_POSITION_MESSAGE };
+    return { state: "partial", message: "Contact compatibility is unknown" };
   }
   if (compat.status === "allowed") {
     return { state: "valid", message: null };

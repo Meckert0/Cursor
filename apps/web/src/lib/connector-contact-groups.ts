@@ -1,3 +1,4 @@
+import { compatibilityStatus } from "../../../../src/domain/compatibility-rules";
 import type { CompatStatus, LibraryComponentDto, RevisionDto } from "./api";
 import { isFrameHousingConnector, isSlotPopulated, slotModuleName } from "./connector-frames";
 import { displayPartType } from "./part-fields";
@@ -161,6 +162,8 @@ function readAwgNumber(value: unknown): number | undefined {
 /** Accepted wire gauge range for a contact, e.g. "22-26 AWG". Empty when unknown. */
 export function formatContactAwgRange(contact: LibraryComponentDto | undefined): string {
   const attrs = contact?.attributes ?? {};
+  const exactGauges = Array.isArray(attrs.acceptedGauges) ? attrs.acceptedGauges.map(String).filter(Boolean) : [];
+  if (exactGauges.length) return exactGauges.every(gauge => /^\d+$/.test(gauge)) ? `${exactGauges.join(", ")} AWG` : exactGauges.join(", ");
   const min = readAwgNumber(attrs.acceptedAwgMin);
   const max = readAwgNumber(attrs.acceptedAwgMax);
   if (min !== undefined || max !== undefined) {
@@ -187,6 +190,8 @@ export type ContactCompatRow = {
 export type ContactRelationshipRow = {
   parentPartId: string;
   compatibleParts: string[];
+  targetPartIds?: string[];
+  isExhaustive?: boolean;
   relationshipType?: string;
   parentPositions: string[];
   status: CompatStatus;
@@ -450,17 +455,24 @@ function compatibleContactsForModule(
     }
   }
 
-  return Array.from(merged.values())
-    .map((entry) => ({
-      partNumber: entry.partNumber,
-      description: entry.contact?.description?.trim() ?? "",
-      awgRange: formatContactAwgRange(entry.contact),
-      positions: entry.allPositions
-        ? "All"
-        : Array.from(entry.positions).sort(POSITION_COLLATOR.compare).join(", "),
-      status: entry.allowed ? ("allowed" as const) : ("review" as const)
-    }))
-    .sort((left, right) => POSITION_COLLATOR.compare(left.partNumber, right.partNumber));
+  const evaluationRules = relationships.length ? relationships.map(row => ({ ...row, relationshipType: row.relationshipType ?? "CONTACT_ALLOWED" })) : moduleContactCompat.filter(row => row.modulePartId === modulePartId).map(row => ({
+    parentPartId: row.modulePartId, relationshipType: "CONTACT_ALLOWED", compatibleParts: [contactById.get(row.contactPartId)?.partNumber ?? ""], targetPartIds: [row.contactPartId], parentPositions: [], status: row.status, isExhaustive: false
+  }));
+  return Array.from(merged.values()).flatMap(entry => {
+    const relevant = evaluationRules.filter(row => entry.contact && row.targetPartIds ? row.targetPartIds.includes(entry.contact.id) : row.compatibleParts.some(pn => pn.trim().toLowerCase() === entry.partNumber.toLowerCase()));
+    const positions = [...new Set(relevant.flatMap(row => row.parentPositions))];
+    const evaluate = (position?: string) => compatibilityStatus({ rules: evaluationRules, parentPartId: modulePartId, relationshipType: "CONTACT_ALLOWED", targetPartId: entry.contact?.id, targetPartNumber: entry.partNumber, position, requireAllowance: true });
+    const broad = evaluate();
+    const valid = positions.filter(position => ["allowed", "review"].includes(evaluate(position) ?? ""));
+    if (!["allowed", "review"].includes(broad ?? "") && !valid.length) return [];
+    const excluded = positions.filter(position => evaluate(position) === "forbidden");
+    return [{
+      partNumber: entry.partNumber, description: entry.contact?.description?.trim() ?? "", awgRange: formatContactAwgRange(entry.contact),
+      positions: ["allowed", "review"].includes(broad ?? "") ? (excluded.length ? `All except ${excluded.sort(POSITION_COLLATOR.compare).join(", ")}` : "All") : valid.sort(POSITION_COLLATOR.compare).join(", "),
+      status: broad === "review" || valid.some(position => evaluate(position) === "review") ? "review" as const : "allowed" as const
+    }];
+  }).sort((left, right) => POSITION_COLLATOR.compare(left.partNumber, right.partNumber));
+
 }
 
 /**

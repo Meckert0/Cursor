@@ -132,7 +132,12 @@ export interface PartAliasDto {
 export interface PartRelationshipDto {
   id: string;
   parentPartId: string;
-  /** Compatible part numbers (Excel-style list). */
+  targetPartIds?: string[];
+  unresolvedParts?: string[];
+  isExhaustive?: boolean;
+  source?: string;
+  legacyPairKey?: string;
+  /** Display/import projection of the canonical target IDs. */
   compatibleParts: string[];
   relationshipType: string;
   positionType?: string;
@@ -305,7 +310,8 @@ export interface RevisionDto {
       wireGroup?: string;
       toContact?: string;
       toSignalDescription?: string;
-      labelPartNumber?: string;
+      labelComponentId?: string;
+    labelPartNumber?: string;
       labelText?: string;
       notes?: string;
       fromLocation?: string;
@@ -1280,4 +1286,39 @@ export async function listDesignAuditEvents(designId: string): Promise<AuditEven
 export async function listHarnessAuditEvents(harnessId: string): Promise<AuditEventDto[]> {
   const response = await apiRequest<ListAuditEventsResponse>(`/v1/harnesses/${harnessId}/audit-events`);
   return response.items;
+}
+
+export interface PartMediaDto {
+  id: string;
+  partId: string;
+  url: string;
+  storageKey?: string;
+  viewType: string;
+  orientation?: string;
+  mimeType?: string;
+  pixelWidth?: number;
+  pixelHeight?: number;
+  altText?: string;
+  caption?: string;
+  sortOrder: number;
+  isPrimary: boolean;
+  source?: string;
+  revision?: string;
+}
+
+export async function listPartMedia(input?: { partId?: string }): Promise<PartMediaDto[]> {
+  const query = input?.partId ? `?partId=${encodeURIComponent(input.partId)}` : "";
+  return (await apiRequest<{ items: PartMediaDto[] }>(`/v1/library/media${query}`)).items;
+}
+
+export function upsertPartMedia(input: Omit<PartMediaDto, "id" | "sortOrder" | "isPrimary"> & { id?: string; sortOrder?: number; isPrimary?: boolean }): Promise<PartMediaDto> {
+  return apiRequest<PartMediaDto>("/v1/library/media", { method: "PUT", body: input });
+}
+
+export async function deletePartMedia(input: { id: string; partId: string }): Promise<void> {
+  await apiRequest<undefined>(`/v1/library/media?${new URLSearchParams(input)}`, { method: "DELETE" });
+}
+
+export async function listLibraryComponentMedia(componentId: string): Promise<PartMediaDto[]> {
+  return (await apiRequest<{ items: PartMediaDto[] }>(`/v1/library/components/${encodeURIComponent(componentId)}/media`)).items;
 }

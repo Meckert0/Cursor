@@ -1,3 +1,8 @@
+import { listRelationships, writeRelationship, listMedia, saveMedia } from "./postgres-catalog.js";
+import { normalizeWireAttributes, validateCatalogAttributes, CatalogError } from "../../domain/catalog-attributes.js";
+import { listPairs, upsertPair, deletePair, pairRelationship } from "./compatibility-adapters.js";
+import { resolveRelationshipInput, validatePartMedia } from "../../domain/catalog-integrity.js";
+import type { PartMedia, PartMediaInput } from "../../domain/library.js";
 import type { Pool, PoolClient } from "pg";
 import type {
   AuditEvent,
@@ -257,6 +262,8 @@ type ContactExtRow = {
   tih: boolean | null;
   accepted_gauges_json: unknown;
   wire_interface: string | null;
+  accepted_insulation_dia_min_in: number | null;
+  accepted_insulation_dia_max_in: number | null;
 };
 
 type WireExtRow = {
@@ -281,6 +288,9 @@ type WireExtRow = {
   max_freq: number | null;
   impedance: number | null;
   max_voltage: number | null;
+  cable_designation: string | null;
+  construction: string | null;
+  insulated_conductor_dia_in: number | null;
 };
 
 type LabelExtRow = {
@@ -290,6 +300,16 @@ type LabelExtRow = {
   awg_max: number | null;
   length_in: number | null;
   dia_in: number | null;
+  label_style: string | null;
+  material: string | null;
+  fit_diameter_min_in: number | null;
+  fit_diameter_max_in: number | null;
+  printable_width_in: number | null;
+  printable_height_in: number | null;
+  max_characters_per_line: number | null;
+  max_lines: number | null;
+  print_profile: string | null;
+  text_allowance_notes: string | null;
 };
 
 type SleeveTubeBraidExtRow = {
@@ -342,56 +362,12 @@ type FrameExtRow = {
   slot_ids_json: unknown;
 };
 
-type PartRelationshipRow = {
-  id: string;
-  parent_part_id: string;
-  compatible_parts: string | null;
-  relationship_type: string;
-  position_type: string | null;
-  parent_positions_json: unknown;
-  status: CompatStatus;
-  source_status: string | null;
-  notes: string | null;
-  extra_json: unknown;
-};
-
 type PartAliasRow = {
   part_id: string;
   code_system: string;
   code: string;
 };
 
-type ContactWireCompatRow = {
-  contact_part_id: string;
-  wire_part_id: string;
-  status: CompatStatus;
-  notes: string | null;
-  crimp_class: string | null;
-};
-
-type ModuleContactCompatRow = {
-  module_part_id: string;
-  contact_part_id: string;
-  status: CompatStatus;
-  notes: string | null;
-  source: string | null;
-};
-
-type ModuleBackshellCompatRow = {
-  module_part_id: string;
-  backshell_part_id: string;
-  status: CompatStatus;
-  notes: string | null;
-  source: string | null;
-};
-
-type ModuleStrainReliefCompatRow = {
-  module_part_id: string;
-  strain_relief_part_id: string;
-  status: CompatStatus;
-  notes: string | null;
-  source: string | null;
-};
 
 type DatastoreIngestJobRow = {
   id: string;
@@ -624,6 +600,8 @@ function normalizedPartAttributes(
   category: LibraryCategory,
   attributes: CategoryAttributesMap[LibraryCategory]
 ): CategoryAttributesMap[LibraryCategory] {
+  validateCatalogAttributes(category, attributes);
+  if (category === "wire") return normalizeWireAttributes(attributes as WireAttributes);
   if (category !== "sleeve-tube-braid") {
     return attributes;
   }
@@ -761,7 +739,9 @@ function mapContactAttributes(row: ContactExtRow | undefined): ContactAttributes
     studSize: optionalString(row.stud_size),
     tih: optionalBoolean(row.tih),
     acceptedGauges: asStringArray(row.accepted_gauges_json),
-    wireInterface: optionalString(row.wire_interface)
+    wireInterface: optionalString(row.wire_interface),
+    acceptedInsulationDiaMinIn: optionalNumber(row.accepted_insulation_dia_min_in),
+    acceptedInsulationDiaMaxIn: optionalNumber(row.accepted_insulation_dia_max_in)
   };
 }
 
@@ -770,7 +750,7 @@ function mapWireAttributes(row: WireExtRow | undefined): WireAttributes {
   if (!row) {
     return base;
   }
-  return {
+  return normalizeWireAttributes({
     ...base,
     milSpec: optionalString(row.mil_spec),
     awg: row.awg ?? "",
@@ -791,8 +771,11 @@ function mapWireAttributes(row: WireExtRow | undefined): WireAttributes {
     lossCoefficient: optionalNumber(row.loss_coefficient),
     maxFreq: optionalNumber(row.max_freq),
     impedance: optionalNumber(row.impedance),
-    maxVoltage: optionalNumber(row.max_voltage)
-  };
+    maxVoltage: optionalNumber(row.max_voltage),
+    cableDesignation: optionalString(row.cable_designation),
+    construction: optionalString(row.construction),
+    insulatedConductorDiaIn: optionalNumber(row.insulated_conductor_dia_in)
+  });
 }
 
 function mapLabelAttributes(row: LabelExtRow | undefined): LabelAttributes {
@@ -806,7 +789,17 @@ function mapLabelAttributes(row: LabelExtRow | undefined): LabelAttributes {
     awgMin: optionalNumber(row.awg_min),
     awgMax: optionalNumber(row.awg_max),
     lengthIn: optionalNumber(row.length_in),
-    diaIn: optionalNumber(row.dia_in)
+    diaIn: optionalNumber(row.dia_in),
+    labelStyle: optionalString(row.label_style),
+    material: optionalString(row.material),
+    fitDiameterMinIn: optionalNumber(row.fit_diameter_min_in),
+    fitDiameterMaxIn: optionalNumber(row.fit_diameter_max_in),
+    printableWidthIn: optionalNumber(row.printable_width_in),
+    printableHeightIn: optionalNumber(row.printable_height_in),
+    maxCharactersPerLine: optionalNumber(row.max_characters_per_line),
+    maxLines: optionalNumber(row.max_lines),
+    printProfile: optionalString(row.print_profile),
+    textAllowanceNotes: optionalString(row.text_allowance_notes)
   };
 }
 
@@ -1062,61 +1055,6 @@ function mapPartAlias(row: PartAliasRow): PartAlias {
   };
 }
 
-function mapContactWireCompat(row: ContactWireCompatRow): ContactWireCompat {
-  return {
-    contactPartId: row.contact_part_id,
-    wirePartId: row.wire_part_id,
-    status: row.status,
-    notes: row.notes ?? undefined,
-    crimpClass: row.crimp_class ?? undefined
-  };
-}
-
-function mapModuleContactCompat(row: ModuleContactCompatRow): ModuleContactCompat {
-  return {
-    modulePartId: row.module_part_id,
-    contactPartId: row.contact_part_id,
-    status: row.status,
-    notes: row.notes ?? undefined,
-    source: row.source ?? undefined
-  };
-}
-
-function mapModuleBackshellCompat(row: ModuleBackshellCompatRow): ModuleBackshellCompat {
-  return {
-    modulePartId: row.module_part_id,
-    backshellPartId: row.backshell_part_id,
-    status: row.status,
-    notes: row.notes ?? undefined,
-    source: row.source ?? undefined
-  };
-}
-
-function mapModuleStrainReliefCompat(row: ModuleStrainReliefCompatRow): ModuleStrainReliefCompat {
-  return {
-    modulePartId: row.module_part_id,
-    strainReliefPartId: row.strain_relief_part_id,
-    status: row.status,
-    notes: row.notes ?? undefined,
-    source: row.source ?? undefined
-  };
-}
-
-function mapPartRelationship(row: PartRelationshipRow): PartRelationship {
-  return normalizePartRelationship({
-    id: row.id,
-    parentPartId: row.parent_part_id,
-    compatibleParts: row.compatible_parts ?? undefined,
-    relationshipType: row.relationship_type,
-    positionType: row.position_type ?? undefined,
-    parentPositions: asStringArray(row.parent_positions_json),
-    status: row.status,
-    sourceStatus: row.source_status ?? undefined,
-    notes: row.notes ?? undefined,
-    extra: extraOrUndefined(row.extra_json)
-  });
-}
-
 function mapStoredIngestResults(
   job: DatastoreIngestJobRow,
   rows: DatastoreIngestJobResultRow[]
@@ -1300,11 +1238,15 @@ export class PostgresStore implements Store {
             attrs.wireInterface ?? null
           ]
         );
+        await client.query(
+          `UPDATE contacts SET accepted_insulation_dia_min_in = $2, accepted_insulation_dia_max_in = $3 WHERE part_id = $1`,
+          [partId, attrs.acceptedInsulationDiaMinIn ?? null, attrs.acceptedInsulationDiaMaxIn ?? null]
+        );
         return;
       }
       case "wire": {
-        const attrs = attributes as WireAttributes;
-        if (!attrs.awg?.trim() || !attrs.color?.trim()) {
+        const attrs = normalizeWireAttributes(attributes as WireAttributes);
+        if ((!attrs.awg && !attrs.cableDesignation && !attrs.construction) || !attrs.color?.trim()) {
           throw new Error("WIRE_FIELDS_REQUIRED");
         }
         await client.query(
@@ -1343,7 +1285,7 @@ export class PostgresStore implements Store {
           [
             partId,
             attrs.milSpec ?? null,
-            attrs.awg.trim(),
+            attrs.awg?.trim() ?? null,
             attrs.color.trim(),
             attrs.cma ?? null,
             attrs.wireType ?? null,
@@ -1364,6 +1306,10 @@ export class PostgresStore implements Store {
             attrs.maxVoltage ?? null
           ]
         );
+        await client.query(
+          `UPDATE wires SET cable_designation = $2, construction = $3, insulated_conductor_dia_in = $4 WHERE part_id = $1`,
+          [partId, attrs.cableDesignation ?? null, attrs.construction ?? null, attrs.insulatedConductorDiaIn ?? null]
+        );
         return;
       }
       case "label": {
@@ -1378,6 +1324,10 @@ export class PostgresStore implements Store {
              length_in = EXCLUDED.length_in,
              dia_in = EXCLUDED.dia_in`,
           [partId, attrs.series ?? null, attrs.awgMin ?? null, attrs.awgMax ?? null, attrs.lengthIn ?? null, attrs.diaIn ?? null]
+        );
+        await client.query(
+          `UPDATE labels SET label_style = $2, material = $3, fit_diameter_min_in = $4, fit_diameter_max_in = $5, printable_width_in = $6, printable_height_in = $7, max_characters_per_line = $8, max_lines = $9, print_profile = $10, text_allowance_notes = $11 WHERE part_id = $1`,
+          [partId, attrs.labelStyle ?? null, attrs.material ?? null, attrs.fitDiameterMinIn ?? null, attrs.fitDiameterMaxIn ?? null, attrs.printableWidthIn ?? null, attrs.printableHeightIn ?? null, attrs.maxCharactersPerLine ?? null, attrs.maxLines ?? null, attrs.printProfile ?? null, attrs.textAllowanceNotes ?? null]
         );
         return;
       }
@@ -2399,7 +2349,7 @@ export class PostgresStore implements Store {
         const rowNumber = index + 1;
         const item = input.items[index];
         const componentId = item.id?.trim() || `part-${item.category}-${crypto.randomUUID().slice(0, 8)}`;
-        const candidateKey = `${item.category}:${item.family.trim().toLowerCase()}:${item.partNumber.trim().toLowerCase()}`;
+        const candidateKey = `${item.category}:${item.partNumber.trim().toLowerCase()}`;
         if (seenKeys.has(candidateKey)) {
           rejected += 1;
           results.push({
@@ -2430,11 +2380,10 @@ export class PostgresStore implements Store {
              FROM parts
              WHERE is_archived = FALSE
                AND category = $1
-               AND lower(family) = lower($2)
-               AND lower(part_number) = lower($3)
-               AND id <> $4
+               AND lower(part_number) = lower($2)
+               AND id <> $3
            ) AS exists`,
-          [item.category, item.family.trim(), item.partNumber.trim(), componentId]
+          [item.category, item.partNumber.trim(), componentId]
         );
         if (duplicateResult.rows[0]?.exists) {
           rejected += 1;
@@ -2470,9 +2419,11 @@ export class PostgresStore implements Store {
           [componentId]
         );
         const existing = existingResult.rows[0];
+        if (existing && existing.category !== item.category) throw new CatalogError("CATALOG_PART_CATEGORY_IMMUTABLE: Create a new part identity for a different category.");
         const existingPart = existing ? (await loadPartsWithAttributes(client, [existing]))[0] : null;
         const nextAttributes = normalizedPartAttributes(item.category, {
           ...emptyAttributesForCategory(item.category),
+          ...existingPart?.attributes,
           ...item.attributes
         } as CategoryAttributesMap[LibraryCategory]);
         const editedReviewedEntry =
@@ -2785,13 +2736,13 @@ export class PostgresStore implements Store {
   }
 
   async deleteLibraryComponent(input: { componentId: string }): Promise<boolean> {
-    const result = await this.pool.query<{ id: string }>(
-      `DELETE FROM parts
-       WHERE id = $1
-       RETURNING id`,
-      [input.componentId]
-    );
-    return (result.rowCount ?? 0) > 0;
+    try {
+      const result = await this.pool.query<{ id: string }>("DELETE FROM parts WHERE id = $1 RETURNING id", [input.componentId]);
+      return (result.rowCount ?? 0) > 0;
+    } catch (error) {
+      if ((error as { code?: string }).code === "23503") throw new CatalogError("CATALOG_PART_IN_USE: Archive the item or remove its compatibility references first.", 409);
+      throw error;
+    }
   }
 
   async updateLibraryComponent(input: {
@@ -2903,7 +2854,7 @@ export class PostgresStore implements Store {
         await this.upsertExtensionRow(client, result.rows[0].id, result.rows[0].category, mergedAttributes);
       } else if (result.rows[0].category === "wire") {
         const wireAttrs = existingPart.attributes as WireAttributes;
-        if (!wireAttrs.awg?.trim() || !wireAttrs.color?.trim()) {
+        if ((!wireAttrs.awg && !wireAttrs.cableDesignation && !wireAttrs.construction) || !wireAttrs.color?.trim()) {
           throw new Error("WIRE_FIELDS_REQUIRED");
         }
       }
@@ -2939,238 +2890,67 @@ export class PostgresStore implements Store {
   }
 
   async listContactWireCompat(): Promise<ContactWireCompat[]> {
-    const result = await this.pool.query<ContactWireCompatRow>(
-      `SELECT contact_part_id, wire_part_id, status, notes, crimp_class
-       FROM contact_wire_compat
-       ORDER BY contact_part_id ASC, wire_part_id ASC`
-    );
-    return result.rows.map(mapContactWireCompat);
+    return listPairs(this, "contact-wire");
   }
 
   async upsertContactWireCompat(input: ContactWireCompat): Promise<ContactWireCompat> {
-    const result = await this.pool.query<ContactWireCompatRow>(
-      `INSERT INTO contact_wire_compat (contact_part_id, wire_part_id, status, notes, crimp_class)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (contact_part_id, wire_part_id)
-       DO UPDATE SET status = EXCLUDED.status, notes = EXCLUDED.notes, crimp_class = EXCLUDED.crimp_class
-       RETURNING contact_part_id, wire_part_id, status, notes, crimp_class`,
-      [input.contactPartId, input.wirePartId, input.status, input.notes ?? null, input.crimpClass ?? null]
-    );
-    return mapContactWireCompat(result.rows[0]);
+    return upsertPair(this, "contact-wire", input);
   }
 
   async bulkUpsertContactWireCompat(input: { rows: ContactWireCompat[] }): Promise<{ upserted: number }> {
-    if (input.rows.length === 0) {
-      return { upserted: 0 };
-    }
-    const client = await this.pool.connect();
-    try {
-      await client.query("BEGIN");
-      for (const row of input.rows) {
-        await client.query(
-          `INSERT INTO contact_wire_compat (contact_part_id, wire_part_id, status, notes, crimp_class)
-           VALUES ($1, $2, $3, $4, $5)
-           ON CONFLICT (contact_part_id, wire_part_id)
-           DO UPDATE SET status = EXCLUDED.status, notes = EXCLUDED.notes, crimp_class = EXCLUDED.crimp_class`,
-          [row.contactPartId, row.wirePartId, row.status, row.notes ?? null, row.crimpClass ?? null]
-        );
-      }
-      await client.query("COMMIT");
-      return { upserted: input.rows.length };
-    } catch (error) {
-      await this.rollbackSilently(client);
-      throw error;
-    } finally {
-      client.release();
-    }
+    return this.bulkUpsertPartRelationships({ rows: input.rows.map(row => pairRelationship("contact-wire", row)) });
   }
 
   async deleteContactWireCompat(input: { contactPartId: string; wirePartId: string }): Promise<boolean> {
-    const result = await this.pool.query(
-      `DELETE FROM contact_wire_compat
-       WHERE contact_part_id = $1 AND wire_part_id = $2`,
-      [input.contactPartId, input.wirePartId]
-    );
-    return (result.rowCount ?? 0) > 0;
+    return deletePair(this, "contact-wire", input);
   }
 
   async listModuleContactCompat(): Promise<ModuleContactCompat[]> {
-    const result = await this.pool.query<ModuleContactCompatRow>(
-      `SELECT module_part_id, contact_part_id, status, notes, source
-       FROM module_contact_compat
-       ORDER BY module_part_id ASC, contact_part_id ASC`
-    );
-    return result.rows.map(mapModuleContactCompat);
+    return listPairs(this, "module-contact");
   }
 
   async upsertModuleContactCompat(input: ModuleContactCompat): Promise<ModuleContactCompat> {
-    const result = await this.pool.query<ModuleContactCompatRow>(
-      `INSERT INTO module_contact_compat (module_part_id, contact_part_id, status, notes, source)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (module_part_id, contact_part_id)
-       DO UPDATE SET status = EXCLUDED.status, notes = EXCLUDED.notes, source = EXCLUDED.source
-       RETURNING module_part_id, contact_part_id, status, notes, source`,
-      [input.modulePartId, input.contactPartId, input.status, input.notes ?? null, input.source ?? null]
-    );
-    return mapModuleContactCompat(result.rows[0]);
+    return upsertPair(this, "module-contact", input);
   }
 
   async bulkUpsertModuleContactCompat(input: { rows: ModuleContactCompat[] }): Promise<{ upserted: number }> {
-    if (input.rows.length === 0) {
-      return { upserted: 0 };
-    }
-    const client = await this.pool.connect();
-    try {
-      await client.query("BEGIN");
-      for (const row of input.rows) {
-        await client.query(
-          `INSERT INTO module_contact_compat (module_part_id, contact_part_id, status, notes, source)
-           VALUES ($1, $2, $3, $4, $5)
-           ON CONFLICT (module_part_id, contact_part_id)
-           DO UPDATE SET status = EXCLUDED.status, notes = EXCLUDED.notes, source = EXCLUDED.source`,
-          [row.modulePartId, row.contactPartId, row.status, row.notes ?? null, row.source ?? null]
-        );
-      }
-      await client.query("COMMIT");
-      return { upserted: input.rows.length };
-    } catch (error) {
-      await this.rollbackSilently(client);
-      throw error;
-    } finally {
-      client.release();
-    }
+    return this.bulkUpsertPartRelationships({ rows: input.rows.map(row => pairRelationship("module-contact", row)) });
   }
 
-  async deleteModuleContactCompat(input: {
-    modulePartId: string;
-    contactPartId: string;
-  }): Promise<boolean> {
-    const result = await this.pool.query(
-      `DELETE FROM module_contact_compat
-       WHERE module_part_id = $1 AND contact_part_id = $2`,
-      [input.modulePartId, input.contactPartId]
-    );
-    return (result.rowCount ?? 0) > 0;
+  async deleteModuleContactCompat(input: { modulePartId: string; contactPartId: string }): Promise<boolean> {
+    return deletePair(this, "module-contact", input);
   }
 
   async listModuleBackshellCompat(): Promise<ModuleBackshellCompat[]> {
-    const result = await this.pool.query<ModuleBackshellCompatRow>(
-      `SELECT module_part_id, backshell_part_id, status, notes, source
-       FROM module_backshell_compat
-       ORDER BY module_part_id ASC, backshell_part_id ASC`
-    );
-    return result.rows.map(mapModuleBackshellCompat);
+    return listPairs(this, "module-backshell");
   }
 
   async upsertModuleBackshellCompat(input: ModuleBackshellCompat): Promise<ModuleBackshellCompat> {
-    const result = await this.pool.query<ModuleBackshellCompatRow>(
-      `INSERT INTO module_backshell_compat (module_part_id, backshell_part_id, status, notes, source)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (module_part_id, backshell_part_id)
-       DO UPDATE SET status = EXCLUDED.status, notes = EXCLUDED.notes, source = EXCLUDED.source
-       RETURNING module_part_id, backshell_part_id, status, notes, source`,
-      [input.modulePartId, input.backshellPartId, input.status, input.notes ?? null, input.source ?? null]
-    );
-    return mapModuleBackshellCompat(result.rows[0]);
+    return upsertPair(this, "module-backshell", input);
   }
 
   async bulkUpsertModuleBackshellCompat(input: { rows: ModuleBackshellCompat[] }): Promise<{ upserted: number }> {
-    if (input.rows.length === 0) {
-      return { upserted: 0 };
-    }
-    const client = await this.pool.connect();
-    try {
-      await client.query("BEGIN");
-      for (const row of input.rows) {
-        await client.query(
-          `INSERT INTO module_backshell_compat (module_part_id, backshell_part_id, status, notes, source)
-           VALUES ($1, $2, $3, $4, $5)
-           ON CONFLICT (module_part_id, backshell_part_id)
-           DO UPDATE SET status = EXCLUDED.status, notes = EXCLUDED.notes, source = EXCLUDED.source`,
-          [row.modulePartId, row.backshellPartId, row.status, row.notes ?? null, row.source ?? null]
-        );
-      }
-      await client.query("COMMIT");
-      return { upserted: input.rows.length };
-    } catch (error) {
-      await this.rollbackSilently(client);
-      throw error;
-    } finally {
-      client.release();
-    }
+    return this.bulkUpsertPartRelationships({ rows: input.rows.map(row => pairRelationship("module-backshell", row)) });
   }
 
-  async deleteModuleBackshellCompat(input: {
-    modulePartId: string;
-    backshellPartId: string;
-  }): Promise<boolean> {
-    const result = await this.pool.query(
-      `DELETE FROM module_backshell_compat
-       WHERE module_part_id = $1 AND backshell_part_id = $2`,
-      [input.modulePartId, input.backshellPartId]
-    );
-    return (result.rowCount ?? 0) > 0;
+  async deleteModuleBackshellCompat(input: { modulePartId: string; backshellPartId: string }): Promise<boolean> {
+    return deletePair(this, "module-backshell", input);
   }
 
   async listModuleStrainReliefCompat(): Promise<ModuleStrainReliefCompat[]> {
-    const result = await this.pool.query<ModuleStrainReliefCompatRow>(
-      `SELECT module_part_id, strain_relief_part_id, status, notes, source
-       FROM module_strain_relief_compat
-       ORDER BY module_part_id ASC, strain_relief_part_id ASC`
-    );
-    return result.rows.map(mapModuleStrainReliefCompat);
+    return listPairs(this, "module-strain-relief");
   }
 
-  async upsertModuleStrainReliefCompat(
-    input: ModuleStrainReliefCompat
-  ): Promise<ModuleStrainReliefCompat> {
-    const result = await this.pool.query<ModuleStrainReliefCompatRow>(
-      `INSERT INTO module_strain_relief_compat (module_part_id, strain_relief_part_id, status, notes, source)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (module_part_id, strain_relief_part_id)
-       DO UPDATE SET status = EXCLUDED.status, notes = EXCLUDED.notes, source = EXCLUDED.source
-       RETURNING module_part_id, strain_relief_part_id, status, notes, source`,
-      [input.modulePartId, input.strainReliefPartId, input.status, input.notes ?? null, input.source ?? null]
-    );
-    return mapModuleStrainReliefCompat(result.rows[0]);
+  async upsertModuleStrainReliefCompat(input: ModuleStrainReliefCompat): Promise<ModuleStrainReliefCompat> {
+    return upsertPair(this, "module-strain-relief", input);
   }
 
   async bulkUpsertModuleStrainReliefCompat(input: { rows: ModuleStrainReliefCompat[] }): Promise<{ upserted: number }> {
-    if (input.rows.length === 0) {
-      return { upserted: 0 };
-    }
-    const client = await this.pool.connect();
-    try {
-      await client.query("BEGIN");
-      for (const row of input.rows) {
-        await client.query(
-          `INSERT INTO module_strain_relief_compat (module_part_id, strain_relief_part_id, status, notes, source)
-           VALUES ($1, $2, $3, $4, $5)
-           ON CONFLICT (module_part_id, strain_relief_part_id)
-           DO UPDATE SET status = EXCLUDED.status, notes = EXCLUDED.notes, source = EXCLUDED.source`,
-          [row.modulePartId, row.strainReliefPartId, row.status, row.notes ?? null, row.source ?? null]
-        );
-      }
-      await client.query("COMMIT");
-      return { upserted: input.rows.length };
-    } catch (error) {
-      await this.rollbackSilently(client);
-      throw error;
-    } finally {
-      client.release();
-    }
+    return this.bulkUpsertPartRelationships({ rows: input.rows.map(row => pairRelationship("module-strain-relief", row)) });
   }
 
-  async deleteModuleStrainReliefCompat(input: {
-    modulePartId: string;
-    strainReliefPartId: string;
-  }): Promise<boolean> {
-    const result = await this.pool.query(
-      `DELETE FROM module_strain_relief_compat
-       WHERE module_part_id = $1 AND strain_relief_part_id = $2`,
-      [input.modulePartId, input.strainReliefPartId]
-    );
-    return (result.rowCount ?? 0) > 0;
+  async deleteModuleStrainReliefCompat(input: { modulePartId: string; strainReliefPartId: string }): Promise<boolean> {
+    return deletePair(this, "module-strain-relief", input);
   }
 
   async listAwgCmaReference(): Promise<AwgCmaReference[]> {
@@ -3238,89 +3018,57 @@ export class PostgresStore implements Store {
     return (result.rowCount ?? 0) > 0;
   }
 
-  async listPartRelationships(input?: {
-    parentPartId?: string;
-    compatiblePart?: string;
-    relationshipType?: string;
-  }): Promise<PartRelationship[]> {
-    const result = await this.pool.query<PartRelationshipRow>(
-      `SELECT id, parent_part_id, compatible_parts, relationship_type, position_type,
-              parent_positions_json, status, source_status, notes, extra_json
-       FROM part_relationships
-       WHERE ($1::text IS NULL OR parent_part_id = $1::text)
-         AND ($2::text IS NULL OR ',' || COALESCE(compatible_parts, '') || ',' LIKE '%,' || $2::text || ',%')
-         AND ($3::text IS NULL OR relationship_type = $3::text)
-       ORDER BY relationship_type ASC, parent_part_id ASC, position_type ASC NULLS LAST`,
-      [input?.parentPartId ?? null, input?.compatiblePart ?? null, input?.relationshipType ?? null]
-    );
-    return result.rows.map(mapPartRelationship);
+  async listPartRelationships(input?: { parentPartId?: string; compatiblePart?: string; relationshipType?: string }): Promise<PartRelationship[]> {
+    return listRelationships(this.pool, input);
+  }
+
+  private async savePartRelationships(rows: PartRelationshipInput[]): Promise<string[]> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const inputs = rows.map(normalizePartRelationship);
+      await client.query("SELECT id FROM parts WHERE id = ANY($1::text[]) ORDER BY id FOR UPDATE", [[...new Set(inputs.map(row => row.parentPartId))]]);
+      const partIds = [...new Set(inputs.flatMap(row => [row.parentPartId, ...(row.targetPartIds ?? [])]))];
+      const partNumbers = [...new Set(inputs.filter(row => row.targetPartIds === undefined).flatMap(row => [...row.compatibleParts, ...(row.unresolvedParts ?? [])]).map(pn => pn.toUpperCase()))];
+      const raw = await client.query<PartRow>(`SELECT ${PART_COLUMNS} FROM parts WHERE id = ANY($1::text[]) OR (is_archived = FALSE AND UPPER(BTRIM(part_number)) = ANY($2::text[]))`, [partIds, partNumbers]);
+      const parts = await loadPartsWithAttributes(client, raw.rows);
+      const normalized = inputs.map(row => resolveRelationshipInput(row, parts));
+      const ids: string[] = [];
+      for (const row of normalized) ids.push(await writeRelationship(client, row));
+      await client.query("COMMIT");
+      return ids;
+    } catch (error) {
+      await this.rollbackSilently(client);
+      throw error;
+    } finally { client.release(); }
   }
 
   async upsertPartRelationship(input: PartRelationshipInput): Promise<PartRelationship> {
-    const normalized = normalizePartRelationship(input);
-    const existing = await this.pool.query<{ id: string }>(
-      `SELECT id
-       FROM part_relationships
-       WHERE parent_part_id = $1
-         AND relationship_type = $2
-         AND COALESCE(position_type, '') = COALESCE($3, '')
-         AND parent_positions_json = $4::jsonb
-         AND status = $5`,
-      [
-        normalized.parentPartId,
-        normalized.relationshipType,
-        normalized.positionType ?? null,
-        JSON.stringify(normalized.parentPositions),
-        normalized.status
-      ]
-    );
-    const id = existing.rows[0]?.id ?? normalized.id;
-    const result = await this.pool.query<PartRelationshipRow>(
-      `INSERT INTO part_relationships (
-         id, parent_part_id, compatible_parts, relationship_type, position_type,
-         parent_positions_json, status, source_status, notes, extra_json
-       ) VALUES (
-         $1, $2, $3, $4, $5,
-         $6::jsonb, $7, $8, $9, $10::jsonb
-       )
-       ON CONFLICT (id)
-       DO UPDATE SET
-         parent_part_id = EXCLUDED.parent_part_id,
-         compatible_parts = EXCLUDED.compatible_parts,
-         relationship_type = EXCLUDED.relationship_type,
-         position_type = EXCLUDED.position_type,
-         parent_positions_json = EXCLUDED.parent_positions_json,
-         status = EXCLUDED.status,
-         source_status = EXCLUDED.source_status,
-         notes = EXCLUDED.notes,
-         extra_json = EXCLUDED.extra_json
-       RETURNING id, parent_part_id, compatible_parts, relationship_type, position_type,
-                 parent_positions_json, status, source_status, notes, extra_json`,
-      [
-        id,
-        normalized.parentPartId,
-        normalized.compatibleParts.length > 0 ? normalized.compatibleParts.join(",") : null,
-        normalized.relationshipType,
-        normalized.positionType ?? null,
-        JSON.stringify(normalized.parentPositions),
-        normalized.status,
-        normalized.sourceStatus ?? null,
-        normalized.notes ?? null,
-        JSON.stringify(normalized.extra ?? {})
-      ]
-    );
-    return mapPartRelationship(result.rows[0]);
+    const [id] = await this.savePartRelationships([input]);
+    return (await listRelationships(this.pool, { id }))[0];
   }
 
   async bulkUpsertPartRelationships(input: { rows: PartRelationshipInput[] }): Promise<{ upserted: number }> {
-    for (const row of input.rows) {
-      await this.upsertPartRelationship(row);
-    }
+    await this.savePartRelationships(input.rows);
     return { upserted: input.rows.length };
   }
 
   async deletePartRelationship(input: { id: string }): Promise<boolean> {
-    const result = await this.pool.query(`DELETE FROM part_relationships WHERE id = $1`, [input.id]);
+    const result = await this.pool.query("DELETE FROM compatibility_groups WHERE id = $1", [input.id]);
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async listPartMedia(input?: { partId?: string }): Promise<PartMedia[]> {
+    return listMedia(this.pool, input);
+  }
+
+  async upsertPartMedia(input: PartMediaInput): Promise<PartMedia> {
+    validatePartMedia(input);
+    return saveMedia(this.pool, input);
+  }
+
+  async deletePartMedia(input: { id: string; partId: string }): Promise<boolean> {
+    const result = await this.pool.query("DELETE FROM part_media WHERE id = $1 AND part_id = $2", [input.id, input.partId]);
     return (result.rowCount ?? 0) > 0;
   }
 

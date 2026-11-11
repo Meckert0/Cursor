@@ -1,3 +1,4 @@
+import { compatibilityStatus } from "./compatibility-rules.js";
 import type { LibraryLookup } from "./bom.js";
 import type { CompatLookup } from "./compat-lookup.js";
 import {
@@ -11,6 +12,7 @@ import {
 import { catalogModulePins, isSimHost, isSimInsert, simAssignmentValid, simSlotIds, simSlotCapacity, usableSimPins } from "./sim-modules.js";
 import { isWirePart, type CompatStatus, type LibraryComponentRecord } from "./library.js";
 import {
+  contactWireFit,
   awgInAcceptedRange,
   familyAccepted,
   parseWireAwg,
@@ -482,8 +484,9 @@ export function validateSnapshot(snapshot: DesignSnapshot, options: ValidateSnap
         }
       }
 
-      if (path.labelPartNumber?.trim()) {
+      if (path.labelPartNumber?.trim() || path.labelComponentId) {
         const labelComponent = resolveComponent(lookup, {
+          libraryComponentId: path.labelComponentId,
           partNumber: path.labelPartNumber,
           categories: "label"
         });
@@ -580,19 +583,18 @@ export function validateSnapshot(snapshot: DesignSnapshot, options: ValidateSnap
           component: contactComponent
         });
         const compatibility = resolveLibraryCompatibility(contactComponent);
-        if (wireAwg !== undefined && (compatibility.acceptedAwgMin !== undefined || compatibility.acceptedAwgMax !== undefined)) {
-          if (!awgInAcceptedRange(wireAwg, compatibility)) {
-            emit("RULE_WIRE_AWG_INCOMPATIBLE", {
-              entityType: "path",
-              entityId: path.id,
-              message: `Wire AWG ${wireAwg} is outside accepted range for contact part "${contactComponent.partNumber}".`
-            });
-          }
+        if (wireComponent && isWirePart(wireComponent) && contactWireFit(compatibility, wireComponent.attributes, wireComponent.family, path.wireAwg) === "incompatible") {
+          emit("RULE_WIRE_AWG_INCOMPATIBLE", {
+            entityType: "path", entityId: path.id,
+            message: `Wire "${wireComponent.partNumber}" does not meet contact "${contactComponent.partNumber}" gauge, media, family, or insulation-diameter requirements.`
+          });
+        } else if (!wireComponent && wireAwg !== undefined && !awgInAcceptedRange(wireAwg, compatibility)) {
+          emit("RULE_WIRE_AWG_INCOMPATIBLE", { entityType: "path", entityId: path.id, message: `Wire AWG ${wireAwg} is outside accepted range for contact "${contactComponent.partNumber}".` });
         }
         if (wireComponent && options.compatLookup) {
           emitCompatFinding(emit, {
             code: "RULE_COMPAT_CONTACT_WIRE",
-            status: options.compatLookup.contactWire(contactComponent.id, wireComponent.id),
+            status: compatibilityStatus({ rules: options.partRelationships ?? [], parentPartId: contactComponent.id, relationshipType: "WIRE_ALLOWED", targetPartId: wireComponent.id, targetPartNumber: wireComponent.partNumber }) ?? options.compatLookup.contactWire(contactComponent.id, wireComponent.id),
             entityType: "path",
             entityId: path.id,
             leftLabel: `Contact "${contactComponent.partNumber}"`,
@@ -636,15 +638,13 @@ export function validateSnapshot(snapshot: DesignSnapshot, options: ValidateSnap
           if (!contactComponent) {
             continue;
           }
-          let status = options.compatLookup.moduleContact(moduleComponent.id, contactComponent.id);
-          if (simInsert) {
-            const contactRules = (options.partRelationships ?? []).filter(rule => rule.parentPartId === moduleComponent.id && rule.relationshipType === "CONTACT_ALLOWED");
-            if (contactRules.length) {
-              const insertPin = localPinId.slice(simInsert.slotId.length + 1).trim().toUpperCase();
-              const matches = contactRules.filter(rule => rule.compatibleParts.some(pn => pn.trim().toUpperCase() === contactComponent.partNumber.trim().toUpperCase()) && (!rule.parentPositions.length || rule.parentPositions.some(pin => pin.trim().toUpperCase() === insertPin)));
-              status = matches.some(rule => rule.status === "forbidden") || !matches.length ? "forbidden" : matches.some(rule => rule.status === "review") ? "review" : "allowed";
-            }
-          }
+          const contactRules = (options.partRelationships ?? []).filter(rule => rule.parentPartId === moduleComponent.id && rule.relationshipType === "CONTACT_ALLOWED");
+          const pin = simInsert ? localPinId.slice(simInsert.slotId.length + 1) : localPinId;
+          const status = compatibilityStatus({
+            rules: contactRules, parentPartId: moduleComponent.id, relationshipType: "CONTACT_ALLOWED",
+            targetPartId: contactComponent.id, targetPartNumber: contactComponent.partNumber, position: pin,
+            requireAllowance: contactRules.some(rule => rule.isExhaustive !== false)
+          }) ?? options.compatLookup.moduleContact(moduleComponent.id, contactComponent.id);
           emitCompatFinding(emit, {
             code: "RULE_COMPAT_MODULE_CONTACT",
             status,

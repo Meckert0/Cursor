@@ -151,3 +151,15 @@ test("memory store round-trips VPC catalog types and generic relationships", asy
   assert.equal(await store.deleteLibraryComponent({ componentId: "cnt-1" }), true);
   assert.equal((await store.listPartRelationships()).length, 0);
 });
+
+test("legacy unresolved target tokens survive repeated snapshot upgrades", async () => {
+  const original = new MemoryStore();
+  await original.ingestLibraryComponents({ requestedByUserId: "test", dryRun: false, items: [{
+    id: "legacy-parent", category: "module", family: "Test", partNumber: "M1", description: "Module", isReviewed: false, isActive: true, stockStatus: "unknown", attributes: { pinIds: [] }
+  }] });
+  const state = original.exportState();
+  state.partRelationships = [{ id: "legacy", parentPartId: "legacy-parent", relationshipType: "CONTACT_ALLOWED", parentPositions: [], compatibleParts: ["MISSING"], status: "review" }];
+  const upgraded = MemoryStore.fromState(state);
+  const reloaded = MemoryStore.fromState(upgraded.exportState());
+  assert.deepEqual((await reloaded.listPartRelationships())[0].unresolvedParts, ["MISSING"]);
+});

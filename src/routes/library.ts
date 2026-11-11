@@ -1,3 +1,4 @@
+import { validateCatalogAttributes } from "../domain/catalog-attributes.js";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireAdmin, requireRole } from "../auth/rbac.js";
@@ -84,7 +85,9 @@ const contactAttributesSchema = z
     studSize: z.string().optional(),
     tih: z.boolean().optional(),
     acceptedGauges: z.array(z.string().min(1)).default([]),
-    wireInterface: z.string().optional()
+    wireInterface: z.string().optional(),
+  acceptedInsulationDiaMinIn: z.number().positive().nullable().optional().transform(value => value ?? undefined),
+  acceptedInsulationDiaMaxIn: z.number().positive().nullable().optional().transform(value => value ?? undefined)
   })
   .superRefine((value, context) => {
     if (
@@ -102,7 +105,10 @@ const contactAttributesSchema = z
 
 const wireAttributesSchema = z.object({
   milSpec: z.string().optional(),
-  awg: z.string().min(1),
+  cableDesignation: z.string().nullable().optional().transform(value => value ?? undefined),
+  construction: z.string().nullable().optional().transform(value => value ?? undefined),
+  insulatedConductorDiaIn: z.number().positive().nullable().optional().transform(value => value ?? undefined),
+  awg: z.string().optional(),
   color: z.string().min(1),
   cma: z.number().optional(),
   wireType: z.string().optional(),
@@ -125,6 +131,16 @@ const wireAttributesSchema = z.object({
 
 const labelAttributesSchema = z.object({
   series: z.string().optional(),
+  labelStyle: z.string().nullable().optional().transform(value => value ?? undefined),
+  material: z.string().nullable().optional().transform(value => value ?? undefined),
+  fitDiameterMinIn: z.number().positive().nullable().optional().transform(value => value ?? undefined),
+  fitDiameterMaxIn: z.number().positive().nullable().optional().transform(value => value ?? undefined),
+  printableWidthIn: z.number().positive().nullable().optional().transform(value => value ?? undefined),
+  printableHeightIn: z.number().positive().nullable().optional().transform(value => value ?? undefined),
+  maxCharactersPerLine: z.number().int().positive().nullable().optional().transform(value => value ?? undefined),
+  maxLines: z.number().int().positive().nullable().optional().transform(value => value ?? undefined),
+  printProfile: z.string().nullable().optional().transform(value => value ?? undefined),
+  textAllowanceNotes: z.string().nullable().optional().transform(value => value ?? undefined),
   awgMin: z.number().optional(),
   awgMax: z.number().optional(),
   lengthIn: z.number().optional(),
@@ -229,6 +245,8 @@ const ingestItemSchema = z
     })
   ])
   .superRefine((value, context) => {
+    try { validateCatalogAttributes(value.category, value.attributes); }
+    catch (error) { context.addIssue({ code: z.ZodIssueCode.custom, message: error instanceof Error ? error.message : "Invalid item attributes" }); }
     if (value.isReviewed && (!value.reviewedByUserId || !value.reviewedAt)) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
@@ -266,6 +284,21 @@ const tablePreferenceBodySchema = z.object({
 
 const updateAttributesSchema = z
   .object({
+  acceptedInsulationDiaMinIn: z.number().positive().nullable().optional().transform(value => value ?? undefined),
+  acceptedInsulationDiaMaxIn: z.number().positive().nullable().optional().transform(value => value ?? undefined),
+  cableDesignation: z.string().nullable().optional().transform(value => value ?? undefined),
+  construction: z.string().nullable().optional().transform(value => value ?? undefined),
+  insulatedConductorDiaIn: z.number().positive().nullable().optional().transform(value => value ?? undefined),
+  labelStyle: z.string().nullable().optional().transform(value => value ?? undefined),
+  material: z.string().nullable().optional().transform(value => value ?? undefined),
+  fitDiameterMinIn: z.number().positive().nullable().optional().transform(value => value ?? undefined),
+  fitDiameterMaxIn: z.number().positive().nullable().optional().transform(value => value ?? undefined),
+  printableWidthIn: z.number().positive().nullable().optional().transform(value => value ?? undefined),
+  printableHeightIn: z.number().positive().nullable().optional().transform(value => value ?? undefined),
+  maxCharactersPerLine: z.number().int().positive().nullable().optional().transform(value => value ?? undefined),
+  maxLines: z.number().int().positive().nullable().optional().transform(value => value ?? undefined),
+  printProfile: z.string().nullable().optional().transform(value => value ?? undefined),
+  textAllowanceNotes: z.string().nullable().optional().transform(value => value ?? undefined),
     genre: z.string().optional(),
     gender: z.string().optional(),
     contactFamily1: z.string().optional(),
@@ -286,7 +319,7 @@ const updateAttributesSchema = z
     simSlotCount: z.number().int().positive().optional(),
     simSlotSections: z.array(z.array(z.string())).optional(),
     slotOccupancy: z.number().int().positive().optional(),
-    awg: z.string().min(1).optional(),
+    awg: z.string().optional(),
     plating: z.string().optional(),
     termType: z.string().optional(),
     ssCompatible: z.boolean().optional(),
@@ -434,6 +467,9 @@ const partRelationshipSchema = z.object({
   parentPartId: z.string().min(1),
   /** Compatible part numbers: array or comma-separated string, Excel-style. */
   compatibleParts: z.union([z.array(z.string()), z.string()]).optional(),
+  targetPartIds: z.array(z.string().min(1)).optional(),
+  isExhaustive: z.boolean().optional(),
+  source: z.string().optional(),
   relationshipType: z.string().min(1),
   positionType: z.string().min(1).optional(),
   parentPositions: z.array(z.string().min(1)).default([]),
@@ -484,7 +520,55 @@ function wireAttrString(attributes: WireAttributes, key: "awg" | "color"): strin
   return String(attributes[key] ?? "").trim().toLowerCase();
 }
 
+
+const partMediaSchema = z.object({
+  id: z.string().min(1).optional(),
+  partId: z.string().min(1),
+  url: z.url(),
+  storageKey: z.string().optional(),
+  viewType: z.string().trim().min(1),
+  orientation: z.string().optional(),
+  mimeType: z.string().optional(),
+  pixelWidth: z.number().int().positive().optional(),
+  pixelHeight: z.number().int().positive().optional(),
+  altText: z.string().optional(),
+  caption: z.string().optional(),
+  sortOrder: z.number().int().nonnegative().optional(),
+  isPrimary: z.boolean().optional(),
+  source: z.string().optional(),
+  revision: z.string().optional()
+});
+
 export function registerLibraryRoutes(app: FastifyInstance) {
+  app.get("/v1/library/media", async (request, reply) => {
+    if (!requireAdmin(request, reply).ok) return;
+    const query = z.object({ partId: z.string().optional() }).parse(request.query);
+    return { items: await app.store.listPartMedia(query) };
+  });
+
+  app.get("/v1/library/components/:componentId/media", async (request, reply) => {
+    if (!requireRole(request, reply, ["viewer", "editor", "owner", "supplier_reviewer"]).ok) return;
+    const { componentId } = z.object({ componentId: z.string().min(1) }).parse(request.params);
+    const admin = request.currentUser?.accountRole === "admin";
+    const part = await app.store.getLibraryComponent({ componentId, requestingUserId: resolveActingUserId(request), canViewAllUnreviewed: admin, canViewInactive: admin });
+    if (!part) return reply.notFound("Item not found.");
+    return { items: await app.store.listPartMedia({ partId: componentId }) };
+  });
+
+  app.put("/v1/library/media", async (request, reply) => {
+    if (!requireAdmin(request, reply).ok) return;
+    const parsed = partMediaSchema.safeParse(request.body);
+    if (!parsed.success) return reply.badRequest(parsed.error.issues.map(issue => issue.message).join("; "));
+    return app.store.upsertPartMedia(parsed.data);
+  });
+
+  app.delete("/v1/library/media", async (request, reply) => {
+    if (!requireAdmin(request, reply).ok) return;
+    const query = z.object({ id: z.string().min(1), partId: z.string().min(1) }).parse(request.query);
+    if (!await app.store.deletePartMedia(query)) return reply.notFound("Image or file not found.");
+    return reply.code(204).send();
+  });
+
   app.get("/v1/library/components", async (request, reply) => {
     const auth = requireRole(request, reply, ["viewer", "editor", "owner", "supplier_reviewer"]);
     if (!auth.ok) {
@@ -751,7 +835,9 @@ export function registerLibraryRoutes(app: FastifyInstance) {
       return;
     }
     const params = z.object({ componentId: z.string().min(1) }).parse(request.params);
-    const body = updatePartSchema.parse(request.body);
+    const parsed = updatePartSchema.safeParse(request.body);
+    if (!parsed.success) return reply.badRequest(parsed.error.issues.map(issue => issue.message).join("; "));
+    const body = parsed.data;
     if (Object.values(body).every((value) => value === undefined)) {
       return reply.badRequest("At least one field is required.");
     }
@@ -768,13 +854,7 @@ export function registerLibraryRoutes(app: FastifyInstance) {
       ...existing.attributes,
       ...(body.attributes ?? {})
     };
-    if (existing.category === "wire") {
-      const awg = "awg" in nextAttributes ? String(nextAttributes.awg ?? "").trim() : "";
-      const color = "color" in nextAttributes ? String(nextAttributes.color ?? "").trim() : "";
-      if (!awg || !color) {
-        return reply.badRequest("Wire components require awg and color.");
-      }
-    }
+    validateCatalogAttributes(existing.category, nextAttributes);
     if (
       existing.category === "contact" &&
       "acceptedAwgMin" in nextAttributes &&
@@ -1100,7 +1180,9 @@ export function registerLibraryRoutes(app: FastifyInstance) {
     if (!requireAdmin(request, reply).ok) {
       return;
     }
-    const body = bulkPartRelationshipSchema.parse(request.body);
+    const parsed = bulkPartRelationshipSchema.safeParse(request.body);
+    if (!parsed.success) return reply.badRequest(parsed.error.issues.map(issue => issue.message).join("; "));
+    const body = parsed.data;
     return app.store.bulkUpsertPartRelationships({ rows: body.rows });
   });
 

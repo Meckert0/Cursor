@@ -89,3 +89,16 @@ test("resolveRule gates by mode and ruleset version", () => {
   });
   assert.equal(unreviewed.severity, "error");
 });
+
+test("coax identifiers remain media designations and exact gauge sets remain discrete", async () => {
+  const { contactWireFit } = await import("./library-compatibility.js");
+  assert.equal(parseWireAwg("RG-316"), undefined);
+  assert.equal(parseWireAwg("22 AWG"), 22);
+  assert.equal(parseWireAwg("AWG 24"), 24);
+  assert.equal(contactWireFit({ acceptedGauges: ["20", "24"], acceptedAwgMin: 20, acceptedAwgMax: 24 }, { awg: "22", color: "white" }), "incompatible");
+  assert.equal(contactWireFit({ acceptedGauges: ["20", "24"] }, { awg: "24", color: "white" }), "fits");
+  assert.equal(contactWireFit({ acceptedGauges: ["RG316"], wireInterface: "coax" }, { cableDesignation: "RG-316", construction: "coax", color: "white" }), "fits");
+  assert.equal(contactWireFit({ acceptedGauges: ["RG316"] }, { cableDesignation: "RG-178", construction: "coax", color: "white" }), "incompatible");
+  assert.equal(contactWireFit({ acceptedInsulationDiaMaxIn: 0.07 }, { awg: "22", color: "white", construction: "single", numberOfConductors: 1, overallDia: 0.08 }), "incompatible");
+  assert.equal(contactWireFit({ acceptedInsulationDiaMaxIn: 0.07 }, { awg: "22", color: "white", construction: "twisted_pair", numberOfConductors: 2, overallDia: 0.14 }), "unknown");
+});

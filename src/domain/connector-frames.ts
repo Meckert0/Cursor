@@ -1,3 +1,4 @@
+import { compatibilityStatus } from "./compatibility-rules.js";
 import { isCanvasConnectorPart } from "./library.js";
 import type { ConnectorPin, ConnectorSlot, SnapshotConnector } from "./types.js";
 
@@ -9,6 +10,9 @@ export type FrameAttributesLike = {
 export type FrameModuleRelationship = {
   parentPartId: string;
   compatibleParts: string[];
+  targetPartIds?: string[];
+  isExhaustive?: boolean;
+  unresolvedParts?: string[];
   relationshipType: string;
   parentPositions: string[];
   status: string;
@@ -221,38 +225,13 @@ export function moduleMatchesFrameSide(
   return moduleSide === frameSide;
 }
 
-export function modulesAllowedForFrameSlot<T extends { partNumber: string; category: string; partType?: string }>(
-  framePartId: string,
-  slotId: string,
-  relationships: FrameModuleRelationship[],
-  modules: T[]
+export function modulesAllowedForFrameSlot<T extends { id?: string; partNumber: string; category: string; partType?: string }>(
+  framePartId: string, slotId: string, relationships: FrameModuleRelationship[], modules: T[]
 ): T[] {
-  const allowedPartNumbers = new Set<string>();
-  const slotNeedle = slotId.trim().toUpperCase();
-  for (const relationship of relationships) {
-    if (relationship.parentPartId !== framePartId) {
-      continue;
-    }
-    if (relationship.relationshipType !== "MODULE_ALLOWED") {
-      continue;
-    }
-    if (relationship.status !== "allowed") {
-      continue;
-    }
-    const positions = relationship.parentPositions.map((entry) => entry.trim().toUpperCase()).filter(Boolean);
-    if (positions.length > 0 && !positions.includes(slotNeedle)) {
-      continue;
-    }
-    for (const partNumber of relationship.compatibleParts) {
-      const key = partNumber.trim().toLowerCase();
-      if (key) {
-        allowedPartNumbers.add(key);
-      }
-    }
-  }
-  return modules.filter(
-    (module) => isCanvasConnectorPart(module) && allowedPartNumbers.has(module.partNumber.trim().toLowerCase())
-  );
+  return modules.filter(module => isCanvasConnectorPart(module) && compatibilityStatus({
+    rules: relationships, parentPartId: framePartId, relationshipType: "MODULE_ALLOWED",
+    targetPartId: module.id, targetPartNumber: module.partNumber, position: slotId, requireAllowance: true
+  }) === "allowed");
 }
 
 export function expandConnectorsForDetails(connectors: SnapshotConnector[]): LogicalConnector[] {

@@ -13,6 +13,7 @@ export type VpcSheetRow = {
 };
 
 export type VpcCatalogPart = PartIngestItem & {
+  id: string;
   sourceRow: number;
 };
 

@@ -1,3 +1,4 @@
+import type { PartMedia, PartMediaInput } from "../../domain/library.js";
 import Database from "better-sqlite3";
 import type {
   Design,
@@ -468,6 +469,18 @@ export class SqliteStore extends MemoryStore {
     const result = await super.deletePartRelationship(input);
     this.persistState();
     return result;
+  }
+
+  override async upsertPartMedia(input: PartMediaInput): Promise<PartMedia> {
+    const row = await super.upsertPartMedia(input);
+    this.persistState();
+    return row;
+  }
+
+  override async deletePartMedia(input: { id: string; partId: string }): Promise<boolean> {
+    const deleted = await super.deletePartMedia(input);
+    this.persistState();
+    return deleted;
   }
 
   override async upsertUserTablePreferences(input: {

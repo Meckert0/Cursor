@@ -31,7 +31,10 @@ const RELATIONSHIP_TYPE_SUGGESTIONS = [
   "CONTACT_ALLOWED",
   "MATES_WITH",
   "INSERT_ALLOWED",
-  "WIRE_COMPATIBILITY"
+  "WIRE_COMPATIBILITY",
+  "WIRE_ALLOWED",
+  "BACKSHELL_ALLOWED",
+  "STRAIN_RELIEF_ALLOWED"
 ] as const;
 
 const TABS: Array<{ id: CompatKind; label: string }> = [
@@ -39,7 +42,7 @@ const TABS: Array<{ id: CompatKind; label: string }> = [
   { id: "module-contact", label: "Module ↔ Contact" },
   { id: "module-backshell", label: "Module ↔ Backshell" },
   { id: "module-strain-relief", label: "Module ↔ Strain relief" },
-  { id: "relationships", label: "Generic relationships" },
+  { id: "relationships", label: "Compatibility groups" },
   { id: "aliases", label: "Aliases" }
 ];
 
@@ -185,7 +188,8 @@ function CompatPairTable({
 }
 
 export function CompatibilityManager(props: CompatibilityManagerProps) {
-  const [tab, setTab] = useState<CompatKind>("contact-wire");
+  const [editingRelationship, setEditingRelationship] = useState<PartRelationshipDto | null>(null);
+  const [tab, setTab] = useState<CompatKind>("relationships");
 
   const partById = useMemo(() => {
     const map = new Map<string, PartDto>();
@@ -352,18 +356,23 @@ export function CompatibilityManager(props: CompatibilityManagerProps) {
 
       {tab === "relationships" ? (
         <div className={styles.compatPanel}>
-          <form action={props.upsertRelationshipAction} className={styles.compatAddForm}>
-            <PartSelect name="parentPartId" parts={allParts} label="Parent part" />
+          <form key={editingRelationship?.id ?? "new"} action={async data => { await props.upsertRelationshipAction(data); setEditingRelationship(null); }} className={styles.compatAddForm}>
+            {editingRelationship ? <input type="hidden" name="id" value={editingRelationship.id} /> : null}
+            <input type="hidden" name="extra" value={JSON.stringify(editingRelationship?.extra ?? {})} />
+            <label>Parent part<select name="parentPartId" required defaultValue={editingRelationship?.parentPartId ?? ""}>
+              <option value="" disabled>Select…</option>{allParts.map(part => <option key={part.id} value={part.id}>{partLabel(part)}</option>)}
+            </select></label>
             <label>
               Compatible parts
               <input
                 name="compatibleParts"
+                defaultValue={editingRelationship ? [...editingRelationship.compatibleParts, ...(editingRelationship.unresolvedParts ?? [])].join(", ") : ""}
                 placeholder="510161101, 510161102, … (empty for gauge/media rule)"
               />
             </label>
             <label>
               Relationship type
-              <input name="relationshipType" list="relationship-types" required placeholder="MODULE_ALLOWED" />
+              <input name="relationshipType" defaultValue={editingRelationship?.relationshipType ?? ""} list="relationship-types" required placeholder="MODULE_ALLOWED" />
               <datalist id="relationship-types">
                 {RELATIONSHIP_TYPE_SUGGESTIONS.map((value) => (
                   <option key={value} value={value} />
@@ -372,22 +381,25 @@ export function CompatibilityManager(props: CompatibilityManagerProps) {
             </label>
             <label>
               Position type
-              <input name="positionType" placeholder="MODULE_SLOT, QUADRAPADDLE, …" />
+              <input name="positionType" defaultValue={editingRelationship?.positionType ?? ""} placeholder="MODULE_SLOT, QUADRAPADDLE, …" />
             </label>
             <label>
               Parent positions
-              <input name="parentPositions" placeholder="A, B or pin IDs" />
+              <input name="parentPositions" defaultValue={editingRelationship?.parentPositions.join(", ") ?? ""} placeholder="A, B or pin IDs" />
             </label>
-            <StatusSelect />
+            <label>Status<select name="status" defaultValue={editingRelationship?.status ?? "allowed"}>{COMPAT_STATUS_OPTIONS.map(status => <option key={status} value={status}>{status}</option>)}</select></label>
+            <label>Coverage<select name="isExhaustive" defaultValue={String(editingRelationship?.isExhaustive ?? true)}><option value="true">Only listed parts are allowed</option><option value="false">Other parts remain unknown</option></select></label>
+            <label>Source<input name="source" defaultValue={editingRelationship?.source ?? ""} /></label>
             <label>
               Source status
-              <input name="sourceStatus" placeholder="CONFIRMED, CONDITIONAL_CLEARANCE, …" />
+              <input name="sourceStatus" defaultValue={editingRelationship?.sourceStatus ?? ""} placeholder="CONFIRMED, CONDITIONAL_CLEARANCE, …" />
             </label>
             <label>
               Notes
-              <input name="notes" />
+              <input name="notes" defaultValue={editingRelationship?.notes ?? ""} />
             </label>
             <button type="submit">Add / update</button>
+            {editingRelationship ? <button type="button" onClick={() => setEditingRelationship(null)}>Cancel edit</button> : null}
           </form>
           <div className={styles.tableWrap}>
             <table className={`${styles.table} ${styles.compactTable}`}>
@@ -404,7 +416,7 @@ export function CompatibilityManager(props: CompatibilityManagerProps) {
               <tbody>
                 {props.relationships.length === 0 ? (
                   <tr>
-                    <td colSpan={6}>No generic relationships yet.</td>
+                    <td colSpan={6}>No compatibility groups yet.</td>
                   </tr>
                 ) : (
                   props.relationships.map((row) => (
@@ -414,10 +426,13 @@ export function CompatibilityManager(props: CompatibilityManagerProps) {
                         {row.positionType ? ` · ${row.positionType}` : ""}
                       </td>
                       <td>{resolvePn(partById, row.parentPartId)}</td>
-                      <td>{row.compatibleParts.length > 0 ? row.compatibleParts.join(", ") : "—"}</td>
+                      <td>{row.compatibleParts.length > 0 ? row.compatibleParts.join(", ") : "—"}
+                        {row.unresolvedParts?.length ? <p role="status">Needs resolution: {row.unresolvedParts.join(", ")}</p> : null}
+                      </td>
                       <td>{row.parentPositions.length > 0 ? row.parentPositions.join(", ") : "—"}</td>
-                      <td>{row.status}</td>
+                      <td>{row.status}<br />{row.isExhaustive ? "Exhaustive list" : "Other parts unknown"}</td>
                       <td>
+                        {!row.legacyPairKey ? <button type="button" onClick={() => setEditingRelationship(row)}>Edit</button> : null}
                         <form action={props.deleteRelationshipAction} className={styles.inlineAction}>
                           <input type="hidden" name="id" value={row.id} />
                           <ConfirmSubmitButton

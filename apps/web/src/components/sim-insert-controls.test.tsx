@@ -104,8 +104,8 @@ describe("SIM module editor", () => {
     expect(within(dialog).queryByText("Physical layout unavailable; showing numbered slots.")).not.toBeInTheDocument();
     const banks = within(dialog).getAllByRole("group", { name: /^SIM section/ });
     expect(banks.map(bank => within(bank).getAllByRole("button").length)).toEqual(bankSizes);
-    const first = within(dialog).getByRole("button", { name: partNumber === "510161130" ? "J1A SIM slot 1 (A1)" : "J1A SIM slot 1", exact: true });
-    const nextBank = within(dialog).getByRole("button", { name: `J1A SIM slot ${bankSizes[0] + 1}${partNumber === "510161130" ? " (B1)" : ""}`, exact: true });
+    const first = within(dialog).getByRole("button", { name: partNumber === "510161130" ? "J1A SIM slot 1 (A1)" : "J1A SIM slot 1" });
+    const nextBank = within(dialog).getByRole("button", { name: `J1A SIM slot ${bankSizes[0] + 1}${partNumber === "510161130" ? " (B1)" : ""}` });
     expect(first.style.left).toBe(nextBank.style.left);
     expect(parseFloat(first.style.top)).toBeLessThan(parseFloat(nextBank.style.top));
     fireEvent.click(nextBank);
@@ -115,8 +115,8 @@ describe("SIM module editor", () => {
 
   it("shows mating-face labels while editing the saved slot IDs", () => {
     const { dialog, onChoose } = mount({ host: { ...host, partNumber: "510161130", attributes: { simSlotCount: 16 } } });
-    fireEvent.click(within(dialog).getByRole("button", { name: "J1A SIM slot 16 (B8)", exact: true }));
-    expect(within(dialog).getByRole("heading", { name: "Slot B8", exact: true })).toBeVisible();
+    fireEvent.click(within(dialog).getByRole("button", { name: "J1A SIM slot 16 (B8)" }));
+    expect(within(dialog).getByRole("heading", { name: "Slot B8" })).toBeVisible();
     expect(within(dialog).getByText("Slot ID 16")).toBeVisible();
     fireEvent.click(within(dialog).getByRole("button", { name: "Select SIM insert 16 for J1A" }));
     expect(onChoose).toHaveBeenCalledExactlyOnceWith("16");

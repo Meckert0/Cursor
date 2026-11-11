@@ -16,6 +16,8 @@ import {
   getLibraryTablePreferences,
   LIBRARY_ITEM_CATEGORIES,
   type LibraryItemCategory,
+  type PartRelationshipDto,
+  type PartMediaDto,
   updateLibraryTablePreferences,
   type LibraryComponentDto,
   type LibraryTablePreferencesDto
@@ -61,11 +63,15 @@ interface ItemDatabaseViewerProps {
   editAction: (formData: FormData) => void | Promise<void>;
   deleteAction: (formData: FormData) => void | Promise<void>;
   currentUserId: string;
+  relationships?: PartRelationshipDto[];
+  media?: PartMediaDto[];
 }
 
 interface CategoryVirtualTableProps {
   category: Category;
   items: LibraryComponentDto[];
+  relationships: PartRelationshipDto[];
+  media: PartMediaDto[];
   editAction: ItemDatabaseViewerProps["editAction"];
   deleteAction: ItemDatabaseViewerProps["deleteAction"];
 }
@@ -602,7 +608,7 @@ function CreateItemModal({
                     ))}
                   </select>
                 ) : (
-                  <input name={field.name} type={field.type} defaultValue="" required={field.required} />
+                  <input name={field.name} type={field.type} step={field.type === "number" ? "any" : undefined} defaultValue="" required={field.required} />
                 )}
               </label>
             ))}
@@ -621,8 +627,12 @@ function EditItemModal({
   item,
   onClose,
   editAction,
-  deleteAction
+  deleteAction,
+  relationships,
+  media
 }: {
+  relationships: PartRelationshipDto[];
+  media: PartMediaDto[];
   item: LibraryComponentDto;
   onClose: () => void;
   editAction: ItemDatabaseViewerProps["editAction"];
@@ -969,7 +979,7 @@ function EditItemModal({
                     <input
                       id={inputId}
                       name={field.name}
-                      type={field.type}
+                      type={field.type} step={field.type === "number" ? "any" : undefined}
                       defaultValue={field.defaultValue}
                       required={field.required}
                     />
@@ -994,12 +1004,17 @@ function EditItemModal({
             <SaveButton />
           </div>
         </form>
+        <details className={styles.sectionContent}><summary>Compatibility and images</summary>
+          <ul>{relationships.filter(row => row.parentPartId === item.id || row.targetPartIds?.includes(item.id)).map(row => <li key={row.id}>{row.relationshipType} · {row.compatibleParts.join(", ")} · {row.parentPositions.length ? row.parentPositions.join(", ") : "all positions"} · {row.status}</li>)}</ul>
+          <ul>{media.filter(file => file.partId === item.id).map(file => <li key={file.id}><a href={file.url} target="_blank" rel="noreferrer">{file.caption ?? file.viewType}</a>{file.orientation ? ` · ${file.orientation}` : ""}</li>)}</ul>
+          <p>Manage relationships in Compatibility &amp; Aliases and views in Images and Files.</p>
+        </details>
       </div>
     </div>
   );
 }
 
-function CategoryVirtualTable({ category, items, editAction, deleteAction }: CategoryVirtualTableProps) {
+function CategoryVirtualTable({ category, items, editAction, deleteAction, relationships, media }: CategoryVirtualTableProps) {
   const scope = getScopeByCategory(category);
   const viewportRef = useRef<HTMLDivElement>(null);
   const bottomScrollbarRef = useRef<HTMLDivElement>(null);
@@ -1407,6 +1422,8 @@ function CategoryVirtualTable({ category, items, editAction, deleteAction }: Cat
       {editingItem ? (
         <EditItemModal
           item={editingItem}
+          relationships={relationships}
+          media={media}
           editAction={editAction}
           deleteAction={deleteAction}
           onClose={() => setEditingItem(null)}
@@ -1428,7 +1445,9 @@ export function ItemDatabaseViewer({
   createAction,
   editAction,
   deleteAction,
-  currentUserId
+  currentUserId,
+  relationships = [],
+  media = []
 }: ItemDatabaseViewerProps) {
   const [creatingCategory, setCreatingCategory] = useState<Category | null>(null);
 
@@ -1504,6 +1523,8 @@ export function ItemDatabaseViewer({
                   <CategoryVirtualTable
                     category={currentCategory}
                     items={categoryItems}
+                    relationships={relationships}
+                    media={media}
                     editAction={editAction}
                     deleteAction={deleteAction}
                   />

@@ -437,7 +437,7 @@ export function buildBom(revision: Revision, lookup: LibraryLookup): BomResult {
       const unit: BomUnit = hasLength ? "in" : "ea";
       const awg =
         path.wireAwg?.trim() ||
-        (component && isWirePart(component) ? component.attributes.awg.trim() : undefined) ||
+        (component && isWirePart(component) ? component.attributes.awg?.trim() : undefined) ||
         undefined;
       const color =
         path.wireColor?.trim() ||
@@ -462,9 +462,10 @@ export function buildBom(revision: Revision, lookup: LibraryLookup): BomResult {
       });
     }
 
-    const labelPartNumber = path.labelPartNumber?.trim();
+    const labelPartNumber = path.labelPartNumber?.trim() || path.labelComponentId;
     if (labelPartNumber) {
       const component = resolveComponent(lookup, {
+        libraryComponentId: path.labelComponentId,
         partNumber: labelPartNumber,
         categories: "label"
       });

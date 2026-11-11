@@ -509,3 +509,15 @@ test("buildBom names a one-slot frame module after the connector", () => {
   assert.equal(backshellLine?.designRefs.includes("J1A"), false);
 });
 
+
+test("label selections resolve stable IDs after a part-number change", () => {
+  const revision = fullyAccessorizedRevision();
+  revision.snapshot.paths[0].labelComponentId = "stable-label";
+  revision.snapshot.paths[0].labelPartNumber = "OLD-LABEL";
+  revision.snapshot.paths[0].labelText = "J1/1 to J2/1";
+  const label = makePart({ id: "stable-label", category: "label", family: "Test", partNumber: "00123", description: "Renamed label" });
+  const bom = buildBom(revision, createLibraryLookup([label]));
+  const line = bom.lines.find(row => row.category === "label");
+  assert.equal(line?.partNumber, "00123");
+  assert.equal(line?.libraryComponentId, "stable-label");
+});

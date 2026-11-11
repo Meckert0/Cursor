@@ -141,11 +141,17 @@ export interface ContactAttributes {
   tih?: boolean;
   acceptedGauges?: string[];
   wireInterface?: string;
+  acceptedInsulationDiaMinIn?: number;
+  acceptedInsulationDiaMaxIn?: number;
 }
 
 export interface WireAttributes {
   milSpec?: string;
-  awg: string;
+  /** Actual conductor gauge. Cable designations such as RG-316 belong below. */
+  awg?: string;
+  cableDesignation?: string;
+  construction?: string;
+  insulatedConductorDiaIn?: number;
   color: string;
   cma?: number;
   wireType?: string;
@@ -172,6 +178,16 @@ export interface LabelAttributes {
   awgMax?: number;
   lengthIn?: number;
   diaIn?: number;
+  labelStyle?: string;
+  material?: string;
+  fitDiameterMinIn?: number;
+  fitDiameterMaxIn?: number;
+  printableWidthIn?: number;
+  printableHeightIn?: number;
+  maxCharactersPerLine?: number;
+  maxLines?: number;
+  printProfile?: string;
+  textAllowanceNotes?: string;
 }
 
 export interface SleeveTubeBraidAttributes {
@@ -262,8 +278,10 @@ export interface ModuleStrainReliefCompat {
 export interface PartRelationship {
   id: string;
   parentPartId: string;
-  /** Compatible part numbers at the Excel grain (comma-separated in the DB). Empty for gauge/media rules. */
+  /** Display/import projection. Canonical targets are stored by stable part ID. */
   compatibleParts: string[];
+  targetPartIds?: string[];
+  unresolvedParts?: string[];
   relationshipType: string;
   positionType?: string;
   parentPositions: string[];
@@ -271,7 +289,35 @@ export interface PartRelationship {
   sourceStatus?: string;
   notes?: string;
   extra?: Record<string, unknown>;
+  isExhaustive?: boolean;
+  source?: string;
+  /** Internal adapter identity for the original pair endpoints. */
+  legacyPairKey?: string;
 }
+
+export interface PartMedia {
+  id: string;
+  partId: string;
+  url: string;
+  storageKey?: string;
+  viewType: string;
+  orientation?: string;
+  mimeType?: string;
+  pixelWidth?: number;
+  pixelHeight?: number;
+  altText?: string;
+  caption?: string;
+  sortOrder: number;
+  isPrimary: boolean;
+  source?: string;
+  revision?: string;
+}
+
+export type PartMediaInput = Omit<PartMedia, "id" | "sortOrder" | "isPrimary"> & {
+  id?: string;
+  sortOrder?: number;
+  isPrimary?: boolean;
+};
 
 export interface PartImportProvenance {
   partId: string;
@@ -392,8 +438,9 @@ export function partRelationshipNaturalKey(row: {
   positionType?: string;
   parentPositions: string[];
   status: CompatStatus;
+  legacyPairKey?: string;
 }): string {
-  return `${row.parentPartId}::${row.relationshipType}::${row.positionType ?? ""}::${row.parentPositions.join(",")}::${row.status}`;
+  return row.legacyPairKey ?? `${row.parentPartId}::${row.relationshipType}::${row.positionType ?? ""}::${row.parentPositions.join(",")}::${row.status}`;
 }
 
 export type PartRelationshipInput = Omit<PartRelationship, "id" | "compatibleParts"> & {
@@ -425,13 +472,18 @@ export function normalizePartRelationship(input: PartRelationshipInput): PartRel
     id: input.id?.trim() || `rel-${crypto.randomUUID()}`,
     parentPartId: input.parentPartId.trim(),
     compatibleParts: normalizeStringList(input.compatibleParts),
-    relationshipType: input.relationshipType.trim(),
+    targetPartIds: input.targetPartIds ? [...new Set(input.targetPartIds)] : undefined,
+    relationshipType: input.relationshipType.trim().toUpperCase(),
     positionType: trimToUndefined(input.positionType),
     parentPositions,
     status: input.status,
     sourceStatus: trimToUndefined(input.sourceStatus),
     notes: trimToUndefined(input.notes),
-    extra: objectOrUndefined(input.extra)
+    extra: objectOrUndefined(input.extra),
+    isExhaustive: input.isExhaustive,
+    source: trimToUndefined(input.source),
+    legacyPairKey: input.legacyPairKey,
+    unresolvedParts: input.unresolvedParts
   };
 }
 

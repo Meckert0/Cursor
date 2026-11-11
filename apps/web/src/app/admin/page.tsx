@@ -25,6 +25,9 @@ import {
   listModuleStrainReliefCompat,
   listPartAliases,
   listPartRelationships,
+  listPartMedia,
+  upsertPartMedia,
+  deletePartMedia,
   updateAdminPageDescriptions,
   updateLibraryComponent,
   upsertContactWireCompat,
@@ -37,6 +40,7 @@ import {
 import { requireAdminUser } from "@/lib/auth";
 import { collectAttributesFromFormData } from "@/lib/part-fields";
 import { CompatibilityManager } from "./compatibility-manager";
+import { MediaManager } from "./media-manager";
 import { ItemDatabaseViewer } from "./item-database-viewer";
 import styles from "./page.module.css";
 
@@ -348,6 +352,10 @@ async function upsertRelationshipAction(formData: FormData) {
   await requireAdminUser();
   const compatibleParts = optionalFormText(formData, "compatibleParts");
   await upsertPartRelationship({
+    extra: JSON.parse(optionalFormText(formData, "extra") || "{}") as Record<string, unknown>,
+    id: optionalFormText(formData, "id") || undefined,
+    isExhaustive: formData.get("isExhaustive") === "true",
+    source: optionalFormText(formData, "source") || undefined,
     parentPartId: requireFormField(formData, "parentPartId"),
     compatibleParts: compatibleParts || undefined,
     relationshipType: requireFormField(formData, "relationshipType"),
@@ -369,10 +377,33 @@ async function deleteRelationshipAction(formData: FormData) {
   revalidatePath("/admin");
 }
 
+async function upsertMediaAction(formData: FormData) {
+  "use server";
+  await requireAdminUser();
+  const number = (name: string) => { const value = optionalFormText(formData, name); return value ? Number(value) : undefined; };
+  await upsertPartMedia({
+    id: optionalFormText(formData, "id") || undefined,
+    partId: requireFormField(formData, "partId"), url: requireFormField(formData, "url"), viewType: requireFormField(formData, "viewType"),
+    orientation: optionalFormText(formData, "orientation") || undefined, mimeType: optionalFormText(formData, "mimeType") || undefined,
+    altText: optionalFormText(formData, "altText") || undefined, caption: optionalFormText(formData, "caption") || undefined,
+    storageKey: optionalFormText(formData, "storageKey") || undefined, source: optionalFormText(formData, "source") || undefined,
+    revision: optionalFormText(formData, "revision") || undefined, sortOrder: number("sortOrder"),
+    pixelWidth: number("pixelWidth"), pixelHeight: number("pixelHeight"), isPrimary: formData.get("isPrimary") === "on"
+  });
+  revalidatePath("/admin");
+}
+
+async function deleteMediaAction(formData: FormData) {
+  "use server";
+  await requireAdminUser();
+  await deletePartMedia({ id: requireFormField(formData, "id"), partId: requireFormField(formData, "partId") });
+  revalidatePath("/admin");
+}
+
 export default async function AdminOverviewPage({ searchParams }: { searchParams: AdminPageSearchParams }) {
   const signedInUser = await requireAdminUser();
   const { q, category, family, awg, color } = await searchParams;
-  const [users, projects, items, pageDescriptions, contactWire, moduleContact, moduleBackshell, moduleStrainRelief, aliases, relationships] =
+  const [users, projects, items, pageDescriptions, contactWire, moduleContact, moduleBackshell, moduleStrainRelief, aliases, relationships, media, unfilteredItems] =
     await Promise.all([
       listAdminUsers(),
       listAdminProjectOverview(),
@@ -389,8 +420,12 @@ export default async function AdminOverviewPage({ searchParams }: { searchParams
       listModuleBackshellCompat(),
       listModuleStrainReliefCompat(),
       listPartAliases(),
-      listPartRelationships()
+      listPartRelationships(),
+      listPartMedia(),
+      q || category || family || awg || color ? listLibraryComponents() : Promise.resolve(null)
     ]);
+
+  const catalogItems = unfilteredItems ?? items;
 
   const projectsByUserId = new Map<
     string,
@@ -552,11 +587,13 @@ export default async function AdminOverviewPage({ searchParams }: { searchParams
         <section className={`${styles.card} ${styles.sectionPanel}`}>
           <details>
             <summary className={styles.sectionSummary}>
-              <span className={styles.sectionTitle}>Section 2: Item Database Viewer</span>
+              <span className={styles.sectionTitle}>Items — Item Database Viewer</span>
               <span className={styles.sectionHint}>{items.length} items - expand panel</span>
             </summary>
             <ItemDatabaseViewer
               items={items}
+              relationships={relationships}
+              media={media}
               visibleCategories={visibleCategories}
               categoryLabel={categoryLabel}
               q={q}
@@ -575,19 +612,14 @@ export default async function AdminOverviewPage({ searchParams }: { searchParams
         <section className={`${styles.card} ${styles.sectionPanel}`}>
           <details>
             <summary className={styles.sectionSummary}>
-              <span className={styles.sectionTitle}>Section 3: Compatibility &amp; Aliases</span>
+              <span className={styles.sectionTitle}>Compatibility &amp; Aliases</span>
               <span className={styles.sectionHint}>
-                {contactWire.length +
-                  moduleContact.length +
-                  moduleBackshell.length +
-                  moduleStrainRelief.length +
-                  aliases.length +
-                  relationships.length}{" "}
+                {relationships.length + aliases.length}{" "}
                 rows - expand panel
               </span>
             </summary>
             <CompatibilityManager
-              items={items}
+              items={catalogItems}
               contactWire={contactWire}
               moduleContact={moduleContact}
               moduleBackshell={moduleBackshell}
@@ -607,6 +639,15 @@ export default async function AdminOverviewPage({ searchParams }: { searchParams
               upsertRelationshipAction={upsertRelationshipAction}
               deleteRelationshipAction={deleteRelationshipAction}
             />
+          </details>
+        </section>
+        <section id="catalog-media" className={`${styles.card} ${styles.sectionPanel}`}>
+          <details>
+            <summary className={styles.sectionSummary}>
+              <span className={styles.sectionTitle}>Images and Files</span>
+              <span className={styles.sectionHint}>{media.length} files - expand panel</span>
+            </summary>
+            <MediaManager items={catalogItems} media={media} upsertAction={upsertMediaAction} deleteAction={deleteMediaAction} />
           </details>
         </section>
       </main>

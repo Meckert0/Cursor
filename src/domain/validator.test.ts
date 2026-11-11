@@ -785,3 +785,21 @@ test("validateSnapshot compat rules are disabled under rules-2026.03", () => {
   });
   assert.ok(!report.results.some((r) => r.code.startsWith("RULE_COMPAT_")));
 });
+
+test("normal module contacts retain position scopes and coax never becomes AWG 316", () => {
+  const snapshot = baseSnapshot();
+  snapshot.connectors[0].libraryComponentId = "module";
+  snapshot.paths[0] = { ...snapshot.paths[0], wireComponentId: "wire", fromContact: "C1" };
+  const library = [
+    makePart({ id: "module", category: "module", family: "Test", partNumber: "M1", description: "Module", attributes: { pinIds: ["1", "2"] } }),
+    makePart({ id: "contact", category: "contact", family: "Test", partNumber: "C1", description: "Contact", attributes: { acceptedFamilies: [], acceptedGauges: ["RG316"] } }),
+    makePart({ id: "wire", category: "wire", family: "Coax", partNumber: "W1", description: "Coax", attributes: { cableDesignation: "RG-316", construction: "coax", color: "white" } })
+  ];
+  const report = validateSnapshot(snapshot, {
+    libraryLookup: createLibraryLookup(library), compatLookup: createCompatLookup({}), rulesetVersion: "rules-2026.04",
+    partRelationships: [{ parentPartId: "module", relationshipType: "CONTACT_ALLOWED", compatibleParts: ["C1"], targetPartIds: ["contact"], parentPositions: ["2"], status: "allowed", isExhaustive: true }]
+  });
+  assert.ok(report.results.some(row => row.code === "RULE_COMPAT_MODULE_CONTACT"));
+  assert.ok(!report.results.some(row => row.code === "RULE_WIRE_GAUGE_UNSUPPORTED"));
+  assert.ok(!report.results.some(row => row.code === "RULE_WIRE_AWG_INCOMPATIBLE"));
+});

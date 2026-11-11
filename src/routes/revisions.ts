@@ -113,6 +113,7 @@ const snapshotSchema = z.object({
         wireGroup: z.string().optional(),
         toContact: z.string().optional(),
         toSignalDescription: z.string().optional(),
+        labelComponentId: z.string().optional(),
         labelPartNumber: z.string().optional(),
         labelText: z.string().optional(),
         notes: z.string().optional()

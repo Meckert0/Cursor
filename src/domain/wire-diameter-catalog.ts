@@ -1,3 +1,4 @@
+import { normalizeWireAttributes } from "./catalog-attributes.js";
 import { makePartId } from "./cpq-import/part-id.js";
 import {
   isWirePart,
@@ -127,6 +128,7 @@ function ingestItem(input: {
   return {
     id: makePartId("wire", input.partNumber),
     category: "wire",
+    partType: input.partNumber.startsWith("TBD-") ? "WIRE_REFERENCE" : "WIRE",
     family: input.family,
     partNumber: input.partNumber,
     description: input.description,
@@ -134,7 +136,7 @@ function ingestItem(input: {
     stockStatus: "unknown",
     isReviewed: true,
     notes: input.notes,
-    attributes
+    attributes: normalizeWireAttributes({ ...attributes, construction: input.family === "Coax" ? "coax" : input.wireType === "T/P" ? "twisted_pair" : input.wireType === "ST/P" ? "shielded_twisted_pair" : "single" })
   };
 }
 

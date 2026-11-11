@@ -217,3 +217,11 @@ test("expandConnectorsForDetails names a one-slot module after the connector", (
     ["J1"]
   );
 });
+
+test("frame module allowance cannot override a matching prohibition or review", () => {
+  const parts = [{ id: "module", partNumber: "M1", category: "module" }];
+  const allowed = { parentPartId: "frame", relationshipType: "MODULE_ALLOWED", compatibleParts: ["M1"], parentPositions: ["A"], status: "allowed" };
+  for (const status of ["forbidden", "review"]) {
+    assert.equal(modulesAllowedForFrameSlot("frame", "A", [allowed, { ...allowed, status }], parts).length, 0);
+  }
+});

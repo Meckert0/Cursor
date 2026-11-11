@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { LibraryComponentDto } from "./api";
 import { simModuleLayout } from "./sim-module-layout";
 
-const host = { category: "module", partType: "MODULE", electricalMode: "INSERT_HOST", partNumber: "510161130", attributes: { simSlotCount: 16 } } as LibraryComponentDto;
+const host = { category: "module", partType: "MODULE", electricalMode: "INSERT_HOST", partNumber: "510161130", attributes: { simSlotCount: 16 } } as unknown as LibraryComponentDto;
 
 describe("SIM face geometry", () => {
   it.each(["510160130", "510161130", "510143001", "510144001"])("keeps every slot inside the %s face with consistent bank alignment", partNumber => {

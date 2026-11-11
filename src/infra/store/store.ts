@@ -1,3 +1,4 @@
+import type { PartMedia, PartMediaInput } from "../../domain/library.js";
 import type {
   AuditEvent,
   Design,
@@ -242,13 +243,16 @@ export interface Store {
   deletePartAlias(input: { codeSystem: string; code: string }): Promise<boolean>;
   listPartRelationships(input?: {
     parentPartId?: string;
-    /** Part number contained in the compatible_parts CSV. */
+    /** Display part number resolved through canonical target IDs. */
     compatiblePart?: string;
     relationshipType?: string;
   }): Promise<PartRelationship[]>;
   upsertPartRelationship(input: PartRelationshipInput): Promise<PartRelationship>;
   bulkUpsertPartRelationships(input: { rows: PartRelationshipInput[] }): Promise<{ upserted: number }>;
   deletePartRelationship(input: { id: string }): Promise<boolean>;
+  listPartMedia(input?: { partId?: string }): Promise<PartMedia[]>;
+  upsertPartMedia(input: PartMediaInput): Promise<PartMedia>;
+  deletePartMedia(input: { id: string; partId: string }): Promise<boolean>;
   getUserTablePreferences(input: { userId: string; scope: string }): Promise<TablePreferencesRecord | null>;
   upsertUserTablePreferences(input: {
     userId: string;

@@ -75,7 +75,7 @@ export async function createHarnessOnProjectPage(page: Page, harnessName: string
   await page.locator("summary", { hasText: "Create harness" }).click();
   await page.getByLabel("Harness name").fill(harnessName);
   await page.getByTestId("create-harness-submit").click();
-  await expect(page.getByRole("heading", { name: "Harness Canvas" })).toBeVisible();
+  await expectHeadingWithRetry(page, "Harness Canvas");
 }
 
 export async function openRevisionWorkspace(page: Page) {

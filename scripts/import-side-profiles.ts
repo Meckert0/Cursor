@@ -57,6 +57,7 @@ let pool: Pool | undefined;
 let sqlite: SqliteStore | undefined;
 const backend = resolveStoreBackend();
 if (backend === "postgres") {
+  if (!baseUrl) throw new Error("PostgreSQL part_media requires absolute HTTP(S) URLs. Supply --base-url with the deployed frontend origin.");
   const connectionString = resolveDatabaseUrl();
   if (!connectionString) throw new Error("DATABASE_URL or POSTGRES_URL is required for PostgreSQL.");
   pool = new Pool({ connectionString, max: 1, connectionTimeoutMillis: 5000 });

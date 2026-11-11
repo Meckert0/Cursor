@@ -36,12 +36,14 @@ reported and skipped; new catalog parts are never created. An existing profile
 from this import is updated using a deterministic media ID, so re-running an
 unchanged import does not create duplicates.
 
-URLs default to `/part-media/vpc-side-profiles/<partNumber>.png`, resolved on
-the frontend origin. If the images are served by another deployment, use its
-HTTP(S) origin:
+SQLite URLs default to `/part-media/vpc-side-profiles/<partNumber>.png`, resolved
+on the frontend origin. PostgreSQL's existing `part_media` schema requires
+absolute HTTP(S) URLs, so `--base-url` is required for PostgreSQL imports. Supply
+the frontend's canonical production origin, where the images are deployed:
 
 ```sh
 npm run import:side-profiles -- --dry-run --base-url https://app.example.com
+npm run import:side-profiles -- --apply --base-url https://app.example.com
 ```
 
 For SQLite, stop the API before applying an import so its in-memory catalog

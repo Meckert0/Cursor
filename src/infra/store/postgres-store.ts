@@ -3052,6 +3052,7 @@ export class PostgresStore implements Store {
 
   async upsertPartMedia(input: PartMediaInput): Promise<PartMedia> {
     validatePartMedia(input);
+    if (input.url.startsWith("/")) throw new CatalogError("CATALOG_MEDIA_URL: PostgreSQL requires an absolute HTTP(S) file URL. Supply the deployed frontend origin.");
     return saveMedia(this.pool, input);
   }
 

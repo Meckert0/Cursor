@@ -15,6 +15,17 @@ import { hashPassword } from "../../auth/session.js";
 import { ExportQueueService } from "../../services/export-queue.js";
 import { ensureWireDiameterCatalog } from "../../domain/wire-diameter-catalog.js";
 
+test("PostgreSQL media rejects bundled relative URLs before opening a database connection", async () => {
+  let accessed = false;
+  const pool = {
+    query: async () => { accessed = true; throw new Error("Unexpected query"); },
+    connect: async () => { accessed = true; throw new Error("Unexpected connection"); }
+  } as unknown as Pool;
+  const store = new PostgresStore(pool);
+  await assert.rejects(store.upsertPartMedia({ partId: "module", viewType: "side_profile", url: "/part-media/vpc-side-profiles/510161101.png" }), /CATALOG_MEDIA_URL: PostgreSQL requires an absolute HTTP\(S\) file URL/);
+  assert.equal(accessed, false);
+});
+
 async function database(applyBoundaryMigration: boolean) {
   const db = new PGlite();
   const directory = new URL("../../../db/migrations/", import.meta.url);

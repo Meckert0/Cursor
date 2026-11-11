@@ -14,6 +14,7 @@ import type {
   PartRelationshipDto
 } from "@/lib/api";
 import styles from "./page.module.css";
+import { compatiblePartDisplays, formatRelationshipPositions, visibleCompatibleParts } from "./compatibility-display";
 
 type CompatKind = "contact-wire" | "module-contact" | "module-backshell" | "module-strain-relief" | "relationships" | "aliases";
 
@@ -54,6 +55,8 @@ export interface CompatibilityManagerProps {
   moduleStrainRelief: ModuleStrainReliefCompatDto[];
   aliases: PartAliasDto[];
   relationships: PartRelationshipDto[];
+  matchingPartIds?: string[];
+  searchQuery?: string;
   upsertContactWireAction: (formData: FormData) => void | Promise<void>;
   deleteContactWireAction: (formData: FormData) => void | Promise<void>;
   upsertModuleContactAction: (formData: FormData) => void | Promise<void>;
@@ -134,7 +137,8 @@ function CompatPairTable({
   rows,
   deleteAction,
   leftKey,
-  rightKey
+  rightKey,
+  partById
 }: {
   leftHeader: string;
   rightHeader: string;
@@ -142,6 +146,7 @@ function CompatPairTable({
   deleteAction: (formData: FormData) => void | Promise<void>;
   leftKey: string;
   rightKey: string;
+  partById: Map<string, PartDto>;
 }) {
   return (
     <div className={styles.tableWrap}>
@@ -149,7 +154,9 @@ function CompatPairTable({
         <thead>
           <tr>
             <th>{leftHeader}</th>
+            <th>Description</th>
             <th>{rightHeader}</th>
+            <th>Description</th>
             <th>Status</th>
             <th>Actions</th>
           </tr>
@@ -157,13 +164,15 @@ function CompatPairTable({
         <tbody>
           {rows.length === 0 ? (
             <tr>
-              <td colSpan={4}>No matching pairs found.</td>
+              <td colSpan={6}>No matching pairs found.</td>
             </tr>
           ) : (
             rows.map((row) => (
               <tr key={`${row.leftId}:${row.rightId}`}>
                 <td>{row.leftPn}</td>
+                <td className={styles.compatDescription}>{partById.get(row.leftId)?.description || "Description unavailable"}</td>
                 <td>{row.rightPn}</td>
+                <td className={styles.compatDescription}>{partById.get(row.rightId)?.description || "Description unavailable"}</td>
                 <td>{row.status}</td>
                 <td>
                   <form action={deleteAction} className={styles.inlineAction}>
@@ -188,6 +197,7 @@ function CompatPairTable({
 }
 
 export function CompatibilityManager(props: CompatibilityManagerProps) {
+  const matchingIds = useMemo(() => props.matchingPartIds ? new Set(props.matchingPartIds) : undefined, [props.matchingPartIds]);
   const relationshipEditor = useRef<HTMLDetailsElement>(null);
   const [editingRelationship, setEditingRelationship] = useState<PartRelationshipDto | null>(null);
   const [requestedTab, setTab] = useState<CompatKind>("relationships");
@@ -302,6 +312,7 @@ export function CompatibilityManager(props: CompatibilityManagerProps) {
           </details>
           <CompatPairTable
             leftHeader="Contact PN"
+            partById={partById}
             rightHeader="Wire PN"
             rows={contactWireRows}
             deleteAction={props.deleteContactWireAction}
@@ -324,6 +335,7 @@ export function CompatibilityManager(props: CompatibilityManagerProps) {
           </details>
           <CompatPairTable
             leftHeader="Module PN"
+            partById={partById}
             rightHeader="Contact PN"
             rows={moduleContactRows}
             deleteAction={props.deleteModuleContactAction}
@@ -346,6 +358,7 @@ export function CompatibilityManager(props: CompatibilityManagerProps) {
           </details>
           <CompatPairTable
             leftHeader="Module PN"
+            partById={partById}
             rightHeader="Backshell PN"
             rows={moduleBackshellRows}
             deleteAction={props.deleteModuleBackshellAction}
@@ -368,6 +381,7 @@ export function CompatibilityManager(props: CompatibilityManagerProps) {
           </details>
           <CompatPairTable
             leftHeader="Module PN"
+            partById={partById}
             rightHeader="Strain-relief PN"
             rows={moduleStrainReliefRows}
             deleteAction={props.deleteModuleStrainReliefAction}
@@ -433,6 +447,7 @@ export function CompatibilityManager(props: CompatibilityManagerProps) {
                 <tr>
                   <th>Type</th>
                   <th>Parent</th>
+                  <th>Parent description</th>
                   <th>Compatible parts</th>
                   <th>Positions</th>
                   <th>Status</th>
@@ -442,36 +457,53 @@ export function CompatibilityManager(props: CompatibilityManagerProps) {
               <tbody>
                 {props.relationships.length === 0 ? (
                   <tr>
-                    <td colSpan={6}>No compatibility groups found.</td>
+                    <td colSpan={7}>No compatibility groups found.</td>
                   </tr>
                 ) : (
-                  props.relationships.map((row) => (
-                    <tr key={row.id}>
-                      <td>
-                        {row.relationshipType}
-                        {row.positionType ? ` · ${row.positionType}` : ""}
-                      </td>
-                      <td>{resolvePn(partById, row.parentPartId)}</td>
-                      <td>{row.compatibleParts.length > 0 ? row.compatibleParts.join(", ") : "—"}
-                        {row.unresolvedParts?.length ? <p role="status">Needs resolution: {row.unresolvedParts.join(", ")}</p> : null}
-                      </td>
-                      <td>{row.parentPositions.length > 0 ? row.parentPositions.join(", ") : "—"}</td>
-                      <td>{row.status}<br />{row.isExhaustive ? "Exhaustive list" : "Other parts unknown"}</td>
-                      <td>
-                        {!row.legacyPairKey ? <button type="button" onClick={() => { setEditingRelationship(row); if (relationshipEditor.current) relationshipEditor.current.open = true; }}>Edit</button> : null}
-                        <form action={props.deleteRelationshipAction} className={styles.inlineAction}>
-                          <input type="hidden" name="id" value={row.id} />
-                          <ConfirmSubmitButton
-                            type="submit"
-                            className={styles.dangerActionButton}
-                            confirmMessage={`Delete ${row.relationshipType} relationship?`}
-                          >
-                            Delete
-                          </ConfirmSubmitButton>
-                        </form>
-                      </td>
-                    </tr>
-                  ))
+                  props.relationships.map((row) => {
+                    const parent = partById.get(row.parentPartId);
+                    const parts = compatiblePartDisplays(row, props.items);
+                    const visibleParts = visibleCompatibleParts(parts, parent, matchingIds, props.searchQuery);
+                    return (
+                      <tr key={row.id}>
+                        <td className={styles.compatRelationshipType}>
+                          {row.relationshipType}
+                          {row.positionType ? ` · ${row.positionType}` : ""}
+                        </td>
+                        <td>{resolvePn(partById, row.parentPartId)}</td>
+                        <td className={styles.compatDescription}>{parent?.description || "Description unavailable"}</td>
+                        <td>
+                          {visibleParts.length ? (
+                            <ul className={styles.compatiblePartList}>
+                              {visibleParts.map(part => (
+                                <li key={part.id ?? part.partNumber}>
+                                  <span className={styles.compatiblePartNumber}>{part.partNumber}</span>
+                                  <span className={styles.compatiblePartDescription}>{part.description || "Description unavailable"}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : "—"}
+                          {visibleParts.length < parts.length ? <p className={styles.compatSearchHint}>Showing {visibleParts.length} of {parts.length} compatible parts</p> : null}
+                          {row.unresolvedParts?.length ? <p role="status">Needs resolution: {row.unresolvedParts.join(", ")}</p> : null}
+                        </td>
+                        <td>{formatRelationshipPositions(row, parent)}</td>
+                        <td>{row.status}<br />{row.isExhaustive ? "Exhaustive list" : "Other parts unknown"}</td>
+                        <td>
+                          {!row.legacyPairKey ? <button type="button" onClick={() => { setEditingRelationship(row); if (relationshipEditor.current) relationshipEditor.current.open = true; }}>Edit</button> : null}
+                          <form action={props.deleteRelationshipAction} className={styles.inlineAction}>
+                            <input type="hidden" name="id" value={row.id} />
+                            <ConfirmSubmitButton
+                              type="submit"
+                              className={styles.dangerActionButton}
+                              confirmMessage={`Delete ${row.relationshipType} relationship?`}
+                            >
+                              Delete
+                            </ConfirmSubmitButton>
+                          </form>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -524,13 +556,14 @@ export function CompatibilityManager(props: CompatibilityManagerProps) {
                   <th>Code system</th>
                   <th>Code</th>
                   <th>Part PN</th>
+                  <th>Description</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {props.aliases.length === 0 ? (
                   <tr>
-                    <td colSpan={4}>No aliases found.</td>
+                    <td colSpan={5}>No aliases found.</td>
                   </tr>
                 ) : (
                   props.aliases.map((alias) => (
@@ -538,6 +571,7 @@ export function CompatibilityManager(props: CompatibilityManagerProps) {
                       <td>{alias.codeSystem}</td>
                       <td>{alias.code}</td>
                       <td>{resolvePn(partById, alias.partId)}</td>
+                      <td className={styles.compatDescription}>{partById.get(alias.partId)?.description || "Description unavailable"}</td>
                       <td>
                         <form action={props.deleteAliasAction} className={styles.inlineAction}>
                           <input type="hidden" name="codeSystem" value={alias.codeSystem} />

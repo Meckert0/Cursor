@@ -388,6 +388,51 @@
   height: 34px;
 }
 
+.table td.compatRelationshipType {
+  max-width: 150px;
+  white-space: normal;
+  line-height: 1.4;
+}
+
+.table td.compatDescription {
+  min-width: 180px;
+  max-width: 260px;
+  white-space: normal;
+  line-height: 1.4;
+}
+
+.compatiblePartList {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  min-width: 240px;
+  max-width: 340px;
+  list-style: none;
+  white-space: normal;
+  line-height: 1.4;
+}
+
+.compatiblePartNumber,
+.compatiblePartDescription {
+  display: block;
+}
+
+.compatiblePartNumber {
+  font-weight: 600;
+}
+
+.compatiblePartDescription,
+.compatSearchHint {
+  color: #4f5666;
+}
+
+.compatSearchHint {
+  margin-top: 8px;
+  font-size: 11px;
+  white-space: normal;
+}
+
 .tableToolbar {
   display: flex;
   justify-content: flex-end;

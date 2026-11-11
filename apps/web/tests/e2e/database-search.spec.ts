@@ -77,7 +77,11 @@ test("one search above the database tabs filters items, compatibility and images
   await expect(compatibility.getByRole("combobox")).toHaveCount(0);
   await expect(compatibility.getByRole("cell", { name: framePn, exact: true })).toBeVisible();
   await expect(compatibility.getByRole("cell", { name: otherFramePn, exact: true })).toHaveCount(0);
-  await expect(compatibility.getByRole("cell", { name: `${modulePn}, ${otherModulePn}`, exact: true })).toBeVisible();
+  await expect(compatibility.getByText(modulePn, { exact: true })).toBeVisible();
+  await expect(compatibility.getByText("Search module A", { exact: true })).toBeVisible();
+  await expect(compatibility.getByText("Search frame A", { exact: true })).toBeVisible();
+  await expect(compatibility.getByText(otherModulePn, { exact: true })).toHaveCount(0);
+  await expect(compatibility.getByText("Showing 1 of 2 compatible parts", { exact: true })).toBeVisible();
   await compatibility.getByRole("button", { name: "Edit", exact: true }).click();
   await expect(compatibility.getByLabel("Compatible parts", { exact: true })).toHaveValue(`${modulePn}, ${otherModulePn}`);
   await compatibility.getByRole("button", { name: "Cancel edit", exact: true }).click();

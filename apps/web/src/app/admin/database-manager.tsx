@@ -18,7 +18,7 @@ export function DatabaseManager({ titles, records, initialSearch, categoryLabel,
   categoryLabel: ItemDatabaseViewerProps["categoryLabel"];
   currentUserId: string;
   itemActions: Pick<ItemDatabaseViewerProps, "createAction" | "editAction" | "deleteAction">;
-  compatibilityActions: Omit<CompatibilityManagerProps, keyof DatabaseRecords>;
+  compatibilityActions: Omit<CompatibilityManagerProps, keyof DatabaseRecords | "matchingPartIds" | "searchQuery">;
   mediaActions: Pick<MediaManagerProps, "upsertAction" | "deleteAction">;
 }) {
   const snapshot = useSyncExternalStore(subscribeDatabaseLocation, readDatabaseLocation, () => initialSearch);
@@ -47,7 +47,7 @@ export function DatabaseManager({ titles, records, initialSearch, categoryLabel,
           onSearchChange={input => updateDatabaseLocation({ ...location, ...input })}
           onTabChange={nextTab => updateDatabaseLocation({ ...location, tab: nextTab })}
           items={<ItemDatabaseViewer items={results.items} relationships={records.relationships} media={records.media} visibleCategories={categories} categoryLabel={categoryLabel} expandMatchingCategories={Boolean(q.trim() || family)} currentUserId={currentUserId} {...itemActions} />}
-          compatibility={<CompatibilityManager items={records.items} contactWire={results.contactWire} moduleContact={results.moduleContact} moduleBackshell={results.moduleBackshell} moduleStrainRelief={results.moduleStrainRelief} aliases={results.aliases} relationships={results.relationships} {...compatibilityActions} />}
+          compatibility={<CompatibilityManager items={records.items} contactWire={results.contactWire} moduleContact={results.moduleContact} moduleBackshell={results.moduleBackshell} moduleStrainRelief={results.moduleStrainRelief} aliases={results.aliases} relationships={results.relationships} matchingPartIds={q.trim() || family ? results.items.map(part => part.id) : undefined} searchQuery={q} {...compatibilityActions} />}
           media={<div id="catalog-media"><MediaManager items={records.items} media={results.media} defaultPartId={results.items.length === 1 ? results.items[0].id : undefined} {...mediaActions} /></div>}
         />
       </details>

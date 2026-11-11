@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { PartDto } from "@/lib/api";
-import { databaseFamilies, searchDatabase } from "./database-search";
+import type { PartDto, PartRelationshipDto } from "@/lib/api";
+import { databaseFamilies, searchDatabase, type DatabaseRecords } from "./database-search";
 
 function part(id: string, category: PartDto["category"], family = "Other family"): PartDto {
   return {
@@ -85,5 +85,41 @@ describe("shared database search", () => {
 
   it("builds a stable family selector from the complete catalog", () => {
     expect(databaseFamilies([modulePart, part("b", "wire", " coax "), part("a", "wire", " Alpha "), part("blank", "wire", " ")])).toEqual(["Alpha", "Coax"]);
+  });
+
+  it("keeps unrelated Mini groups out of QuadraPaddle results across the shared search", () => {
+    const hybrid = { ...part("hybrid", "module", "QuadraPaddle"), description: "Signal/Mini Power/Mini Coax module, QuadraPaddle, 100/8 position" };
+    const quad = { ...part("quad", "contact", "QuadraPaddle"), description: "QuadraPaddle signal contact" };
+    const mini = { ...part("mini", "contact", "Mini"), description: "Mini Power contact" };
+    const group = (id: string, targets: PartDto[], positionType: string): PartRelationshipDto => ({
+      id, parentPartId: hybrid.id, targetPartIds: targets.map(target => target.id), compatibleParts: targets.map(target => target.partNumber),
+      relationshipType: "CONTACT_ALLOWED", positionType, parentPositions: ["1", "2", "3"], status: "allowed"
+    });
+    const groups = [group("quad-group", [quad], "QUADRAPADDLE"), group("mini-group", [mini], "MINI"), group("mixed-group", [quad, mini], "MIXED")];
+    const hybridRecords: DatabaseRecords = {
+      items: [hybrid, quad, mini], relationships: groups,
+      moduleContact: [
+        { modulePartId: hybrid.id, contactPartId: quad.id, status: "allowed" },
+        { modulePartId: hybrid.id, contactPartId: mini.id, status: "allowed" }
+      ],
+      aliases: [quad, mini].map(item => ({ partId: item.id, codeSystem: "test", code: item.id })),
+      media: [hybrid, quad, mini].map(item => ({ id: `${item.id}-image`, partId: item.id, url: `https://example.test/${item.id}.png`, viewType: "side_profile", sortOrder: 0, isPrimary: false })),
+      contactWire: [], moduleBackshell: [], moduleStrainRelief: []
+    };
+    const before = JSON.stringify(hybridRecords);
+    for (const input of [{ q: " QuAdRaPaDdLe " }, { family: "QuadraPaddle" }]) {
+      const result = searchDatabase(hybridRecords, input);
+      expect(result.items.map(item => item.id)).toEqual(["hybrid", "quad"]);
+      expect(result.relationships.map(row => row.id)).toEqual(["quad-group", "mixed-group"]);
+      expect(result.moduleContact.map(row => row.contactPartId)).toEqual(["quad"]);
+      expect(result.aliases.map(row => row.partId)).toEqual(["quad"]);
+      expect(result.media.map(row => row.partId)).toEqual(["hybrid", "quad"]);
+      expect(result.relationships[1]).toBe(groups[2]);
+      expect(result.relationships[1].targetPartIds).toEqual(["quad", "mini"]);
+    }
+    expect(searchDatabase(hybridRecords, { q: "mini" }).relationships.map(row => row.id)).toEqual(["mini-group", "mixed-group"]);
+    expect(searchDatabase(hybridRecords, { q: hybrid.partNumber }).relationships).toEqual(groups);
+    expect(searchDatabase(hybridRecords, { q: "100/8 position" }).relationships).toEqual(groups);
+    expect(JSON.stringify(hybridRecords)).toBe(before);
   });
 });

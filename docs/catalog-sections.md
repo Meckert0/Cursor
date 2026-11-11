@@ -8,6 +8,8 @@ One search bar above the three tabs provides text search and a Family dropdown. 
 
 Typing or changing Family filters all three tabs immediately using one shared search state, including tabs that are currently hidden. Tab switches preserve the same query without another search request. The compatibility and image tabs open with results; add/edit fields are tucked behind explicitly labeled record editors so they cannot be confused with separate search controls. There are no search bars inside the three tab panels.
 
+Each item category expands and collapses independently from its heading, which shows its item count. Categories start collapsed; an active search expands the matching categories. The compatibility view always retains Compatibility groups. Pair tables and Aliases appear only when they contain matching records, with an empty selected tab falling back to Compatibility groups. This changes which sections are displayed, without removing catalog data.
+
 ## Items
 
 `parts` remains the common identity/lifecycle/audit record, with one typed detail record per category. Existing categories and IDs are retained. A category is immutable for an existing ID; create a new identity when introducing a different kind of part. Part numbers are text, including leading zeros. Add more items through the existing editors/imports. Adding a new category involves its detail table, domain/API schema and editor metadata; compatibility and media continue referencing the common part ID.

@@ -71,6 +71,8 @@ test("one search above the database tabs filters items, compatibility and images
   await expect(itemsPanel.getByRole("searchbox")).toHaveCount(0);
   await tablist.getByRole("tab", { name: "Compatibility & Aliases", exact: true }).click();
   const compatibility = database.getByRole("tabpanel", { name: "Compatibility & Aliases", exact: true });
+  const compatibilityTabs = compatibility.getByRole("tablist", { name: "Compatibility tables" });
+  await expect(compatibilityTabs.getByRole("tab")).toHaveText(["Compatibility groups", "Aliases"]);
   await expect(compatibility.getByRole("textbox")).toHaveCount(0);
   await expect(compatibility.getByRole("combobox")).toHaveCount(0);
   await expect(compatibility.getByRole("cell", { name: framePn, exact: true })).toBeVisible();
@@ -82,6 +84,12 @@ test("one search above the database tabs filters items, compatibility and images
   await compatibility.getByRole("tab", { name: "Aliases", exact: true }).click();
   await expect(compatibility.getByRole("cell", { name: "SEARCH-ALIAS-A", exact: true })).toBeVisible();
   await expect(compatibility.getByRole("cell", { name: "SEARCH-ALIAS-B", exact: true })).toHaveCount(0);
+  await search.getByRole("searchbox", { name: "Search", exact: true }).fill(`empty-${token}`);
+  await expect(compatibilityTabs.getByRole("tab")).toHaveText(["Compatibility groups"]);
+  await expect(compatibilityTabs.getByRole("tab", { name: "Compatibility groups", exact: true })).toHaveAttribute("aria-selected", "true");
+  await search.getByRole("searchbox", { name: "Search", exact: true }).fill(modulePn.toLowerCase());
+  await expect(compatibilityTabs.getByRole("tab", { name: "Aliases", exact: true })).toBeVisible();
+  await expect(compatibility.getByRole("cell", { name: "SEARCH-ALIAS-A", exact: true })).toBeVisible();
   expect(navigationRequests).toBe(0);
   await page.reload();
   await expect(search.getByRole("searchbox", { name: "Search", exact: true })).toHaveValue(modulePn.toLowerCase());

@@ -38,11 +38,11 @@ const RELATIONSHIP_TYPE_SUGGESTIONS = [
 ] as const;
 
 const TABS: Array<{ id: CompatKind; label: string }> = [
+  { id: "relationships", label: "Compatibility groups" },
   { id: "contact-wire", label: "Contact ↔ Wire" },
   { id: "module-contact", label: "Module ↔ Contact" },
   { id: "module-backshell", label: "Module ↔ Backshell" },
   { id: "module-strain-relief", label: "Module ↔ Strain relief" },
-  { id: "relationships", label: "Compatibility groups" },
   { id: "aliases", label: "Aliases" }
 ];
 
@@ -190,7 +190,17 @@ function CompatPairTable({
 export function CompatibilityManager(props: CompatibilityManagerProps) {
   const relationshipEditor = useRef<HTMLDetailsElement>(null);
   const [editingRelationship, setEditingRelationship] = useState<PartRelationshipDto | null>(null);
-  const [tab, setTab] = useState<CompatKind>("relationships");
+  const [requestedTab, setTab] = useState<CompatKind>("relationships");
+  const rowCounts: Record<CompatKind, number> = {
+    relationships: props.relationships.length,
+    aliases: props.aliases.length,
+    "contact-wire": props.contactWire.length,
+    "module-contact": props.moduleContact.length,
+    "module-backshell": props.moduleBackshell.length,
+    "module-strain-relief": props.moduleStrainRelief.length
+  };
+  const visibleTabs = TABS.filter(entry => entry.id === "relationships" || rowCounts[entry.id] > 0);
+  const tab = visibleTabs.some(entry => entry.id === requestedTab) ? requestedTab : "relationships";
 
   const partById = useMemo(() => {
     const map = new Map<string, PartDto>();
@@ -265,7 +275,7 @@ export function CompatibilityManager(props: CompatibilityManagerProps) {
   return (
     <div className={styles.sectionContent}>
       <div className={styles.compatTabs} role="tablist" aria-label="Compatibility tables">
-        {TABS.map((entry) => (
+        {visibleTabs.map((entry) => (
           <button
             key={entry.id}
             type="button"

@@ -435,27 +435,48 @@
 .categorySection {
   border: 1px solid #edf0f5;
   border-radius: 10px;
-  padding: 12px;
+  overflow: hidden;
   background: #fcfcfe;
   min-width: 0;
 }
 
-.categorySection h3 {
-  margin: 0;
-}
-
-.categoryHeader {
+.categorySummary {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 10px;
+  gap: 10px;
+  padding: 14px 16px;
+  cursor: pointer;
+  list-style: none;
+  font-weight: 600;
+  background: #f8faff;
+}
+
+.categorySummary::-webkit-details-marker {
+  display: none;
+}
+
+.categorySummary::before {
+  content: "▸";
+  color: #4f5666;
+}
+
+.categorySection > details[open] > .categorySummary::before {
+  content: "▾";
+}
+
+.categorySummary .sectionHint {
+  margin-left: auto;
+}
+
+.categoryContent {
+  padding: 12px;
 }
 
 .categoryHeaderActions {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  margin-bottom: 10px;
 }
 
 .virtualViewport {

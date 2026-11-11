@@ -16,6 +16,7 @@ test("catalog sections save label allowances, scoped compatibility, and oriented
   await registerAndSignIn(page, { username: `catalog-admin-${token}`, email: "meckert@vpc.com" });
   await page.goto("/admin");
   await expect(page.getByRole("tab", { name: "Item Database Viewer", exact: true })).toHaveAttribute("aria-selected", "true");
+  await page.locator("summary", { hasText: "Label items" }).click();
   const row = page.getByRole("row").filter({ has: page.getByRole("cell", { name: labelPn, exact: true }) });
   await row.getByRole("button", { name: "Edit", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: `Edit ${labelPn}`, exact: true });

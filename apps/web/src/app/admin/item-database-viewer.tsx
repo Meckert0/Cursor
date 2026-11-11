@@ -54,6 +54,7 @@ export interface ItemDatabaseViewerProps {
   items: LibraryComponentDto[];
   visibleCategories: readonly Category[];
   categoryLabel: Record<Category, string>;
+  expandMatchingCategories?: boolean;
   createAction: (formData: FormData) => void | Promise<void>;
   editAction: (formData: FormData) => void | Promise<void>;
   deleteAction: (formData: FormData) => void | Promise<void>;
@@ -1432,6 +1433,7 @@ export function ItemDatabaseViewer({
   items,
   visibleCategories,
   categoryLabel,
+  expandMatchingCategories = false,
   createAction,
   editAction,
   deleteAction,
@@ -1464,31 +1466,36 @@ export function ItemDatabaseViewer({
           const categoryItems = itemsByCategory[currentCategory];
           return (
             <section key={currentCategory} className={styles.categorySection}>
-              <div className={styles.categoryHeader}>
-                <h3>{categoryLabel[currentCategory]} items</h3>
-                <div className={styles.categoryHeaderActions}>
-                  <button
-                    type="button"
-                    className={styles.smallActionButton}
-                    onClick={() => setCreatingCategory(currentCategory)}
-                  >
-                    Add Item
-                  </button>
+              <details aria-label={`${categoryLabel[currentCategory]} items`} open={expandMatchingCategories}>
+                <summary className={styles.categorySummary}>
+                  <span>{categoryLabel[currentCategory]} items</span>
+                  <span className={styles.sectionHint}>{categoryItems.length} {categoryItems.length === 1 ? "item" : "items"}</span>
+                </summary>
+                <div className={styles.categoryContent}>
+                  <div className={styles.categoryHeaderActions}>
+                    <button
+                      type="button"
+                      className={styles.smallActionButton}
+                      onClick={() => setCreatingCategory(currentCategory)}
+                    >
+                      Add Item
+                    </button>
+                  </div>
+                  {categoryItems.length === 0 ? <p>No {categoryLabel[currentCategory]} entries for current filters.</p> : null}
+                  {categoryItems.length > 0 ? (
+                    <div className={styles.tableWrap}>
+                      <CategoryVirtualTable
+                        category={currentCategory}
+                        items={categoryItems}
+                        relationships={relationships}
+                        media={media}
+                        editAction={editAction}
+                        deleteAction={deleteAction}
+                      />
+                    </div>
+                  ) : null}
                 </div>
-              </div>
-              {categoryItems.length === 0 ? <p>No {categoryLabel[currentCategory]} entries for current filters.</p> : null}
-              {categoryItems.length > 0 ? (
-                <div className={styles.tableWrap}>
-                  <CategoryVirtualTable
-                    category={currentCategory}
-                    items={categoryItems}
-                    relationships={relationships}
-                    media={media}
-                    editAction={editAction}
-                    deleteAction={deleteAction}
-                  />
-                </div>
-              ) : null}
+              </details>
             </section>
           );
         })}

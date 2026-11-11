@@ -45,7 +45,7 @@ export function DatabaseManager({ titles, records, initialSearch, categoryLabel,
           activeTab={tab}
           onSearchChange={input => updateDatabaseLocation({ ...location, ...input })}
           onTabChange={nextTab => updateDatabaseLocation({ ...location, tab: nextTab })}
-          items={<ItemDatabaseViewer items={results.items} relationships={records.relationships} media={records.media} visibleCategories={categories} categoryLabel={categoryLabel} currentUserId={currentUserId} {...itemActions} />}
+          items={<ItemDatabaseViewer items={results.items} relationships={records.relationships} media={records.media} visibleCategories={categories} categoryLabel={categoryLabel} expandMatchingCategories={Boolean(q.trim() || family)} currentUserId={currentUserId} {...itemActions} />}
           compatibility={<CompatibilityManager items={records.items} contactWire={results.contactWire} moduleContact={results.moduleContact} moduleBackshell={results.moduleBackshell} moduleStrainRelief={results.moduleStrainRelief} aliases={results.aliases} relationships={results.relationships} {...compatibilityActions} />}
           media={<div id="catalog-media"><MediaManager items={records.items} media={results.media} defaultPartId={results.items.length === 1 ? results.items[0].id : undefined} {...mediaActions} /></div>}
         />

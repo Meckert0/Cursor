@@ -8,6 +8,7 @@ import type { Pool } from "pg";
 import { MemoryStore } from "./memory-store.js";
 import { SqliteStore } from "./sqlite-store.js";
 import { PostgresStore } from "./postgres-store.js";
+import { assertCatalogSchemaReady } from "./catalog-schema.js";
 import type { Store } from "./store.js";
 import { makePart } from "../../domain/part-test-helpers.js";
 import type { PartIngestItem } from "../../domain/library.js";
@@ -25,7 +26,7 @@ async function postgres(beforeCatalogMigration = false) {
     return { ...result, rowCount: result.affectedRows ?? result.rows.length };
   };
   const pool = { query, connect: async () => ({ query, release() {} }) } as unknown as Pool;
-  return { db, store: new PostgresStore(pool) };
+  return { db, pool, store: new PostgresStore(pool) };
 }
 
 const fixtures: PartIngestItem[] = [
@@ -117,8 +118,11 @@ for (const backend of ["memory", "sqlite", "postgres"] as const) {
 }
 
 test("migration preserves legacy sources, unresolved targets, scoped rules and nominal label diameter", async () => {
-  const { db, store } = await postgres(true);
+  const { db, pool, store } = await postgres(true);
   try {
+    await assert.rejects(assertCatalogSchemaReady(pool), /CATALOG_SCHEMA_NOT_READY: Apply 032_catalog_sections.sql/);
+    assert.equal((await db.query<{ name: string | null }>("SELECT to_regclass('compatibility_groups') AS name")).rows[0].name, null,
+      "The deployment check must not apply migrations");
     for (const part of fixtures) {
       await db.query(`INSERT INTO parts (id, category, part_number, family, description, stock_status, created_by_user_id, created_at, last_edited_by_user_id, last_edited_at, updated_at) VALUES ($1,$2,$3,'Test','Legacy','in_stock','test',NOW(),'test',NOW(),NOW())`, [part.id, part.category, part.partNumber]);
     }
@@ -135,6 +139,7 @@ test("migration preserves legacy sources, unresolved targets, scoped rules and n
       INSERT INTO contact_wire_compat (contact_part_id, wire_part_id, status, crimp_class) VALUES ('contact','wire','review','B');
     `);
     await db.exec(await readFile(new URL("032_catalog_sections.sql", migrationDirectory), "utf8"));
+    await assert.doesNotReject(assertCatalogSchemaReady(pool));
     const groups = await store.listPartRelationships();
     assert.equal(groups.length, 3, "Derived VPC aggregate is not duplicated as unscoped evidence");
     assert.deepEqual(groups.find(row => row.id === "legacy-contact")?.parentPositions, ["1"]);
@@ -149,5 +154,7 @@ test("migration preserves legacy sources, unresolved targets, scoped rules and n
     assert.equal(label?.category === "label" && label.attributes.fitDiameterMinIn, undefined);
     assert.equal((await db.query<{ compatible_parts: string }>("SELECT compatible_parts FROM part_relationships WHERE id='legacy-frame'")).rows[0].compatible_parts, "M-1, UNKNOWN-PN");
     assert.equal((await db.query<{ count: number }>("SELECT COUNT(*) AS count FROM module_contact_compat")).rows[0].count, 1);
+    await db.exec("ALTER TABLE labels DROP COLUMN text_allowance_notes");
+    await assert.rejects(assertCatalogSchemaReady(pool), /Missing: labels.text_allowance_notes$/);
   } finally { await db.close(); }
 });

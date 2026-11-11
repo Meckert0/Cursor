@@ -62,6 +62,8 @@ Media URLs must be HTTP(S), without embedded credentials. Draft/inactive visibil
 3. Review `compatibility_unresolved_targets` and the admin group's “Needs resolution” display. Correct missing or ambiguous targets explicitly.
 4. Deploy backend and frontend together, then check a frame/SIM selection, a label edit, and a hosted image association.
 
+The API Vercel build runs a read-only catalog schema check before compiling. Missing required tables or columns stop deployment with `CATALOG_SCHEMA_NOT_READY`; the check never applies migrations. `npm run check:db-schema` runs the same check independently. Local `npm run build` does not need a database.
+
 Migration 032 is additive: it preserves parts/designs/IDs, nominal label measurements and original compatibility tables. The old `part_relationships` and four pair tables become frozen pre-migration snapshots, not current data sources. Do not replay earlier destructive migrations or re-import the catalog as a substitute for migration. Before reverting to an old runtime, account for post-migration catalog changes; old snapshots do not contain new edits.
 
 SQLite upgrades existing JSON state on load, resolves legacy relationship members to IDs, preserves unresolved tokens, and persists canonical groups/media on subsequent writes. Memory uses the same domain representation. No production database migration is performed by the test suite: migration/data-preservation checks use an isolated embedded PostgreSQL instance, and SQLite checks use temporary files.

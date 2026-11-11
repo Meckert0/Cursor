@@ -8,6 +8,8 @@
     "dev:web": "npm --prefix apps/web run dev",
     "dev:full": "concurrently \"npm run dev\" \"npm run dev:web\"",
     "build": "tsc -p tsconfig.json",
+    "build:vercel": "npm run check:db-schema && npm run build",
+    "check:db-schema": "tsx scripts/check-db-schema.ts",
     "build:web": "npm --prefix apps/web run build",
     "build:all": "npm run build && npm run build:web",
     "start": "node dist/server.js",

@@ -97,10 +97,14 @@ Set the **same keys** on Test and Production with different values.
 
 Migrations are **manual**. They must not run when a Vercel function starts.
 
+The API's root `vercel.json` runs `npm run build:vercel`, which checks the target database's required catalog tables and columns before building. If migration `032_catalog_sections.sql` is missing, the deployment fails with `CATALOG_SCHEMA_NOT_READY` and keeps the previous API deployment active. This check is read-only; it does not apply migrations. Run `npm run check:db-schema` to check the configured database separately.
+
 1. Apply to Test: `DATABASE_URL=<test> npm run migrate`
 2. Deploy and verify Test
 3. Apply to Production: `DATABASE_URL=<prod> npm run migrate`
 4. Promote the same commit to Production (`test` → `main`)
+
+Test the schema change on a database branch/copy and keep a backup before applying it to the live database. Migration `032_catalog_sections.sql` is required for the current catalog runtime. A missing migration causes `/admin` to fail while loading compatibility and media. Apply and record the missing migration; do not replay older migrations against an existing catalog.
 
 ## Maintenance
 

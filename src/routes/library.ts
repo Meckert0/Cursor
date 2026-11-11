@@ -524,7 +524,7 @@ function wireAttrString(attributes: WireAttributes, key: "awg" | "color"): strin
 const partMediaSchema = z.object({
   id: z.string().min(1).optional(),
   partId: z.string().min(1),
-  url: z.url(),
+  url: z.string().min(1),
   storageKey: z.string().optional(),
   viewType: z.string().trim().min(1),
   orientation: z.string().optional(),
@@ -540,6 +540,19 @@ const partMediaSchema = z.object({
 });
 
 export function registerLibraryRoutes(app: FastifyInstance) {
+  app.get("/v1/library/media/side-profiles", async (request, reply) => {
+    if (!requireRole(request, reply, ["viewer", "editor", "owner", "supplier_reviewer"]).ok) return;
+    const admin = request.currentUser?.accountRole === "admin";
+    const parts = await app.store.listLibraryComponents({
+      requestingUserId: resolveActingUserId(request),
+      canViewAllUnreviewed: admin,
+      canViewInactive: admin
+    });
+    const visiblePartIds = new Set(parts.map(part => part.id));
+    const media = await app.store.listPartMedia();
+    return { items: media.filter(row => row.viewType === "side_profile" && visiblePartIds.has(row.partId)) };
+  });
+
   app.get("/v1/library/media", async (request, reply) => {
     if (!requireAdmin(request, reply).ok) return;
     const query = z.object({ partId: z.string().optional() }).parse(request.query);

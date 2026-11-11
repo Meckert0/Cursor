@@ -63,6 +63,19 @@ test("catalog API validates stable compatibility references, label edits, and me
     assert.equal((await app.inject({ method: "PUT", url: "/v1/library/media", headers, payload: { ...mediaBody, url: "javascript:alert(1)" } })).statusCode, 400);
     assert.equal((await app.inject({ method: "PUT", url: "/v1/library/media", headers, payload: { ...mediaBody, id: media.json().id, partId: "frame" } })).statusCode, 400);
     assert.equal((await app.inject({ method: "GET", url: "/v1/library/components/label/media", headers: regular })).statusCode, 404, "Media respects draft item visibility");
+    const sideBody = { ...mediaBody, url: "/part-media/vpc-side-profiles/510161101.png", viewType: "side_profile" };
+    assert.equal((await app.inject({ method: "PUT", url: "/v1/library/media", headers, payload: sideBody })).statusCode, 200);
+    assert.equal((await app.inject({ method: "PUT", url: "/v1/library/media", headers, payload: { ...sideBody, partId: "label" } })).statusCode, 200);
+    const sides = await app.inject({ method: "GET", url: "/v1/library/media/side-profiles", headers: regular });
+    assert.equal(sides.statusCode, 200);
+    assert.deepEqual(sides.json().items.map((row: { partId: string }) => row.partId), ["module"], "Batch side profiles exclude other users' unreviewed parts and other view types");
+    await store.updateLibraryComponent({ componentId: "module", isActive: false });
+    assert.deepEqual((await app.inject({ method: "GET", url: "/v1/library/media/side-profiles", headers: regular })).json().items, [], "Inactive catalog media stays hidden from ordinary users");
+    assert.equal((await app.inject({ method: "GET", url: "/v1/library/media/side-profiles", headers })).json().items.length, 2, "Admins retain visibility into inactive and draft item media");
+    assert.ok((await app.inject({ method: "GET", url: "/v1/library/media/side-profiles" })).statusCode >= 400, "Batch media requires authentication");
+    for (const url of ["//evil.example/part-media/image.png", "/part-media/../secret.png", "/part-media/%2e%2e/secret.png", "/part-media/a.png?redirect=https://evil.example", "/part-media/a\\b.png", "/other/image.png"]) {
+      assert.equal((await app.inject({ method: "PUT", url: "/v1/library/media", headers, payload: { ...sideBody, url } })).statusCode, 400, `Reject unsafe bundled path ${url}`);
+    }
     assert.equal((await app.inject({ method: "DELETE", url: `/v1/library/media?id=${media.json().id}&partId=module`, headers })).statusCode, 204);
   } finally { await app.close(); }
 });

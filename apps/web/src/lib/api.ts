@@ -1318,6 +1318,10 @@ export async function listPartMedia(input?: { partId?: string }): Promise<PartMe
   return (await apiRequest<{ items: PartMediaDto[] }>(`/v1/library/media${query}`)).items;
 }
 
+export async function listCanvasSideProfiles(): Promise<PartMediaDto[]> {
+  return (await apiRequest<{ items: PartMediaDto[] }>("/v1/library/media/side-profiles")).items;
+}
+
 export function upsertPartMedia(input: Omit<PartMediaDto, "id" | "sortOrder" | "isPrimary"> & { id?: string; sortOrder?: number; isPrimary?: boolean }): Promise<PartMediaDto> {
   return apiRequest<PartMediaDto>("/v1/library/media", { method: "PUT", body: input });
 }

@@ -1,11 +1,13 @@
 "use client";
 
+import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { DetailsSummary } from "@/components/details-summary";
 import { ConnectorPickerDialog } from "@/components/connector-picker-dialog";
 import { SimInsertControls } from "@/components/sim-insert-controls";
 import { availableSimInserts, catalogModulePins, isSimHost, normalizeCanvasSimModules, simPlacement, usableSimPins, type SimInsertAssignment, type SimRelationship } from "@/lib/sim-modules";
-import type { LibraryComponentDto, RevisionDto } from "@/lib/api";
+import type { LibraryComponentDto, PartMediaDto, RevisionDto } from "@/lib/api";
+import { sideProfilesByPart } from "@/lib/part-media";
 import {
   buildNextCanvasId,
   buildNextConnectorReference,
@@ -66,12 +68,14 @@ type ConnectState = {
 };
 
 type JunctionNode = NonNullable<RevisionDto["snapshot"]["junctions"]>[number];
+const EMPTY_MEDIA: PartMediaDto[] = [];
 
 export function CableCanvas({
   revisionId,
   snapshot,
   snapshotHash,
   connectorCatalog,
+  sideProfileMedia = EMPTY_MEDIA,
   backshellCatalog = [],
   strainReliefCatalog = [],
   moduleBackshellCompat = [],
@@ -91,6 +95,7 @@ export function CableCanvas({
   snapshot: RevisionDto["snapshot"];
   snapshotHash: string;
   connectorCatalog: LibraryComponentDto[];
+  sideProfileMedia?: PartMediaDto[];
   backshellCatalog?: LibraryComponentDto[];
   strainReliefCatalog?: LibraryComponentDto[];
   moduleBackshellCompat?: Array<{ modulePartId: string; backshellPartId: string; status: "allowed" | "forbidden" | "review" }>;
@@ -124,6 +129,7 @@ export function CableCanvas({
   useCanvasViewportAnchor(canvasRef, controlsRef);
   const nodeWidth = 120;
   const connectorNodeHeight = 56;
+  const profileNodeHeight = 120;
   const junctionNodeSize = 24;
   const initialDraft = useMemo(() => {
     const draft = loadInitialCanvasDraft(revisionId, snapshot);
@@ -141,6 +147,18 @@ export function CableCanvas({
     snapshot.paths[0]?.id ? { type: "path", id: snapshot.paths[0].id } : null
   );
   const [connectorCatalogState, setConnectorCatalogState] = useState<LibraryComponentDto[]>(connectorCatalog);
+  const [failedSideProfileUrls, setFailedSideProfileUrls] = useState<Set<string>>(() => new Set());
+  const sideProfileByPart = useMemo(() => sideProfilesByPart(sideProfileMedia, failedSideProfileUrls), [sideProfileMedia, failedSideProfileUrls]);
+  const catalogPartByNumber = useMemo(() => {
+    const byNumber = new Map<string, LibraryComponentDto | null>();
+    for (const part of connectorCatalogState) byNumber.set(part.partNumber, byNumber.has(part.partNumber) ? null : part);
+    return byNumber;
+  }, [connectorCatalogState]);
+  const connectorVisualById = useMemo(() => new Map(connectors.map(connector => {
+    const partId = connector.libraryComponentId ?? catalogPartByNumber.get(connector.partNumber ?? "")?.id;
+    const sideProfile = partId ? sideProfileByPart.get(partId) : undefined;
+    return [connector.id, { sideProfile, height: sideProfile ? profileNodeHeight : connectorNodeHeight }];
+  })), [connectors, catalogPartByNumber, sideProfileByPart]);
   const [backshellCatalogState] = useState<LibraryComponentDto[]>(backshellCatalog);
   const [strainReliefCatalogState] = useState<LibraryComponentDto[]>(strainReliefCatalog);
   const [showConnectorSearchDialog, setShowConnectorSearchDialog] = useState(false);
@@ -188,9 +206,9 @@ export function CableCanvas({
         return;
       }
       const rect = canvas.getBoundingClientRect();
-      const isConnector = connectors.some((connector) => connector.id === dragState.nodeId);
-      const width = isConnector ? nodeWidth : junctionNodeSize;
-      const height = isConnector ? connectorNodeHeight : junctionNodeSize;
+      const connectorVisual = connectorVisualById.get(dragState.nodeId);
+      const width = connectorVisual ? nodeWidth : junctionNodeSize;
+      const height = connectorVisual?.height ?? junctionNodeSize;
       const nextX = Math.max(0, Math.min(rect.width - width, event.clientX - rect.left - dragState.offsetX));
       const nextY = Math.max(0, Math.min(rect.height - height, event.clientY - rect.top - dragState.offsetY));
       setPositions((previous) => ({
@@ -219,7 +237,7 @@ export function CableCanvas({
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", onPointerUp);
     };
-  }, [connectors, connectorNodeHeight, dragState, junctionNodeSize, nodeWidth, pushCheckpoint]);
+  }, [connectorVisualById, dragState, junctionNodeSize, nodeWidth, pushCheckpoint]);
 
   useEffect(() => {
     if (!connectState) {
@@ -267,9 +285,10 @@ export function CableCanvas({
       if (junctionIdSet.has(nodeId)) {
         return { x: position.x + junctionNodeSize / 2, y: position.y + junctionNodeSize / 2 };
       }
-      return { x: position.x + nodeWidth / 2, y: position.y + connectorNodeHeight / 2 };
+      const height = connectorVisualById.get(nodeId)?.height ?? connectorNodeHeight;
+      return { x: position.x + nodeWidth / 2, y: position.y + height / 2 };
     },
-    [connectorNodeHeight, junctionIdSet, junctionNodeSize, nodeWidth, positions]
+    [connectorNodeHeight, connectorVisualById, junctionIdSet, junctionNodeSize, nodeWidth, positions]
   );
 
   const paths = useMemo(
@@ -1712,16 +1731,19 @@ export function CableCanvas({
 
         {connectors.map((connector) => {
           const position = positions[connector.id] ?? { x: 0, y: 0 };
+          const visual = connectorVisualById.get(connector.id);
+          const sideProfile = visual?.sideProfile;
           return (
             <button
               key={connector.id}
               type="button"
               disabled={readOnly}
               aria-label={`${isFrameHousingConnector(connector) ? "Frame" : "Connector"} ${connector.reference}`}
-              className={`${styles.connectorNode} ${
+              className={`${styles.connectorNode} ${sideProfile ? styles.connectorWithProfile : ""} ${
                 selectedEntity?.type === "connector" && selectedEntity.id === connector.id ? styles.selectedNode : ""
               }`}
-              style={{ left: `${position.x}px`, top: `${position.y}px` }}
+              style={{ left: `${position.x}px`, top: `${position.y}px`, height: sideProfile ? visual.height : undefined }}
+              title={connector.partNumber ? `${connector.reference} · ${connector.partNumber}` : connector.reference}
               onPointerDown={(event) => {
                 if (readOnly) {
                   return;
@@ -1743,9 +1765,24 @@ export function CableCanvas({
                 setConnectState(null);
               }}
             >
-              <strong>{connector.reference}</strong>
-              <span>{connector.id}</span>
-              <span>{isFrameHousingConnector(connector) ? `Frame · ${connector.slots?.length ?? 0} slots` : formatConnectorPinsLabel(connector)}</span>
+              {sideProfile ? <>
+                <Image
+                  key={`${sideProfile.id}:${sideProfile.url}`}
+                  unoptimized
+                  className={styles.connectorProfile}
+                  src={sideProfile.url}
+                  alt={sideProfile.altText ?? `${connector.partNumber ?? connector.reference} side profile`}
+                  width={sideProfile.pixelWidth ?? nodeWidth}
+                  height={sideProfile.pixelHeight ?? connectorNodeHeight}
+                  draggable={false}
+                  onError={() => setFailedSideProfileUrls(previous => new Set(previous).add(sideProfile.url))}
+                />
+                <strong className={`${styles.connectorProfileReference} ${position.y < 20 ? styles.connectorProfileReferenceBelow : ""}`}>{connector.reference}</strong>
+              </> : <>
+                <strong>{connector.reference}</strong>
+                <span>{connector.id}</span>
+                <span>{isFrameHousingConnector(connector) ? `Frame · ${connector.slots?.length ?? 0} slots` : formatConnectorPinsLabel(connector)}</span>
+              </>}
               <span
                 className={styles.connectHandle}
                 onPointerDown={(event) => {

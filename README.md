@@ -57,6 +57,9 @@ under an unresolved size rather than receiving a guessed part number. Tubing
 ranges are stored for later use; tubing quantities are not calculated yet.
 ## What is implemented
 
+Connector side-profile image import and canvas display are documented in
+[`docs/part-side-profiles.md`](docs/part-side-profiles.md).
+
 - Fastify API with versioned routes under `/v1`
 - Next.js browser frontend shell in `apps/web` (projects -> harness creation -> revision builder -> validate/export)
 - Store backend selection:

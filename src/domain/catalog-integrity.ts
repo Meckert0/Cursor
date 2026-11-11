@@ -54,10 +54,19 @@ export function resolveRelationshipInput(input: PartRelationshipInput, parts: re
   };
 }
 
+export function isBundledPartMediaUrl(value: string): boolean {
+  // Only plain paths into the app's public image directory are accepted.
+  // Percent escapes, dot segments, queries and backslashes must not change it
+  // into a different route when a browser resolves the image URL.
+  return /^\/part-media\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.(?:png|webp|jpe?g)$/.test(value);
+}
+
 export function validatePartMedia(input: PartMediaInput): void {
-  let url: URL;
-  try { url = new URL(input.url); } catch { throw new CatalogError("CATALOG_MEDIA_URL: Supply an HTTP or HTTPS file URL."); }
-  if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw new CatalogError("CATALOG_MEDIA_URL: Supply an HTTP or HTTPS file URL without credentials.");
+  if (!isBundledPartMediaUrl(input.url)) {
+    let url: URL;
+    try { url = new URL(input.url); } catch { throw new CatalogError("CATALOG_MEDIA_URL: Supply an HTTP(S) file URL or a bundled /part-media/ image path."); }
+    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw new CatalogError("CATALOG_MEDIA_URL: Supply an HTTP or HTTPS file URL without credentials.");
+  }
   if (!input.partId.trim() || !input.viewType.trim()) throw new CatalogError("CATALOG_MEDIA_FIELDS_REQUIRED");
   for (const value of [input.pixelWidth, input.pixelHeight]) if (value != null && (!Number.isInteger(value) || value <= 0)) throw new CatalogError("CATALOG_MEDIA_DIMENSIONS");
   if (input.sortOrder != null && (!Number.isInteger(input.sortOrder) || input.sortOrder < 0)) throw new CatalogError("CATALOG_MEDIA_ORDER");

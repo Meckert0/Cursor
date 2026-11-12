@@ -307,7 +307,9 @@
 .canvas {
   isolation: isolate;
   position: relative;
-  height: 520px;
+  width: 75%;
+  aspect-ratio: 2 / 1;
+  margin-inline: auto;
   border: 1px solid #dbe2ef;
   border-radius: 12px;
   background:

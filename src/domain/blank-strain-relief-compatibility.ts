@@ -2,11 +2,20 @@ import { isBlankModule, type PartWithAttributes } from "./library.ts";
 
 export type CompatibilityPart = Pick<PartWithAttributes, "id" | "category" | "partNumber" | "family" | "description" | "electricalMode" | "attributes">;
 
-export function isBlankStrainReliefPair(parent: CompatibilityPart, target: CompatibilityPart): boolean {
-  return parent.category === "strain-relief" && isBlankModule(target) || target.category === "strain-relief" && isBlankModule(parent);
+/** Catalog receiver assemblies can include strain relief while retaining frame slots. */
+export function includesStrainRelief(part: { category: string; description: string }): boolean {
+  if (part.category === "strain-relief") return true;
+  if (part.category !== "frame") return false;
+  if (/\b(?:without|no|excluding)\s+(?:a\s+)?strain[\s-]+relief\b/i.test(part.description)) return false;
+  if (/\b(?:optional|compatible with)\b[^.;]*\bstrain[\s-]+relief\b/i.test(part.description)) return false;
+  return /\b(?:with|including|includes?|integrated|built[\s-]+in)\b[^.;]*\bstrain[\s-]+relief\b|\bstrain[\s-]+relief\s+(?:included|integrated)\b/i.test(part.description);
 }
 
-/** Remove invalid direct links only; frame-to-blank relationships are retained. */
+export function isBlankStrainReliefPair(parent: CompatibilityPart, target: CompatibilityPart): boolean {
+  return includesStrainRelief(parent) && isBlankModule(target) || includesStrainRelief(target) && isBlankModule(parent);
+}
+
+/** Remove invalid direct links; frames without strain relief can still accept blanks. */
 export function pruneBlankStrainReliefTargets<T extends {
   parentPartId: string; targetPartIds?: string[]; compatibleParts: string[]; unresolvedParts?: string[];
 }>(row: T, parts: readonly CompatibilityPart[]): { row: T; removedTargetIds: string[]; removedUnresolved: string[]; empty: boolean } {

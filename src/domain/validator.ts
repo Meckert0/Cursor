@@ -444,7 +444,8 @@ export function validateSnapshot(snapshot: DesignSnapshot, options: ValidateSnap
               component.id,
               slot.slotId,
               options.partRelationships,
-              [slotModule]
+              [slotModule],
+              component
             );
             if (allowed.length === 0) {
               emit("RULE_COMPAT_FRAME_MODULE", {

@@ -3065,7 +3065,7 @@ export class PostgresStore implements Store {
       const ids = [...new Set(rows.flatMap(row => [row.parentPartId, ...(row.targetPartIds ?? [])]))];
       const numbers = [...new Set(rows.flatMap(row => row.unresolvedParts ?? []).map(pn => pn.trim().toUpperCase()))];
       const raw = await client.query<PartRow>(`SELECT ${PART_COLUMNS} FROM parts
-        WHERE category IN ('module', 'strain-relief') AND (id = ANY($1::text[]) OR UPPER(BTRIM(part_number)) = ANY($2::text[]))
+        WHERE category IN ('module', 'strain-relief', 'frame') AND (id = ANY($1::text[]) OR UPPER(BTRIM(part_number)) = ANY($2::text[]))
         ORDER BY id FOR SHARE`, [ids, numbers]);
       const parts = await loadPartsWithAttributes(client, raw.rows);
       let changes = rows.map(row => ({ original: row, pruned: pruneBlankStrainReliefTargets(row, parts) }))

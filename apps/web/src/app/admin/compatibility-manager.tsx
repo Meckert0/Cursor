@@ -16,7 +16,8 @@ import type {
 import styles from "./page.module.css";
 import { compatiblePartDisplays, formatRelationshipPositions, visibleCompatibleParts } from "./compatibility-display";
 import { moduleAccessoryStatus } from "../../../../../src/domain/module-accessory-compatibility";
-import { BLANK_INSERT_FAMILY, catalogPartFamily } from "../../../../../src/domain/library";
+import { isBlankModule } from "../../../../../src/domain/library";
+import { pruneBlankStrainReliefTargets } from "../../../../../src/domain/blank-strain-relief-compatibility";
 
 type CompatKind = "contact-wire" | "module-contact" | "module-backshell" | "module-strain-relief" | "relationships" | "aliases";
 
@@ -203,17 +204,6 @@ export function CompatibilityManager(props: CompatibilityManagerProps) {
   const relationshipEditor = useRef<HTMLDetailsElement>(null);
   const [editingRelationship, setEditingRelationship] = useState<PartRelationshipDto | null>(null);
   const [requestedTab, setTab] = useState<CompatKind>("relationships");
-  const rowCounts: Record<CompatKind, number> = {
-    relationships: props.relationships.length,
-    aliases: props.aliases.length,
-    "contact-wire": props.contactWire.length,
-    "module-contact": props.moduleContact.length,
-    "module-backshell": props.moduleBackshell.length,
-    "module-strain-relief": props.moduleStrainRelief.length
-  };
-  const visibleTabs = TABS.filter(entry => entry.id === "relationships" || rowCounts[entry.id] > 0);
-  const tab = visibleTabs.some(entry => entry.id === requestedTab) ? requestedTab : "relationships";
-
   const partById = useMemo(() => {
     const map = new Map<string, PartDto>();
     for (const item of props.items) {
@@ -222,10 +212,28 @@ export function CompatibilityManager(props: CompatibilityManagerProps) {
     return map;
   }, [props.items]);
 
+  const relationships = useMemo(() => props.relationships
+    .map(row => pruneBlankStrainReliefTargets(row, props.items))
+    .filter(result => !result.empty).map(result => result.row), [props.relationships, props.items]);
+  const moduleStrainRelief = useMemo(() => props.moduleStrainRelief.filter(row => {
+    const modulePart = partById.get(row.modulePartId);
+    return !modulePart || !isBlankModule(modulePart);
+  }), [props.moduleStrainRelief, partById]);
+  const rowCounts: Record<CompatKind, number> = {
+    relationships: relationships.length,
+    aliases: props.aliases.length,
+    "contact-wire": props.contactWire.length,
+    "module-contact": props.moduleContact.length,
+    "module-backshell": props.moduleBackshell.length,
+    "module-strain-relief": moduleStrainRelief.length
+  };
+  const visibleTabs = TABS.filter(entry => entry.id === "relationships" || rowCounts[entry.id] > 0);
+  const tab = visibleTabs.some(entry => entry.id === requestedTab) ? requestedTab : "relationships";
+
   const contacts = useMemo(() => partsByCategory(props.items, "contact"), [props.items]);
   const wires = useMemo(() => partsByCategory(props.items, "wire"), [props.items]);
   const modules = useMemo(() => partsByCategory(props.items, "module"), [props.items]);
-  const strainReliefModules = useMemo(() => modules.filter(part => catalogPartFamily(part) !== BLANK_INSERT_FAMILY), [modules]);
+  const strainReliefModules = useMemo(() => modules.filter(part => !isBlankModule(part)), [modules]);
   const backshells = useMemo(() => partsByCategory(props.items, "backshell"), [props.items]);
   const strainReliefs = useMemo(() => partsByCategory(props.items, "strain-relief"), [props.items]);
   const allParts = useMemo(
@@ -275,7 +283,7 @@ export function CompatibilityManager(props: CompatibilityManagerProps) {
 
   const moduleStrainReliefRows = useMemo(
     () =>
-      props.moduleStrainRelief.map((row) => ({
+      moduleStrainRelief.map((row) => ({
         leftId: row.modulePartId,
         rightId: row.strainReliefPartId,
         leftPn: resolvePn(partById, row.modulePartId),
@@ -283,7 +291,7 @@ export function CompatibilityManager(props: CompatibilityManagerProps) {
         status: partById.get(row.modulePartId) && partById.get(row.strainReliefPartId)
           ? moduleAccessoryStatus(partById.get(row.modulePartId)!, partById.get(row.strainReliefPartId)!, props.relationships) ?? row.status : row.status
       })),
-    [props.moduleStrainRelief, partById, props.relationships]
+    [moduleStrainRelief, partById, props.relationships]
   );
 
   return (
@@ -459,17 +467,15 @@ export function CompatibilityManager(props: CompatibilityManagerProps) {
                 </tr>
               </thead>
               <tbody>
-                {props.relationships.length === 0 ? (
+                {relationships.length === 0 ? (
                   <tr>
                     <td colSpan={7}>No compatibility groups found.</td>
                   </tr>
                 ) : (
-                  props.relationships.map((row) => {
+                  relationships.map((row) => {
                     const parent = partById.get(row.parentPartId);
                     const parts = compatiblePartDisplays(row, props.items);
                     const visibleParts = visibleCompatibleParts(parts, parent, matchingIds, props.searchQuery);
-                    const usableParts = visibleParts.filter(part => !part.blockedReason);
-                    const blockedParts = visibleParts.filter(part => part.blockedReason);
                     return (
                       <tr key={row.id}>
                         <td className={styles.compatRelationshipType}>
@@ -479,9 +485,9 @@ export function CompatibilityManager(props: CompatibilityManagerProps) {
                         <td>{resolvePn(partById, row.parentPartId)}</td>
                         <td className={styles.compatDescription}>{parent?.description || "Description unavailable"}</td>
                         <td>
-                          {usableParts.length ? (
+                          {visibleParts.length ? (
                             <ul className={styles.compatiblePartList}>
-                              {usableParts.map(part => (
+                              {visibleParts.map(part => (
                                 <li key={part.id ?? part.partNumber}>
                                   <span className={styles.compatiblePartNumber}>{part.partNumber}</span>
                                   <span className={styles.compatiblePartDescription}>{part.description || "Description unavailable"}</span>
@@ -489,8 +495,7 @@ export function CompatibilityManager(props: CompatibilityManagerProps) {
                               ))}
                             </ul>
                           ) : "—"}
-                          {blockedParts.length ? <p className={styles.compatSearchHint}>Excluded from strain-relief compatibility: {blockedParts.map(part => part.partNumber).join(", ")}. Blank modules cannot use strain reliefs.</p> : null}
-                          {visibleParts.length < parts.length ? <p className={styles.compatSearchHint}>Showing {visibleParts.length} of {parts.length} {parts.some(part => part.blockedReason) ? "source targets" : "compatible parts"}</p> : null}
+                          {visibleParts.length < parts.length ? <p className={styles.compatSearchHint}>Showing {visibleParts.length} of {parts.length} compatible parts</p> : null}
                           {row.unresolvedParts?.length ? <p role="status">Needs resolution: {row.unresolvedParts.join(", ")}</p> : null}
                         </td>
                         <td>{formatRelationshipPositions(row, parent)}</td>

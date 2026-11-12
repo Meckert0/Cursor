@@ -17,16 +17,16 @@ const row: PartRelationshipDto = {
 };
 
 describe("compatibility display", () => {
-  it("marks blank modules as excluded in strain relief source groups without changing stored targets", () => {
+  it("removes blank modules entirely from strain relief compatible-part lists in both directions", () => {
     const relief = { ...part("relief", "Strain relief"), category: "strain-relief" as const };
     const blank = { ...part("blank", "Blank module"), family: "Blank insert" };
     const group = { ...row, parentPartId: relief.id, relationshipType: "MATES_WITH", compatibleParts: [parent.partNumber, blank.partNumber], targetPartIds: [parent.id, blank.id] };
     const displayed = compatiblePartDisplays(group, [relief, parent, blank]);
-    expect(displayed[0].blockedReason).toBeUndefined();
-    expect(displayed[1].blockedReason).toBe("Blank modules cannot use strain reliefs.");
+    expect(displayed).toEqual([{ id: parent.id, partNumber: parent.partNumber, description: parent.description }]);
     expect(group.targetPartIds).toEqual([parent.id, blank.id]);
     const reversed = { ...group, parentPartId: blank.id, targetPartIds: [relief.id], compatibleParts: [relief.partNumber] };
-    expect(compatiblePartDisplays(reversed, [relief, blank])[0].blockedReason).toBe("Blank modules cannot use strain reliefs.");
+    expect(compatiblePartDisplays(reversed, [relief, blank])).toEqual([]);
+    expect(compatiblePartDisplays({ ...group, targetPartIds: undefined }, [relief, parent, blank])).toEqual(displayed);
   });
 
   it("resolves descriptions by stable IDs rather than stale or duplicate part numbers", () => {

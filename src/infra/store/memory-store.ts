@@ -1,6 +1,7 @@
 import { normalizeWireAttributes, validateCatalogAttributes, CatalogError } from "../../domain/catalog-attributes.js";
 import { listPairs, upsertPair, deletePair, pairRelationship } from "./compatibility-adapters.js";
 import { resolveRelationshipInput, validatePartMedia } from "../../domain/catalog-integrity.js";
+import { pruneBlankStrainReliefTargets } from "../../domain/blank-strain-relief-compatibility.js";
 import type { PartMedia, PartMediaInput } from "../../domain/library.js";
 import type {
   AuditEvent,
@@ -1481,6 +1482,20 @@ export class MemoryStore implements Store {
       }
     }
     return false;
+  }
+
+  async removeBlankModuleStrainReliefCompatibility(): Promise<{ removedTargets: number; removedGroups: number }> {
+    const parts = [...this.parts.values()];
+    let removedTargets = 0;
+    let removedGroups = 0;
+    for (const [key, row] of this.partRelationships) {
+      const pruned = pruneBlankStrainReliefTargets(row, parts);
+      if (pruned.row === row) continue;
+      removedTargets += pruned.removedTargetIds.length + pruned.removedUnresolved.length;
+      if (pruned.empty) { this.partRelationships.delete(key); removedGroups += 1; }
+      else this.partRelationships.set(key, pruned.row);
+    }
+    return { removedTargets, removedGroups };
   }
 
   async listPartMedia(input?: { partId?: string }): Promise<PartMedia[]> {

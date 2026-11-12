@@ -21,7 +21,7 @@ test("canvas and part views honor strain-relief-owned module fits, preserve sele
   await ingestReviewedLibraryItems(request, [
     { ...common, id: moduleId, category: "module", partType: "MODULE", partNumber: "510160101", description: "iSeries 160-position module", attributes: { pinCount: 1, pinIds: ["1"] } },
     { ...common, id: otherModule, category: "module", partType: "MODULE", partNumber: otherModule, description: "Other compatible module", attributes: { pinCount: 1, pinIds: ["1"] } },
-    { ...common, id: blank, category: "module", partType: "MODULE", partNumber: blank, description: "Blank module", electricalMode: "NONE", attributes: { pinIds: [] } },
+    { ...common, id: blank, category: "module", partType: "MODULE", partNumber: blank, description: "Blank module", electricalMode: "NONE", attributes: { positionCount: 160, pinIds: [] } },
     { ...common, id: frame, category: "frame", partType: "ITA", partNumber: frame, description: "Two-slot frame", attributes: { slotIds: ["A", "B"], moduleCapacity: 2 } },
     { ...common, id: reliefId, category: "strain-relief", partNumber: "310123102", description: "iSeries strain relief", attributes: {} },
     ...[sibling, legacy, forbidden, review, unlisted, inactive].map(id => ({ ...common, id, category: "strain-relief", partNumber: id, description: id, isActive: id !== inactive, attributes: {} }))
@@ -42,10 +42,11 @@ test("canvas and part views honor strain-relief-owned module fits, preserve sele
     });
     expect(response.ok()).toBeTruthy();
   }
-  const staleBlankPair = await request.put("http://127.0.0.1:3000/v1/library/compat/module-strain-relief", {
+  const invalidBlankPair = await request.put("http://127.0.0.1:3000/v1/library/compat/module-strain-relief", {
     headers: { cookie: adminCookie }, data: { modulePartId: blank, strainReliefPartId: reliefId, status: "allowed" }
   });
-  expect(staleBlankPair.ok()).toBeTruthy();
+  expect(invalidBlankPair.status()).toBe(400);
+  expect(await invalidBlankPair.text()).toContain("COMPATIBILITY_BLANK_MODULE_STRAIN_RELIEF");
 
   await registerAndSignIn(page, { username: prefix, email: `${prefix}@example.com` });
   await createProjectAndOpenProjectPage(page, prefix);
@@ -79,6 +80,8 @@ test("canvas and part views honor strain-relief-owned module fits, preserve sele
   const rules = (await rulesResponse.json()).items;
   expect(rules.some((row: { parentPartId: string; targetPartIds: string[] }) => row.parentPartId === reliefId && row.targetPartIds.includes(moduleId))).toBeTruthy();
   expect(rules.some((row: { parentPartId: string; targetPartIds: string[] }) => row.parentPartId === moduleId && row.targetPartIds.includes(reliefId))).toBeFalsy();
+  expect(rules.find((row: { parentPartId: string }) => row.parentPartId === reliefId).targetPartIds.sort()).toEqual([moduleId, otherModule].sort());
+  expect(rules.find((row: { parentPartId: string }) => row.parentPartId === frame).targetPartIds).toContain(blank);
   const validation = await apiAsPageUser(page, `/v1/revisions/${revisionId}/validate`, { method: "POST", data: { rulesetVersion: "rules-2026.04", mode: "full" } });
   expect(validation.ok()).toBeTruthy();
   const findings = (await validation.json()).results.filter((result: { code: string }) => result.code === "RULE_COMPAT_MODULE_STRAIN_RELIEF");
@@ -91,11 +94,17 @@ test("canvas and part views honor strain-relief-owned module fits, preserve sele
     await adminPage.goto("/admin?databaseTab=compatibility&q=310123102");
     const sourceRow = adminPage.getByRole("tabpanel", { name: "Compatibility & Aliases", exact: true }).getByRole("row")
       .filter({ has: adminPage.getByRole("cell", { name: "310123102", exact: true }) });
-    await expect(sourceRow.locator("ul")).not.toContainText(blank);
-    await expect(sourceRow).toContainText(`Excluded from strain-relief compatibility: ${blank}`);
+    await expect(sourceRow).not.toContainText(blank);
+    await expect(sourceRow).toContainText("510160101");
+    await sourceRow.getByRole("button", { name: "Edit", exact: true }).click();
+    const targets = adminPage.getByRole("textbox", { name: "Compatible parts", exact: true });
+    await expect(targets).not.toHaveValue(new RegExp(blank));
+    await expect(targets).toHaveValue(new RegExp("510160101"));
+    await adminPage.getByRole("button", { name: "Cancel edit", exact: true }).click();
+    await adminPage.goto("/admin?databaseTab=compatibility");
     await adminPage.getByRole("tab", { name: "Module ↔ Strain relief", exact: true }).click();
     const pairRow = adminPage.getByRole("row").filter({ has: adminPage.getByRole("cell", { name: blank, exact: true }) });
-    await expect(pairRow.getByRole("cell", { name: "forbidden", exact: true })).toBeVisible();
+    await expect(pairRow).toHaveCount(0);
     await adminPage.locator("summary", { hasText: "Add module–strain relief pair" }).click();
     await expect(adminPage.getByRole("combobox", { name: "Module", exact: true }).locator(`option[value="${blank}"]`)).toHaveCount(0);
   } finally { await adminContext.close(); }

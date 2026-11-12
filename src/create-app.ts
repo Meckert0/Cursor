@@ -135,6 +135,15 @@ export async function createApp(options: CreateAppOptions = {}): Promise<Created
     }
   }
 
+  try {
+    const cleanup = await store.removeBlankModuleStrainReliefCompatibility();
+    if (cleanup.removedTargets) console.info(`Removed ${cleanup.removedTargets} blank-module strain-relief compatibility links.`);
+  } catch (error) {
+    console.warn("Strain-relief compatibility cleanup failed; API startup will continue.", {
+      message: error instanceof Error ? error.message : "Unknown catalog error"
+    });
+  }
+
   if (redisUrl) {
     redis = new Redis(redisUrl, {
       lazyConnect: true,

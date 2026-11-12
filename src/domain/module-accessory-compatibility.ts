@@ -1,5 +1,5 @@
 import { compatibilityStatus, type CompatibilityRule } from "./compatibility-rules.ts";
-import { BLANK_INSERT_FAMILY, catalogPartFamily, type CompatStatus } from "./library.ts";
+import { isBlankModule, type CompatStatus } from "./library.ts";
 
 type AccessoryModule = {
   id: string;
@@ -25,7 +25,7 @@ export function moduleAccessoryStatus(
   rules: readonly CompatibilityRule[]
 ): CompatStatus | undefined {
   if (module.category !== "module") return undefined;
-  if (accessory.category === "strain-relief" && catalogPartFamily(module) === BLANK_INSERT_FAMILY) {
+  if (accessory.category === "strain-relief" && isBlankModule(module)) {
     return "forbidden";
   }
   if (accessory.category === "backshell") return compatibilityStatus({

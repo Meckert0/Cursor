@@ -39,6 +39,51 @@ const fixtures: PartIngestItem[] = [
 ];
 
 for (const backend of ["memory", "sqlite", "postgres"] as const) {
+  test(`${backend}: removes saved blank strain-relief links and prevents them from returning`, async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "blank-strain-compat-"));
+    const pg = backend === "postgres" ? await postgres() : undefined;
+    let store: Store = pg?.store ?? (backend === "sqlite" ? new SqliteStore(path.join(directory, "app.db")) : new MemoryStore());
+    try {
+      await store.ingestLibraryComponents({ requestedByUserId: "test", dryRun: false, items: [...fixtures,
+        makePart({ id: "sr", category: "strain-relief", partNumber: "310123102", family: "iSeries", description: "Strain relief" }),
+        makePart({ id: "blank", category: "module", partNumber: "BLANK-1", family: "iSeries", description: "Unclassified filler", electricalMode: "NONE", attributes: { positionCount: 160, pinIds: [] } })
+      ] });
+      const mixed = await store.upsertPartRelationship({ parentPartId: "sr", relationshipType: "MATES_WITH", targetPartIds: ["module", "blank"], parentPositions: [], status: "allowed", source: "manufacturer", notes: "Original source note", extra: { revision: "B" }, isExhaustive: true });
+      await store.upsertPartRelationship({ parentPartId: "frame", relationshipType: "MODULE_ALLOWED", targetPartIds: ["blank"], parentPositions: [], status: "allowed" });
+      await store.upsertModuleStrainReliefCompat({ modulePartId: "blank", strainReliefPartId: "sr", status: "forbidden" });
+      // Historical catalogs may identify the filler as blank after storing its links.
+      await store.updateLibraryComponent({ componentId: "blank", description: "Blank module", editedByUserId: "test" });
+      assert.deepEqual(await store.removeBlankModuleStrainReliefCompatibility(), { removedTargets: 2, removedGroups: 1 });
+      const cleaned = (await store.listPartRelationships({ parentPartId: "sr" }))[0];
+      assert.deepEqual(cleaned.targetPartIds, ["module"]);
+      assert.deepEqual(cleaned.compatibleParts, ["M-1"]);
+      assert.equal(cleaned.id, mixed.id);
+      assert.equal(cleaned.notes, mixed.notes);
+      assert.equal(cleaned.source, mixed.source);
+      assert.equal(cleaned.isExhaustive, true);
+      assert.deepEqual(cleaned.extra, mixed.extra);
+      assert.deepEqual((await store.listPartRelationships({ parentPartId: "frame" }))[0].targetPartIds, ["blank"]);
+      assert.deepEqual(await store.listModuleStrainReliefCompat(), []);
+      assert.deepEqual(await store.removeBlankModuleStrainReliefCompatibility(), { removedTargets: 0, removedGroups: 0 });
+
+      const saved = await store.upsertPartRelationship({ ...mixed, targetPartIds: ["module", "blank"] });
+      assert.deepEqual(saved.targetPartIds, ["module"]);
+      assert.deepEqual(saved.compatibleParts, ["M-1"]);
+      await assert.rejects(store.upsertPartRelationship({ parentPartId: "sr", relationshipType: "MATES_WITH", compatibleParts: ["BLANK-1"], parentPositions: [], status: "allowed" }), /COMPATIBILITY_BLANK_MODULE_STRAIN_RELIEF/);
+      await assert.rejects(store.upsertModuleStrainReliefCompat({ modulePartId: "blank", strainReliefPartId: "sr", status: "allowed" }), /COMPATIBILITY_BLANK_MODULE_STRAIN_RELIEF/);
+      if (store instanceof SqliteStore) {
+        store.close();
+        store = new SqliteStore(path.join(directory, "app.db"));
+      } else if (store instanceof MemoryStore) store = MemoryStore.fromState(store.exportState());
+      assert.deepEqual((await store.listPartRelationships({ parentPartId: "sr" }))[0].targetPartIds, ["module"]);
+      assert.equal((await store.listPartRelationships({ parentPartId: "blank" })).length, 0);
+    } finally {
+      if (store instanceof SqliteStore) store.close();
+      await pg?.db.close();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   test(`${backend}: canonical compatibility, labels and media survive edits and persistence`, async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "catalog-sections-"));
     const pg = backend === "postgres" ? await postgres() : undefined;
@@ -185,6 +230,16 @@ test("migration preserves legacy sources, unresolved targets, scoped rules and n
     const [modulePart, blankPart, strainRelief] = await Promise.all([readPart("module"), readPart("legacy-blank"), readPart("legacy-sr")]);
     assert.equal(moduleAccessoryStatus(modulePart, strainRelief, groups), "allowed");
     assert.equal(moduleAccessoryStatus(blankPart, strainRelief, groups), "forbidden");
+    await db.exec("INSERT INTO compatibility_unresolved_targets (group_id, source_part_number) VALUES ('legacy-strain-fit', 'BLANK-1'), ('legacy-strain-fit', 'UNRECOGNIZED')");
+    assert.deepEqual(await store.removeBlankModuleStrainReliefCompatibility(), { removedTargets: 2, removedGroups: 0 });
+    const cleanedLegacy = (await store.listPartRelationships({ parentPartId: "legacy-sr" }))[0];
+    assert.equal(cleanedLegacy.id, "legacy-strain-fit");
+    assert.deepEqual(cleanedLegacy.targetPartIds, ["module"]);
+    assert.deepEqual(cleanedLegacy.compatibleParts, ["M-1"]);
+    assert.deepEqual(cleanedLegacy.unresolvedParts, ["UNRECOGNIZED"]);
+    assert.equal(cleanedLegacy.notes, "Strain-relief-owned module fit");
+    assert.equal((await db.query("SELECT * FROM compatibility_targets WHERE group_id = 'legacy-strain-fit' AND target_part_id = 'legacy-blank'")).rows.length, 0);
+    assert.deepEqual(await store.removeBlankModuleStrainReliefCompatibility(), { removedTargets: 0, removedGroups: 0 });
     assert.deepEqual(groups.find(row => row.id === "legacy-contact")?.parentPositions, ["1"]);
     assert.equal(groups.find(row => row.id === "legacy-contact")?.notes, "Pin 1 only");
     assert.deepEqual(groups.find(row => row.id === "legacy-frame")?.unresolvedParts, ["UNKNOWN-PN"]);

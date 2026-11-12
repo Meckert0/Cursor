@@ -2,6 +2,7 @@ import { listRelationships, writeRelationship, listMedia, saveMedia } from "./po
 import { normalizeWireAttributes, validateCatalogAttributes, CatalogError } from "../../domain/catalog-attributes.js";
 import { listPairs, upsertPair, deletePair, pairRelationship } from "./compatibility-adapters.js";
 import { resolveRelationshipInput, validatePartMedia } from "../../domain/catalog-integrity.js";
+import { pruneBlankStrainReliefTargets } from "../../domain/blank-strain-relief-compatibility.js";
 import type { PartMedia, PartMediaInput } from "../../domain/library.js";
 import type { Pool, PoolClient } from "pg";
 import type {
@@ -3054,6 +3055,48 @@ export class PostgresStore implements Store {
   async deletePartRelationship(input: { id: string }): Promise<boolean> {
     const result = await this.pool.query("DELETE FROM compatibility_groups WHERE id = $1", [input.id]);
     return (result.rowCount ?? 0) > 0;
+  }
+
+  async removeBlankModuleStrainReliefCompatibility(): Promise<{ removedTargets: number; removedGroups: number }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const rows = await listRelationships(client);
+      const ids = [...new Set(rows.flatMap(row => [row.parentPartId, ...(row.targetPartIds ?? [])]))];
+      const numbers = [...new Set(rows.flatMap(row => row.unresolvedParts ?? []).map(pn => pn.trim().toUpperCase()))];
+      const raw = await client.query<PartRow>(`SELECT ${PART_COLUMNS} FROM parts
+        WHERE category IN ('module', 'strain-relief') AND (id = ANY($1::text[]) OR UPPER(BTRIM(part_number)) = ANY($2::text[]))
+        ORDER BY id FOR SHARE`, [ids, numbers]);
+      const parts = await loadPartsWithAttributes(client, raw.rows);
+      let changes = rows.map(row => ({ original: row, pruned: pruneBlankStrainReliefTargets(row, parts) }))
+        .filter(change => change.original !== change.pruned.row);
+      if (changes.length) {
+        const changedIds = new Set(changes.map(change => change.original.id));
+        await client.query("SELECT id FROM compatibility_groups WHERE id = ANY($1::text[]) ORDER BY id FOR UPDATE", [[...changedIds]]);
+        // Recheck after locking: an administrator may have edited a group during the initial scan.
+        changes = (await listRelationships(client)).filter(row => changedIds.has(row.id))
+          .map(row => ({ original: row, pruned: pruneBlankStrainReliefTargets(row, parts) }))
+          .filter(change => change.original !== change.pruned.row);
+      }
+      let removedTargets = 0;
+      let removedGroups = 0;
+      for (const { original, pruned } of changes) {
+        const targets = await client.query("DELETE FROM compatibility_targets WHERE group_id = $1 AND target_part_id = ANY($2::text[])", [original.id, pruned.removedTargetIds]);
+        const unresolved = await client.query("DELETE FROM compatibility_unresolved_targets WHERE group_id = $1 AND source_part_number = ANY($2::text[])", [original.id, pruned.removedUnresolved]);
+        removedTargets += (targets.rowCount ?? 0) + (unresolved.rowCount ?? 0);
+        if (pruned.empty) {
+          const deleted = await client.query(`DELETE FROM compatibility_groups g WHERE id = $1
+            AND NOT EXISTS (SELECT 1 FROM compatibility_targets t WHERE t.group_id = g.id)
+            AND NOT EXISTS (SELECT 1 FROM compatibility_unresolved_targets u WHERE u.group_id = g.id)`, [original.id]);
+          removedGroups += deleted.rowCount ?? 0;
+        }
+      }
+      await client.query("COMMIT");
+      return { removedTargets, removedGroups };
+    } catch (error) {
+      await this.rollbackSilently(client);
+      throw error;
+    } finally { client.release(); }
   }
 
   async listPartMedia(input?: { partId?: string }): Promise<PartMedia[]> {

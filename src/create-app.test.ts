@@ -37,10 +37,14 @@ test("catalog schema failures do not prevent API startup or password login", asy
       attempts += 1;
       throw Object.assign(new Error('column "min_inclusive" does not exist'), { code: "42703" });
     });
+    const cleanup = context.mock.method(MemoryStore.prototype, "removeBlankModuleStrainReliefCompatibility", async () => {
+      throw new Error("Catalog cleanup temporarily unavailable");
+    });
     const warnings = context.mock.method(console, "warn", () => {});
     const created = await createApp({ runLocalStartupTasks: false });
     try {
       assert.equal(attempts, 2, "Both catalogs are attempted independently");
+      assert.equal(cleanup.mock.calls.length, 1, "Existing blank links are cleaned during initialization");
       assert.ok(warnings.mock.calls.some((call) => String(call.arguments[0]).includes("catalog")));
       await created.authStore.createUser({
         username: "login-regression", email: "login@example.com", passwordHash: await hashPassword("test-password-123"),

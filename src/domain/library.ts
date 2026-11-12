@@ -22,18 +22,26 @@ interface PartFamilyInput {
   attributes?: unknown;
 }
 
-/** Classify physical blank fillers, independently of their ITA/Receiver side. */
-export function catalogPartFamily(part: PartFamilyInput): string {
-  if (part.category !== "module") return part.family;
+/** A non-electrical blank may still carry a mechanical position count. */
+export function isBlankModule(part: PartFamilyInput): boolean {
+  if (part.category !== "module") return false;
   const attrs = part.attributes && typeof part.attributes === "object" ? part.attributes as Record<string, unknown> : {};
   const positive = (value: unknown) => (typeof value === "string" || typeof value === "number") && Number.isFinite(Number(value)) && Number(value) > 0;
-  if (part.electricalMode?.trim().toUpperCase() === "INSERT_HOST" || positive(attrs.simSlotCount) ||
-    (Array.isArray(attrs.simSlotSections) && attrs.simSlotSections.some(section => Array.isArray(section) && section.length))) return part.family;
+  if (/\bblank(?:ing)?\b/i.test(part.family)) return true;
+  if (part.electricalMode?.trim().toUpperCase() === "INSERT_HOST") return false;
+  if (positive(attrs.simSlotCount) || (Array.isArray(attrs.simSlotSections) && attrs.simSlotSections.some(section => Array.isArray(section) && section.length))) return false;
+  const description = [part.description, attrs.contactFamily1, attrs.contactFamily2].join(" ");
+  if (!/\bblank(?:ing)?\b/i.test(description)) return false;
+  if (part.electricalMode?.trim().toUpperCase() === "NONE") return true;
   if ([attrs.positionCount, attrs.pinCount, attrs.pinCount2].some(positive) ||
     (Array.isArray(attrs.pinIds) && attrs.pinIds.some(pin => String(pin).trim())) ||
-    (Array.isArray(attrs.contactPositions) && attrs.contactPositions.some(position => position && typeof position === "object" && positive(position.pinCount)))) return part.family;
-  const description = [part.description, part.family, attrs.contactFamily1, attrs.contactFamily2].join(" ");
-  return /\bblank(?:ing)?\b/i.test(description) ? BLANK_INSERT_FAMILY : part.family;
+    (Array.isArray(attrs.contactPositions) && attrs.contactPositions.some(position => position && typeof position === "object" && positive(position.pinCount)))) return false;
+  return true;
+}
+
+/** Classify physical blank fillers, independently of their ITA/Receiver side. */
+export function catalogPartFamily(part: PartFamilyInput): string {
+  return isBlankModule(part) ? BLANK_INSERT_FAMILY : part.family;
 }
 
 export function normalizeBlankModuleFamily<T extends PartFamilyInput>(part: T): T {

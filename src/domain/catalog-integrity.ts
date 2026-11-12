@@ -1,5 +1,6 @@
 import { CatalogError } from "./catalog-attributes.js";
-import { normalizePartRelationship, type PartRelationship, type PartRelationshipInput, type PartWithAttributes, type PartMediaInput } from "./library.js";
+import { normalizePartRelationship, type PartRelationship, type PartRelationshipInput, type PartMediaInput } from "./library.js";
+import { pruneBlankStrainReliefTargets, type CompatibilityPart } from "./blank-strain-relief-compatibility.js";
 
 export const RELATIONSHIP_CATEGORIES: Record<string, { parent: string; target: string }> = {
   MODULE_ALLOWED: { parent: "frame", target: "module" },
@@ -11,7 +12,7 @@ export const RELATIONSHIP_CATEGORIES: Record<string, { parent: string; target: s
   STRAIN_RELIEF_ALLOWED: { parent: "module", target: "strain-relief" }
 };
 
-export function resolveRelationshipInput(input: PartRelationshipInput, parts: readonly (Pick<PartWithAttributes, "id" | "category" | "partNumber" | "attributes"> & { isArchived?: boolean })[], preserveUnresolved = false): PartRelationship {
+export function resolveRelationshipInput(input: PartRelationshipInput, parts: readonly (CompatibilityPart & { isArchived?: boolean })[], preserveUnresolved = false): PartRelationship {
   const row = normalizePartRelationship(input);
   const parent = parts.find(part => part.id === row.parentPartId);
   if (!parent) {
@@ -45,13 +46,17 @@ export function resolveRelationshipInput(input: PartRelationshipInput, parts: re
   if (Array.isArray(knownPositions) && knownPositions.length && row.parentPositions.some(position => !knownPositions.some(known => String(known).toUpperCase() === position.toUpperCase()))) {
     throw new CatalogError("COMPATIBILITY_POSITION_NOT_FOUND");
   }
-  return {
+  const resolved = {
     ...row,
     targetPartIds: [...targetIds],
     compatibleParts: [...targetIds].map(id => parts.find(part => part.id === id)!.partNumber),
     unresolvedParts: unresolved.size ? [...unresolved] : undefined,
     isExhaustive: input.isExhaustive ?? (!row.legacyPairKey && ["MODULE_ALLOWED", "INSERT_ALLOWED", "CONTACT_ALLOWED"].includes(row.relationshipType))
   };
+  if (preserveUnresolved) return resolved;
+  const pruned = pruneBlankStrainReliefTargets(resolved, parts);
+  if (pruned.empty) throw new CatalogError("COMPATIBILITY_BLANK_MODULE_STRAIN_RELIEF: Blank modules cannot be compatible with strain reliefs.");
+  return pruned.row;
 }
 
 export function isBundledPartMediaUrl(value: string): boolean {

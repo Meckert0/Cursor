@@ -20,8 +20,12 @@ test("blank filler families are separate from physical sides and empty SIM hosts
   assert.equal(catalogPartFamily({ ...blank, description: "Blanking insert" }), "Blank insert");
   assert.equal(catalogPartFamily({ ...blank, description: "Module", attributes: { contactFamily1: "BLANK" } }), "Blank insert");
   for (const attributes of [{ positionCount: 1 }, { pinCount: 2 }, { pinCount2: 2 }, { pinIds: ["1"] }, { contactPositions: [{ pinCount: 4 }] }, { simSlotCount: 16 }, { simSlotSections: [["1", "2"]] }]) {
-    assert.equal(catalogPartFamily({ ...blank, attributes }), blank.family);
+    assert.equal(catalogPartFamily({ ...blank, electricalMode: "SELECTABLE", attributes }), blank.family);
   }
+  assert.equal(catalogPartFamily({ ...blank, attributes: { positionCount: 160, pinCount: 160 } }), "Blank insert");
+  assert.equal(catalogPartFamily({ ...blank, family: "BLANK INSERT", electricalMode: undefined, attributes: { pinCount: 160 } }), "Blank insert");
+  assert.equal(catalogPartFamily({ ...blank, family: "Blank insert", electricalMode: "INSERT_HOST" }), "Blank insert");
+  assert.equal(catalogPartFamily({ ...blank, attributes: { simSlotCount: 16 } }), blank.family);
   assert.equal(catalogPartFamily({ ...blank, electricalMode: "INSERT_HOST" }), blank.family);
   assert.equal(catalogPartFamily({ ...blank, category: "frame" }), blank.family);
   assert.equal(catalogPartFamily({ ...blank, description: "Signal module" }), blank.family);

@@ -242,6 +242,7 @@ export interface Store {
   upsertPartRelationship(input: PartRelationshipInput): Promise<PartRelationship>;
   bulkUpsertPartRelationships(input: { rows: PartRelationshipInput[] }): Promise<{ upserted: number }>;
   deletePartRelationship(input: { id: string }): Promise<boolean>;
+  removeBlankModuleStrainReliefCompatibility(): Promise<{ removedTargets: number; removedGroups: number }>;
   listPartMedia(input?: { partId?: string }): Promise<PartMedia[]>;
   upsertPartMedia(input: PartMediaInput): Promise<PartMedia>;
   deletePartMedia(input: { id: string; partId: string }): Promise<boolean>;

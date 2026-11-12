@@ -88,6 +88,12 @@ export class SqliteStore extends MemoryStore {
     return result;
   }
 
+  override async removeBlankModuleStrainReliefCompatibility(): Promise<{ removedTargets: number; removedGroups: number }> {
+    const result = await super.removeBlankModuleStrainReliefCompatibility();
+    if (result.removedTargets || result.removedGroups) this.persistState();
+    return result;
+  }
+
   override async deleteUserData(userId: string): Promise<void> {
     await super.deleteUserData(userId);
     this.persistState();

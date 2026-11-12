@@ -12,7 +12,7 @@ type ProfilePart = { category: string; family: string; partType?: string };
 export function sideProfileScale(part: ProfilePart | undefined, compatibleParent?: ProfilePart): number {
   const host = part?.category === "strain-relief" ? compatibleParent : part;
   if (!host) return 1;
-  if (isISeriesModule(host) || (host.category === "frame" && /^i1(?:\b|XL\b)/i.test(host.family.trim()))) return 0.9;
+  if (isISeriesModule(host) || (host.category === "frame" && /^i1(?:\b|XL\b)/i.test(host.family.trim()))) return 0.81;
   return 1;
 }
 

@@ -1,4 +1,5 @@
 import { compatibilityStatus } from "./compatibility-rules.js";
+import { moduleAccessoryStatus } from "./module-accessory-compatibility.js";
 import type { LibraryLookup } from "./bom.js";
 import type { CompatLookup } from "./compat-lookup.js";
 import {
@@ -658,72 +659,72 @@ export function validateSnapshot(snapshot: DesignSnapshot, options: ValidateSnap
     }
 
     // Module ↔ accessory (backshell / strain-relief) pairs on connectors or frame slots.
-    if (options.compatLookup) {
-      for (const connector of snapshot.connectors) {
-        const accessoryUnits = isFrameHousingConnector(connector)
-          ? (connector.slots ?? []).filter(isSlotPopulated).map((slot) => ({
-              libraryComponentId: slot.libraryComponentId,
-              partNumber: slot.partNumber,
-              backshellLibraryComponentId: slot.backshellLibraryComponentId,
-              backshellPartNumber: slot.backshellPartNumber,
-              strainReliefLibraryComponentId: slot.strainReliefLibraryComponentId,
-              strainReliefPartNumber: slot.strainReliefPartNumber
-            }))
-          : [
-              {
-                libraryComponentId: connector.libraryComponentId,
-                partNumber: connector.partNumber,
-                backshellLibraryComponentId: connector.backshellLibraryComponentId,
-                backshellPartNumber: connector.backshellPartNumber,
-                strainReliefLibraryComponentId: connector.strainReliefLibraryComponentId,
-                strainReliefPartNumber: connector.strainReliefPartNumber
-              }
-            ];
+    for (const connector of snapshot.connectors) {
+      const accessoryUnits = isFrameHousingConnector(connector)
+        ? (connector.slots ?? []).filter(isSlotPopulated).map((slot) => ({
+            libraryComponentId: slot.libraryComponentId,
+            partNumber: slot.partNumber,
+            backshellLibraryComponentId: slot.backshellLibraryComponentId,
+            backshellPartNumber: slot.backshellPartNumber,
+            strainReliefLibraryComponentId: slot.strainReliefLibraryComponentId,
+            strainReliefPartNumber: slot.strainReliefPartNumber
+          }))
+        : [
+            {
+              libraryComponentId: connector.libraryComponentId,
+              partNumber: connector.partNumber,
+              backshellLibraryComponentId: connector.backshellLibraryComponentId,
+              backshellPartNumber: connector.backshellPartNumber,
+              strainReliefLibraryComponentId: connector.strainReliefLibraryComponentId,
+              strainReliefPartNumber: connector.strainReliefPartNumber
+            }
+          ];
 
-        for (const unit of accessoryUnits) {
-          const moduleComponent = resolveComponent(lookup, {
-            libraryComponentId: unit.libraryComponentId,
-            partNumber: unit.partNumber,
-            categories: "module"
+      for (const unit of accessoryUnits) {
+        const moduleComponent = resolveComponent(lookup, {
+          libraryComponentId: unit.libraryComponentId,
+          partNumber: unit.partNumber,
+          categories: "module"
+        });
+        if (!moduleComponent || moduleComponent.category !== "module") {
+          continue;
+        }
+
+        if (unit.backshellLibraryComponentId || unit.backshellPartNumber?.trim()) {
+          const backshell = resolveComponent(lookup, {
+            libraryComponentId: unit.backshellLibraryComponentId,
+            partNumber: unit.backshellPartNumber,
+            categories: "backshell"
           });
-          if (!moduleComponent || moduleComponent.category !== "module") {
-            continue;
-          }
-
-          if (unit.backshellLibraryComponentId || unit.backshellPartNumber?.trim()) {
-            const backshell = resolveComponent(lookup, {
-              libraryComponentId: unit.backshellLibraryComponentId,
-              partNumber: unit.backshellPartNumber,
-              categories: "backshell"
+          if (backshell) {
+            emitCompatFinding(emit, {
+              code: "RULE_COMPAT_MODULE_BACKSHELL",
+              status: moduleAccessoryStatus(moduleComponent, backshell, options.partRelationships ?? [])
+                ?? options.compatLookup?.moduleBackshell(moduleComponent.id, backshell.id),
+              entityType: "connector",
+              entityId: connector.id,
+              leftLabel: `Module "${moduleComponent.partNumber}"`,
+              rightLabel: `backshell "${backshell.partNumber}"`
             });
-            if (backshell) {
-              emitCompatFinding(emit, {
-                code: "RULE_COMPAT_MODULE_BACKSHELL",
-                status: options.compatLookup.moduleBackshell(moduleComponent.id, backshell.id),
-                entityType: "connector",
-                entityId: connector.id,
-                leftLabel: `Module "${moduleComponent.partNumber}"`,
-                rightLabel: `backshell "${backshell.partNumber}"`
-              });
-            }
           }
+        }
 
-          if (unit.strainReliefLibraryComponentId || unit.strainReliefPartNumber?.trim()) {
-            const strainRelief = resolveComponent(lookup, {
-              libraryComponentId: unit.strainReliefLibraryComponentId,
-              partNumber: unit.strainReliefPartNumber,
-              categories: "strain-relief"
+        if (unit.strainReliefLibraryComponentId || unit.strainReliefPartNumber?.trim()) {
+          const strainRelief = resolveComponent(lookup, {
+            libraryComponentId: unit.strainReliefLibraryComponentId,
+            partNumber: unit.strainReliefPartNumber,
+            categories: "strain-relief"
+          });
+          if (strainRelief) {
+            emitCompatFinding(emit, {
+              code: "RULE_COMPAT_MODULE_STRAIN_RELIEF",
+              status: moduleAccessoryStatus(moduleComponent, strainRelief, options.partRelationships ?? [])
+                ?? options.compatLookup?.moduleStrainRelief(moduleComponent.id, strainRelief.id),
+              entityType: "connector",
+              entityId: connector.id,
+              leftLabel: `Module "${moduleComponent.partNumber}"`,
+              rightLabel: `strain relief "${strainRelief.partNumber}"`
             });
-            if (strainRelief) {
-              emitCompatFinding(emit, {
-                code: "RULE_COMPAT_MODULE_STRAIN_RELIEF",
-                status: options.compatLookup.moduleStrainRelief(moduleComponent.id, strainRelief.id),
-                entityType: "connector",
-                entityId: connector.id,
-                leftLabel: `Module "${moduleComponent.partNumber}"`,
-                rightLabel: `strain relief "${strainRelief.partNumber}"`
-              });
-            }
           }
         }
       }

@@ -1,4 +1,6 @@
 import { isSimHost } from "./sim-modules";
+import type { CompatibilityRule } from "../../../../src/domain/compatibility-rules";
+import { moduleAccessoryStatus } from "../../../../src/domain/module-accessory-compatibility";
 import type { LibraryComponentDto, RevisionDto } from "./api";
 import {
   isCableSectionPath,
@@ -318,14 +320,15 @@ export type AllowedAccessoryOption = {
  */
 export function filterAllowedAccessoryOptionsForModule(
   accessories: LibraryComponentDto[],
-  modulePartId: string | undefined,
-  statusByAccessoryId: Map<string, "allowed" | "forbidden" | "review">
+  module: LibraryComponentDto | undefined,
+  relationships: readonly CompatibilityRule[]
 ): AllowedAccessoryOption[] {
-  if (!modulePartId) {
+  if (!module) {
     return [];
   }
+  const moduleRelationships = relationships.filter((row) => row.parentPartId === module.id);
   return accessories
-    .filter((component) => statusByAccessoryId.get(component.id) === "allowed")
+    .filter((component) => component.isActive && !component.isArchived && moduleAccessoryStatus(module, component, moduleRelationships) === "allowed")
     .map((component) => ({
       component,
       label: `${component.partNumber}${component.description ? ` — ${component.description}` : ""}`

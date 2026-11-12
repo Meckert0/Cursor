@@ -83,6 +83,34 @@ function snapshot(): RevisionDto["snapshot"] {
 }
 
 describe("CableCanvas cable sections", () => {
+  it("refreshes grouped strain relief options and excludes blank modules in frame slots", () => {
+    const modulePart: LibraryComponentDto = { ...wirePart("module", "510160101", 0), category: "module", family: "iSeries", attributes: { pinCount: 1, pinIds: ["1"] } };
+    const blank: LibraryComponentDto = { ...modulePart, id: "blank", partNumber: "BLANK", family: "Blank insert", description: "Blank module", attributes: { pinIds: [] } };
+    const relief: LibraryComponentDto = { ...modulePart, id: "relief", category: "strain-relief", partNumber: "310123102", attributes: {} };
+    const second: LibraryComponentDto = { ...relief, id: "second", partNumber: "310123103" };
+    const relationships = [
+      { parentPartId: modulePart.id, relationshipType: "STRAIN_RELIEF_ALLOWED", compatibleParts: [relief.partNumber, second.partNumber], targetPartIds: [relief.id, second.id], parentPositions: [], status: "allowed" },
+      { parentPartId: blank.id, relationshipType: "STRAIN_RELIEF_ALLOWED", compatibleParts: [relief.partNumber], targetPartIds: [relief.id], parentPositions: [], status: "allowed" }
+    ];
+    const canvasSnapshot = { ...snapshot(), paths: [], connectors: [
+      { id: "standalone", reference: "J1", partNumber: modulePart.partNumber, libraryComponentId: modulePart.id, pins: [] },
+      { id: "frame", reference: "J2", pins: [], slots: [
+        { slotId: "A", reference: "J2A", partNumber: modulePart.partNumber, libraryComponentId: modulePart.id, pins: [] },
+        { slotId: "B", reference: "J2B", partNumber: blank.partNumber, libraryComponentId: blank.id, pins: [] }
+      ] }
+    ] };
+    const props = { revisionId: "accessories", snapshot: canvasSnapshot, snapshotHash: "hash", connectorCatalog: [modulePart, blank], accessoryRelationships: relationships,
+      quickAddConnectorAction: async () => ({ ok: true, connectorCatalog: [modulePart, blank] }) };
+    const { rerender } = render(<CableCanvas {...props} strainReliefCatalog={[relief]} />);
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Connector J1" }));
+    expect(within(screen.getByLabelText("Strain relief")).getByRole("option", { name: /^310123102/ })).toBeEnabled();
+    rerender(<CableCanvas {...props} strainReliefCatalog={[relief, second]} />);
+    expect(within(screen.getByLabelText("Strain relief")).getByRole("option", { name: /^310123103/ })).toBeEnabled();
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Frame J2" }));
+    expect(within(screen.getByLabelText("Slot A strain relief")).getAllByRole("option")).toHaveLength(3);
+    expect(within(screen.getByLabelText("Slot B strain relief")).getAllByRole("option")).toHaveLength(1);
+  });
+
   it("opens each frame module's SIM layout in a dialog while keeping previews in the module area", () => {
     const host: LibraryComponentDto = { id: "sim-host", category: "module", partType: "MODULE", electricalMode: "INSERT_HOST", partNumber: "SIM-HOST", family: "SIM", description: "SIM host", attributes: { simSlotCount: 2 }, isActive: true, isReviewed: true, stockStatus: "in_stock", createdByUserId: "u", createdAt: "2026-01-01", lastEditedByUserId: "u", lastEditedAt: "2026-01-01", updatedAt: "2026-01-01" };
     render(<CableCanvas revisionId="sim-disclosure" snapshot={{ ...snapshot(), paths: [], connectors: [{ id: "f", reference: "J1", partNumber: "FRAME", pins: [], slots: [

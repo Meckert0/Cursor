@@ -747,6 +747,48 @@ for (const { kind, code, build } of COMPAT_CASES) {
   });
 }
 
+test("accessory validation reads grouped rules without a legacy lookup", () => {
+  for (const accessory of [COMPAT_PARTS.backshell, COMPAT_PARTS.strainRelief]) {
+    const code = accessory.category === "backshell" ? "RULE_COMPAT_MODULE_BACKSHELL" : "RULE_COMPAT_MODULE_STRAIN_RELIEF";
+    const rule = {
+      parentPartId: COMPAT_PARTS.module.id,
+      relationshipType: accessory.category === "backshell" ? "BACKSHELL_ALLOWED" : "STRAIN_RELIEF_ALLOWED",
+      compatibleParts: [accessory.partNumber], targetPartIds: [accessory.id], parentPositions: [], status: "forbidden"
+    };
+    const report = validateSnapshot(compatSnapshot(), {
+      libraryLookup: compatLibraryLookup(), partRelationships: [rule], rulesetVersion: "rules-2026.04"
+    });
+    assert.ok(report.results.some(result => result.code === code && result.severity === "error"));
+    const conflict = validateSnapshot(compatSnapshot(), {
+      libraryLookup: compatLibraryLookup(), partRelationships: [rule], compatLookup: createCompatLookup({
+        moduleStrainRelief: [{ modulePartId: COMPAT_PARTS.module.id, strainReliefPartId: accessory.id, status: "allowed" }],
+        moduleBackshell: [{ modulePartId: COMPAT_PARTS.module.id, backshellPartId: accessory.id, status: "allowed" }]
+      }), rulesetVersion: "rules-2026.04"
+    });
+    assert.ok(conflict.results.some(result => result.code === code && result.severity === "error"));
+  }
+});
+
+test("blank modules reject saved strain reliefs on standalone connectors and frame slots", () => {
+  const blank = makePart({ ...COMPAT_PARTS.module, category: "module", family: "Blank insert", description: "Blank module", attributes: { pinIds: [], pinCount: 0 } });
+  for (const inFrame of [false, true]) {
+    const snapshot = compatSnapshot();
+    const connector = snapshot.connectors[0];
+    connector.pins = [];
+    if (inFrame) {
+      snapshot.connectors[0] = { id: "frame", reference: "J1", pins: [], slots: [{ ...connector, slotId: "A" }] };
+    }
+    for (const compatLookup of [undefined, createCompatLookup({ moduleStrainRelief: [{ modulePartId: blank.id, strainReliefPartId: COMPAT_PARTS.strainRelief.id, status: "allowed" }] })]) {
+      const report = validateSnapshot(snapshot, {
+        libraryLookup: createLibraryLookup([blank, COMPAT_PARTS.strainRelief]), compatLookup,
+        rulesetVersion: "rules-2026.04",
+        partRelationships: [{ parentPartId: blank.id, relationshipType: "STRAIN_RELIEF_ALLOWED", compatibleParts: [COMPAT_PARTS.strainRelief.partNumber], targetPartIds: [COMPAT_PARTS.strainRelief.id], parentPositions: [], status: "allowed" }]
+      });
+      assert.ok(report.results.some(result => result.code === "RULE_COMPAT_MODULE_STRAIN_RELIEF" && result.severity === "error" && result.entityId === (inFrame ? "frame" : connector.id)));
+    }
+  }
+});
+
 test("validateSnapshot compat rules are disabled under rules-2026.03", () => {
   const report = validateSnapshot(compatSnapshot(), {
     libraryLookup: compatLibraryLookup(),

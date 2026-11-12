@@ -156,7 +156,7 @@ export async function selectConnectorPickerPart(page: Page, partNumber: string, 
   await page.getByRole("button", { name: new RegExp(`^Use ${kind}`) }).click();
 }
 
-async function getAdminSessionCookie(request: APIRequestContext): Promise<string> {
+export async function getAdminSessionCookie(request: APIRequestContext): Promise<string> {
   const password = "pass1234!";
   const email = "meckert@vpc.com";
   const register = await request.post(`${API_BASE_URL}/v1/auth/register`, {

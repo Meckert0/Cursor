@@ -700,21 +700,23 @@ describe("cable-canvas-utils", () => {
 
   it("filters accessory options to allowed-only for a module", () => {
     const accessories = [
-      { id: "bs-f", partNumber: "BS-F", description: "Forbidden", attributes: {} },
-      { id: "bs-a", partNumber: "BS-A", description: "Allowed", attributes: {} },
-      { id: "bs-u", partNumber: "BS-U", description: "Unset", attributes: {} },
-      { id: "bs-r", partNumber: "BS-R", description: "Review", attributes: {} },
-      { id: "bs-a2", partNumber: "BS-A2", description: "Also allowed", attributes: {} }
-    ] as LibraryComponentDto[];
+      { id: "bs-f", partNumber: "BS-F", description: "Forbidden" },
+      { id: "bs-a", partNumber: "BS-A", description: "Allowed" },
+      { id: "bs-u", partNumber: "BS-U", description: "Unset" },
+      { id: "bs-r", partNumber: "BS-R", description: "Review" },
+      { id: "bs-a2", partNumber: "BS-A2", description: "Also allowed" },
+      { id: "bs-inactive", partNumber: "BS-INACTIVE", isActive: false },
+      { id: "bs-archived", partNumber: "BS-ARCHIVED", isArchived: true }
+    ].map(part => ({ category: "backshell", isActive: true, attributes: {}, ...part })) as LibraryComponentDto[];
+    const modulePart = { id: "mod-1", category: "module", family: "Test", description: "Module", attributes: {} } as LibraryComponentDto;
     const filtered = filterAllowedAccessoryOptionsForModule(
       accessories,
-      "mod-1",
-      new Map([
-        ["bs-a", "allowed"],
-        ["bs-a2", "allowed"],
-        ["bs-r", "review"],
-        ["bs-f", "forbidden"]
-      ])
+      modulePart,
+      [
+        { parentPartId: modulePart.id, relationshipType: "BACKSHELL_ALLOWED", compatibleParts: [], targetPartIds: ["bs-a", "bs-a2", "bs-inactive", "bs-archived"], parentPositions: [], status: "allowed" },
+        { parentPartId: modulePart.id, relationshipType: "BACKSHELL_ALLOWED", compatibleParts: [], targetPartIds: ["bs-r"], parentPositions: [], status: "review" },
+        { parentPartId: modulePart.id, relationshipType: "BACKSHELL_ALLOWED", compatibleParts: [], targetPartIds: ["bs-f"], parentPositions: [], status: "forbidden" }
+      ]
     );
     expect(filtered.map((row) => row.component.id)).toEqual(["bs-a", "bs-a2"]);
     expect(filtered[0]?.label).toBe("BS-A — Allowed");
@@ -861,7 +863,7 @@ describe("cable-canvas-utils", () => {
     const filtered = filterAllowedAccessoryOptionsForModule(
       accessories,
       undefined,
-      new Map([["bs-a", "allowed"]])
+      [{ parentPartId: "mod-1", relationshipType: "BACKSHELL_ALLOWED", compatibleParts: ["BS-A"], parentPositions: [], status: "allowed" }]
     );
     expect(filtered).toEqual([]);
   });

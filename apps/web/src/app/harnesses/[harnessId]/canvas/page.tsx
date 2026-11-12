@@ -9,9 +9,7 @@ import {
   ingestLibraryComponents,
   listCanvasSideProfiles,
   listLibraryComponents,
-  listModuleBackshellCompat,
   listModuleContactCompat,
-  listModuleStrainReliefCompat,
   listPartRelationships,
   updateHarness,
   updateRevisionSnapshot,
@@ -62,8 +60,8 @@ export default async function HarnessCanvasPage({
     strainReliefCatalog,
     wireCatalog,
     sleeveCatalog,
-    moduleBackshellCompat,
-    moduleStrainReliefCompat,
+    backshellRelationships,
+    strainReliefRelationships,
     moduleAllowedRelationships,
     contactCatalog,
     moduleContactCompat,
@@ -88,8 +86,8 @@ export default async function HarnessCanvasPage({
       category: "sleeve-tube-braid",
       isActive: true
     }),
-    listModuleBackshellCompat(),
-    listModuleStrainReliefCompat(),
+    listPartRelationships({ relationshipType: "BACKSHELL_ALLOWED" }),
+    listPartRelationships({ relationshipType: "STRAIN_RELIEF_ALLOWED" }),
     listPartRelationships({ relationshipType: "MODULE_ALLOWED" }),
     listLibraryComponents({
       category: "contact",
@@ -257,8 +255,7 @@ export default async function HarnessCanvasPage({
             sideProfileMedia={sideProfileMedia}
             backshellCatalog={backshellCatalog}
             strainReliefCatalog={strainReliefCatalog}
-            moduleBackshellCompat={moduleBackshellCompat}
-            moduleStrainReliefCompat={moduleStrainReliefCompat}
+            accessoryRelationships={[...backshellRelationships, ...strainReliefRelationships]}
             moduleAllowedRelationships={moduleAllowedRelationships}
             insertAllowedRelationships={insertAllowedRelationships}
             wireCatalog={wireCatalog}

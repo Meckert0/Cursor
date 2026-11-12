@@ -9,6 +9,7 @@ import { availableSimInserts, catalogModulePins, isSimHost, normalizeCanvasSimMo
 import type { LibraryComponentDto, PartMediaDto, RevisionDto } from "@/lib/api";
 import { cableExitFacesLeft, sideProfileExitPoint, sideProfilesByPart, standaloneSideProfile } from "@/lib/part-media";
 import { sideProfileScale } from "../../../../src/domain/part-side-profiles";
+import type { CompatibilityRule } from "../../../../src/domain/compatibility-rules";
 import {
   buildNextCanvasId,
   buildNextConnectorReference,
@@ -70,6 +71,8 @@ type ConnectState = {
 
 type JunctionNode = NonNullable<RevisionDto["snapshot"]["junctions"]>[number];
 const EMPTY_MEDIA: PartMediaDto[] = [];
+const EMPTY_RELATIONSHIPS: CompatibilityRule[] = [];
+const EMPTY_CATALOG: LibraryComponentDto[] = [];
 
 export function CableCanvas({
   revisionId,
@@ -77,10 +80,9 @@ export function CableCanvas({
   snapshotHash,
   connectorCatalog,
   sideProfileMedia = EMPTY_MEDIA,
-  backshellCatalog = [],
-  strainReliefCatalog = [],
-  moduleBackshellCompat = [],
-  moduleStrainReliefCompat = [],
+  backshellCatalog = EMPTY_CATALOG,
+  strainReliefCatalog = EMPTY_CATALOG,
+  accessoryRelationships = EMPTY_RELATIONSHIPS,
   moduleAllowedRelationships = [],
   insertAllowedRelationships = [],
   wireCatalog = [],
@@ -99,12 +101,7 @@ export function CableCanvas({
   sideProfileMedia?: PartMediaDto[];
   backshellCatalog?: LibraryComponentDto[];
   strainReliefCatalog?: LibraryComponentDto[];
-  moduleBackshellCompat?: Array<{ modulePartId: string; backshellPartId: string; status: "allowed" | "forbidden" | "review" }>;
-  moduleStrainReliefCompat?: Array<{
-    modulePartId: string;
-    strainReliefPartId: string;
-    status: "allowed" | "forbidden" | "review";
-  }>;
+  accessoryRelationships?: CompatibilityRule[];
   moduleAllowedRelationships?: FrameModuleRelationship[];
   insertAllowedRelationships?: SimRelationship[];
   wireCatalog?: LibraryComponentDto[];
@@ -180,8 +177,6 @@ export function CableCanvas({
   const connectorFacingLeft = useMemo(() => new Map(connectors.map(connector => [connector.id,
     cableExitFacesLeft(connector.id, nodeCenters, pathsState.filter(path => !isWireRunPath(path)))
   ])), [connectors, nodeCenters, pathsState]);
-  const [backshellCatalogState] = useState<LibraryComponentDto[]>(backshellCatalog);
-  const [strainReliefCatalogState] = useState<LibraryComponentDto[]>(strainReliefCatalog);
   const [showConnectorSearchDialog, setShowConnectorSearchDialog] = useState(false);
   const [connectorSearchTarget, setConnectorSearchTarget] = useState<"connector" | "frame" | { slotId: string } | { simSlotId: string; moduleSlotId?: string }>("connector");
   const [openSimModule, setOpenSimModule] = useState<string | null>(null);
@@ -411,29 +406,11 @@ export function CableCanvas({
   );
   const moduleDefined = Boolean(selectedConnector?.libraryComponentId);
   const allowedBackshellOptions = useMemo(() => {
-    if (selectedIsFrame) {
-      return [];
-    }
-    const moduleId = selectedConnector?.libraryComponentId;
-    const statusByAccessoryId = new Map(
-      moduleBackshellCompat
-        .filter((row) => row.modulePartId === moduleId)
-        .map((row) => [row.backshellPartId, row.status] as const)
-    );
-    return filterAllowedAccessoryOptionsForModule(backshellCatalogState, moduleId, statusByAccessoryId);
-  }, [backshellCatalogState, moduleBackshellCompat, selectedConnector?.libraryComponentId, selectedIsFrame]);
+    return filterAllowedAccessoryOptionsForModule(backshellCatalog, selectedLibraryPart, accessoryRelationships);
+  }, [backshellCatalog, selectedLibraryPart, accessoryRelationships]);
   const allowedStrainReliefOptions = useMemo(() => {
-    if (selectedIsFrame) {
-      return [];
-    }
-    const moduleId = selectedConnector?.libraryComponentId;
-    const statusByAccessoryId = new Map(
-      moduleStrainReliefCompat
-        .filter((row) => row.modulePartId === moduleId)
-        .map((row) => [row.strainReliefPartId, row.status] as const)
-    );
-    return filterAllowedAccessoryOptionsForModule(strainReliefCatalogState, moduleId, statusByAccessoryId);
-  }, [moduleStrainReliefCompat, selectedConnector?.libraryComponentId, selectedIsFrame, strainReliefCatalogState]);
+    return filterAllowedAccessoryOptionsForModule(strainReliefCatalog, selectedLibraryPart, accessoryRelationships);
+  }, [strainReliefCatalog, selectedLibraryPart, accessoryRelationships]);
   const selectedJunction = useMemo(() => {
     if (!selectedEntity || selectedEntity.type !== "junction") {
       return null;
@@ -850,14 +827,12 @@ export function CableCanvas({
     const simInserts = isSimHost(component) || activeConnector.simInserts ? activeConnector.simInserts ?? [] : undefined;
     const nextPins = isSimHost(component) ? usableSimPins(component, simInserts ?? [], connectorCatalogState, insertAllowedRelationships) : buildConnectorPinsFromComponent(component);
     const allowedBackshellIds = new Set(
-      moduleBackshellCompat
-        .filter((row) => row.modulePartId === component.id && row.status === "allowed")
-        .map((row) => row.backshellPartId)
+      filterAllowedAccessoryOptionsForModule(backshellCatalog, component, accessoryRelationships)
+        .map((option) => option.component.id)
     );
     const allowedStrainReliefIds = new Set(
-      moduleStrainReliefCompat
-        .filter((row) => row.modulePartId === component.id && row.status === "allowed")
-        .map((row) => row.strainReliefPartId)
+      filterAllowedAccessoryOptionsForModule(strainReliefCatalog, component, accessoryRelationships)
+        .map((option) => option.component.id)
     );
     const keepBackshell =
       Boolean(activeConnector.backshellLibraryComponentId) &&
@@ -911,14 +886,12 @@ export function CableCanvas({
       return;
     }
     const allowedBackshellIds = new Set(
-      moduleBackshellCompat
-        .filter((row) => row.modulePartId === component.id && row.status === "allowed")
-        .map((row) => row.backshellPartId)
+      filterAllowedAccessoryOptionsForModule(backshellCatalog, component, accessoryRelationships)
+        .map((option) => option.component.id)
     );
     const allowedStrainReliefIds = new Set(
-      moduleStrainReliefCompat
-        .filter((row) => row.modulePartId === component.id && row.status === "allowed")
-        .map((row) => row.strainReliefPartId)
+      filterAllowedAccessoryOptionsForModule(strainReliefCatalog, component, accessoryRelationships)
+        .map((option) => option.component.id)
     );
     const nextSlots = activeConnector.slots.map((slot) => {
       if (slot.slotId !== slotId) {
@@ -1038,8 +1011,13 @@ export function CableCanvas({
     if (!activeConnector?.slots) {
       return;
     }
-    const catalog = kind === "backshell" ? backshellCatalogState : strainReliefCatalogState;
-    const component = catalog.find((entry) => entry.id === componentId);
+    const slot = activeConnector.slots.find((entry) => entry.slotId === slotId);
+    if (!slot) return;
+    const modulePart = moduleCatalog.find((part) => slot.libraryComponentId ? part.id === slot.libraryComponentId : part.partNumber === slot.partNumber);
+    const catalog = kind === "backshell" ? backshellCatalog : strainReliefCatalog;
+    const component = filterAllowedAccessoryOptionsForModule(catalog, modulePart, accessoryRelationships)
+      .find((option) => option.component.id === componentId)?.component;
+    if (componentId && !component) return;
     const nextPartNumber = component?.partNumber.trim() || undefined;
     const nextLibraryId = component?.id || undefined;
     pushUndoCheckpoint();
@@ -1086,8 +1064,10 @@ export function CableCanvas({
     if (!activeConnector) {
       return;
     }
-    const catalog = kind === "backshell" ? backshellCatalogState : strainReliefCatalogState;
-    const component = catalog.find((entry) => entry.id === componentId);
+    const catalog = kind === "backshell" ? backshellCatalog : strainReliefCatalog;
+    const component = filterAllowedAccessoryOptionsForModule(catalog, selectedLibraryPart, accessoryRelationships)
+      .find((option) => option.component.id === componentId)?.component;
+    if (componentId && !component) return;
     const nextPartNumber = component?.partNumber.trim() || undefined;
     const nextLibraryId = component?.id || undefined;
     const partKey = kind === "backshell" ? "backshellPartNumber" : "strainReliefPartNumber";
@@ -1333,25 +1313,15 @@ export function CableCanvas({
                         slot.libraryComponentId ? part.id === slot.libraryComponentId : part.partNumber === slot.partNumber
                       );
                       const slotHasSimControls = isSimHost(slotLibraryPart) || Boolean(slot.simInserts?.length);
-                      const backshellStatus = new Map(
-                        moduleBackshellCompat
-                          .filter((row) => row.modulePartId === slot.libraryComponentId)
-                          .map((row) => [row.backshellPartId, row.status] as const)
-                      );
-                      const strainStatus = new Map(
-                        moduleStrainReliefCompat
-                          .filter((row) => row.modulePartId === slot.libraryComponentId)
-                          .map((row) => [row.strainReliefPartId, row.status] as const)
-                      );
                       const slotBackshells = filterAllowedAccessoryOptionsForModule(
-                        backshellCatalogState,
-                        slot.libraryComponentId,
-                        backshellStatus
+                        backshellCatalog,
+                        slotLibraryPart,
+                        accessoryRelationships
                       );
                       const slotStrainReliefs = filterAllowedAccessoryOptionsForModule(
-                        strainReliefCatalogState,
-                        slot.libraryComponentId,
-                        strainStatus
+                        strainReliefCatalog,
+                        slotLibraryPart,
+                        accessoryRelationships
                       );
                       return (
                         <article key={slot.slotId} className={`${styles.slotBlock} ${slotHasSimControls ? styles.slotBlockWithSim : ""}`} aria-label={`Slot ${slot.slotId} module`}>
@@ -1446,6 +1416,13 @@ export function CableCanvas({
                                   }
                                 >
                                   <option value="">No strain relief</option>
+                                  {slot.strainReliefLibraryComponentId && !slotStrainReliefs.some(
+                                    (option) => option.component.id === slot.strainReliefLibraryComponentId
+                                  ) ? (
+                                    <option value={slot.strainReliefLibraryComponentId} disabled>
+                                      {slot.strainReliefPartNumber ?? slot.strainReliefLibraryComponentId} (incompatible — reselect)
+                                    </option>
+                                  ) : null}
                                   {slotStrainReliefs.map((option) => (
                                     <option key={option.component.id} value={option.component.id}>
                                       {option.label}

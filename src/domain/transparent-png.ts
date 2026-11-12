@@ -1,7 +1,7 @@
 import { inflateSync } from "node:zlib";
 
 /** Validate the extracted 8-bit RGBA PNGs before adding database media records. */
-export function inspectTransparentPng(buffer: Buffer): { pixelWidth: number; pixelHeight: number } {
+export function inspectTransparentPng(buffer: Buffer, options: { opaqueBodyPoint?: { x: number; y: number } } = {}): { pixelWidth: number; pixelHeight: number } {
   if (!buffer.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) throw new Error("Asset is not a PNG.");
   let pixelWidth = 0;
   let pixelHeight = 0;
@@ -28,6 +28,11 @@ export function inspectTransparentPng(buffer: Buffer): { pixelWidth: number; pix
   let previous = Buffer.alloc(rowBytes);
   let transparent = false;
   let visible = false;
+  const point = options.opaqueBodyPoint;
+  if (point && (![point.x, point.y].every(Number.isFinite) || point.x < 0 || point.x >= 1 || point.y < 0 || point.y >= 1)) throw new Error("Opaque body sample must lie inside the image.");
+  const sampleX = point ? Math.floor(point.x * pixelWidth) : -1;
+  const sampleY = point ? Math.floor(point.y * pixelHeight) : -1;
+  let bodyAlpha: number | undefined;
   for (let y = 0; y < pixelHeight; y++) {
     const start = y * (rowBytes + 1);
     const filter = decoded[start];
@@ -50,10 +55,12 @@ export function inspectTransparentPng(buffer: Buffer): { pixelWidth: number; pix
       if (x % 4 === 3) {
         transparent ||= row[x] === 0;
         visible ||= row[x] > 0;
+        if (point && y === sampleY && Math.floor(x / 4) === sampleX) bodyAlpha = row[x];
       }
     }
     previous = row;
   }
   if (!transparent || !visible) throw new Error("PNG must contain both transparent background and visible part pixels.");
+  if (point && bodyAlpha !== 255) throw new Error("PNG component body must be fully opaque at the declared interior sample.");
   return { pixelWidth, pixelHeight };
 }

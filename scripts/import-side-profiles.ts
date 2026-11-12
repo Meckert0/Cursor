@@ -23,9 +23,10 @@ for (let index = 0; index < args.length; index++) {
 if (args.includes("--apply") && args.includes("--dry-run")) throw new Error("Choose --apply or --dry-run.");
 const apply = args.includes("--apply");
 const root = fileURLToPath(new URL("../", import.meta.url));
-const directory = path.join(root, "apps/web/public/part-media/vpc-side-profiles");
+const directory = path.join(root, "apps/web/public/part-media/vpc-side-profiles/v2");
 const schema = z.object({
   source: z.string().min(1),
+  assetBasePath: z.literal("/part-media/vpc-side-profiles/v2"),
   images: z.array(z.object({
     partNumber: z.string().regex(/^\d{9}$/),
     fileName: z.string().regex(/^\d{9}\.png$/),
@@ -34,7 +35,10 @@ const schema = z.object({
     page: z.number().int().positive(),
     altText: z.string().optional(),
     caption: z.string().optional(),
-    sha256: z.string().regex(/^[a-f0-9]{64}$/).optional()
+    sha256: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+    orientation: z.literal("cable_exit_right"),
+    body: z.literal("opaque"),
+    sharedWith: z.literal("standalone_iseries_modules").optional()
   }))
 });
 
@@ -43,7 +47,7 @@ const manifest = schema.parse(JSON.parse(await readFile(path.join(directory, "ma
 for (const image of manifest.images) {
   if (image.fileName !== `${image.partNumber}.png`) throw new Error(`File name does not match ${image.partNumber}.`);
   const png = await readFile(path.join(directory, image.fileName));
-  const size = inspectTransparentPng(png);
+  const size = inspectTransparentPng(png, { opaqueBodyPoint: { x: 0.5, y: 0.5 } });
   if (size.pixelWidth !== image.pixelWidth || size.pixelHeight !== image.pixelHeight) throw new Error(`PNG dimensions differ from manifest: ${image.fileName}`);
   const digest = createHash("sha256").update(png).digest("hex");
   if (image.sha256 && image.sha256 !== digest) throw new Error(`PNG checksum differs from manifest: ${image.fileName}`);

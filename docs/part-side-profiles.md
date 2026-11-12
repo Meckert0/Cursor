@@ -6,11 +6,36 @@ with the selected connector's stable part ID. The authenticated
 parts that the current user may view. Other media administration remains
 restricted to administrators.
 
-Nineteen exact-number manufacturer outlines from `Book1.pdf` are bundled under
-`apps/web/public/part-media/vpc-side-profiles/`. Their embedded PDF alpha masks
-are preserved. `manifest.json` records source page, pixel dimensions and SHA-256
-for each extracted PNG. Generic family illustrations and unverified variants
-are not assigned to individual catalog records.
+The original nineteen exact-number outlines from `Book1.pdf` remain under
+`apps/web/public/part-media/vpc-side-profiles/`. The active, versioned images are
+under `v2/`: four color housing views matched by their standard, threaded EMI,
+or XL cable-exit geometry, plus seven exact manufacturer outlines with an opaque
+white interior. Component bodies are opaque; only the exterior background is
+transparent. White drawings retain their original line geometry.
+`v2/manifest.json` records source page, representation, dimensions and SHA-256.
+Family illustrations without a verified housing/variant match are not assigned.
+
+## Canvas plane, cable exits, and module reuse
+
+Active images are upright, normalized to the horizontal plane with the cable
+exit facing right (`orientation = cable_exit_right`). The supplied screenshot
+is an orientation reference only and is not a catalog asset.
+Images mirror horizontally when their connected cable is to the left; they
+never rotate to follow a cable's slope. Labels remain upright. For multiple
+sections, the first nonvertical section in stable ID order determines the side.
+Unconnected and purely vertical connections default to the right.
+
+`src/domain/part-side-profiles.ts` defines normalized cable-exit positions.
+Attachments account for the contained image's aspect ratio and mirror with the
+artwork. Parts and handles render above cable sections and cable labels,
+including hovered labels. Opaque part bodies hide cables underneath.
+
+The user-approved `510161101` side view is shared by standalone iSeries modules,
+including the iCon/i1 catalog. It does not apply to SIM inserts, other module
+families, or frames. Slot modules do not create additional canvas images: an
+installed module is represented by its frame. An explicitly catalogued exact
+module view takes precedence. The client also provides the shared fallback for
+new iSeries modules that have not yet received a media record.
 
 ## Import into an existing catalog
 
@@ -27,16 +52,17 @@ npm run import:side-profiles -- --dry-run
 npm run import:side-profiles -- --apply
 ```
 
-The default is a read-only dry run. The tool checks all PNGs before opening the
+The default is a read-only dry run. The tool checks all versioned PNGs before opening the
 catalog: each must have the declared dimensions, match its checksum, and contain
-both fully transparent background pixels and visible part pixels. Import
-matches exact part numbers to a single existing frame or module. Missing,
+both fully transparent background pixels and a fully opaque interior sample. Import
+matches exact part numbers to a single existing frame or module, then shares the
+explicitly approved module image with existing iSeries module records. Missing,
 ambiguous, archived, wrong-category, or conflicting-manufacturer records are
 reported and skipped; new catalog parts are never created. An existing profile
 from this import is updated using a deterministic media ID, so re-running an
 unchanged import does not create duplicates.
 
-SQLite URLs default to `/part-media/vpc-side-profiles/<partNumber>.png`, resolved
+SQLite URLs default to `/part-media/vpc-side-profiles/v2/<partNumber>.png`, resolved
 on the frontend origin. PostgreSQL's existing `part_media` schema requires
 absolute HTTP(S) URLs, so `--base-url` is required for PostgreSQL imports. Supply
 the frontend's canonical production origin, where the images are deployed:

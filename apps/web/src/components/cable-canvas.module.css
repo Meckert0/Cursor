@@ -305,6 +305,7 @@
 }
 
 .canvas {
+  isolation: isolate;
   position: relative;
   height: 520px;
   border: 1px solid #dbe2ef;
@@ -364,6 +365,7 @@
 }
 
 .lines {
+  z-index: 0;
   position: absolute;
   inset: 0;
   width: 100%;
@@ -477,7 +479,7 @@
 .cableLabel:focus-visible {
   max-width: 160px;
   font-size: 11px;
-  z-index: 4;
+  z-index: 2;
 }
 
 .cableLabel:hover .cableLabelDetails,
@@ -511,6 +513,7 @@
 }
 
 .connectorNode {
+  z-index: 3;
   position: absolute;
   width: 120px;
   min-height: 56px;
@@ -540,6 +543,7 @@
 }
 
 .connectorWithProfile {
+  border: 0;
   border-color: transparent;
   border-radius: 4px;
   background: transparent;
@@ -587,6 +591,7 @@
 }
 
 .junctionNode {
+  z-index: 3;
   position: absolute;
   width: 24px;
   height: 24px;

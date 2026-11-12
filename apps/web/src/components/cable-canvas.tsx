@@ -7,7 +7,7 @@ import { ConnectorPickerDialog } from "@/components/connector-picker-dialog";
 import { SimInsertControls } from "@/components/sim-insert-controls";
 import { availableSimInserts, catalogModulePins, isSimHost, normalizeCanvasSimModules, simPlacement, usableSimPins, type SimInsertAssignment, type SimRelationship } from "@/lib/sim-modules";
 import type { LibraryComponentDto, PartMediaDto, RevisionDto } from "@/lib/api";
-import { sideProfilesByPart } from "@/lib/part-media";
+import { cableExitFacesLeft, sideProfileExitPoint, sideProfilesByPart, standaloneSideProfile } from "@/lib/part-media";
 import {
   buildNextCanvasId,
   buildNextConnectorReference,
@@ -154,11 +154,29 @@ export function CableCanvas({
     for (const part of connectorCatalogState) byNumber.set(part.partNumber, byNumber.has(part.partNumber) ? null : part);
     return byNumber;
   }, [connectorCatalogState]);
+  const catalogPartById = useMemo(() => new Map(connectorCatalogState.map(part => [part.id, part])), [connectorCatalogState]);
   const connectorVisualById = useMemo(() => new Map(connectors.map(connector => {
     const partId = connector.libraryComponentId ?? catalogPartByNumber.get(connector.partNumber ?? "")?.id;
-    const sideProfile = partId ? sideProfileByPart.get(partId) : undefined;
+    const part = partId ? catalogPartById.get(partId) : undefined;
+    const sideProfile = standaloneSideProfile(part, sideProfileByPart, connectorCatalogState, isFrameHousingConnector(connector) || part?.category === "frame")
+      ?? (partId ? sideProfileByPart.get(partId) : undefined);
     return [connector.id, { sideProfile, height: sideProfile ? profileNodeHeight : connectorNodeHeight }];
-  })), [connectors, catalogPartByNumber, sideProfileByPart]);
+  })), [connectors, catalogPartById, catalogPartByNumber, connectorCatalogState, sideProfileByPart]);
+  const nodeCenters = useMemo(() => {
+    const centers = new Map<string, NodePosition>();
+    for (const connector of connectors) {
+      const position = positions[connector.id];
+      if (position) centers.set(connector.id, { x: position.x + nodeWidth / 2, y: position.y + (connectorVisualById.get(connector.id)?.height ?? connectorNodeHeight) / 2 });
+    }
+    for (const junction of junctions) {
+      const position = positions[junction.id];
+      if (position) centers.set(junction.id, { x: position.x + junctionNodeSize / 2, y: position.y + junctionNodeSize / 2 });
+    }
+    return centers;
+  }, [connectors, junctions, positions, connectorVisualById]);
+  const connectorFacingLeft = useMemo(() => new Map(connectors.map(connector => [connector.id,
+    cableExitFacesLeft(connector.id, nodeCenters, pathsState.filter(path => !isWireRunPath(path)))
+  ])), [connectors, nodeCenters, pathsState]);
   const [backshellCatalogState] = useState<LibraryComponentDto[]>(backshellCatalog);
   const [strainReliefCatalogState] = useState<LibraryComponentDto[]>(strainReliefCatalog);
   const [showConnectorSearchDialog, setShowConnectorSearchDialog] = useState(false);
@@ -276,7 +294,7 @@ export function CableCanvas({
   );
   const junctionIdSet = useMemo(() => new Set(junctions.map((junction) => junction.id)), [junctions]);
 
-  const getNodeCenter = useCallback(
+  const getNodeAttachment = useCallback(
     (nodeId: string) => {
       const position = positions[nodeId];
       if (!position) {
@@ -285,18 +303,23 @@ export function CableCanvas({
       if (junctionIdSet.has(nodeId)) {
         return { x: position.x + junctionNodeSize / 2, y: position.y + junctionNodeSize / 2 };
       }
-      const height = connectorVisualById.get(nodeId)?.height ?? connectorNodeHeight;
+      const visual = connectorVisualById.get(nodeId);
+      const height = visual?.height ?? connectorNodeHeight;
+      if (visual?.sideProfile) {
+        const exit = sideProfileExitPoint(visual.sideProfile, nodeWidth, height, connectorFacingLeft.get(nodeId) ?? false);
+        return { x: position.x + exit.x, y: position.y + exit.y };
+      }
       return { x: position.x + nodeWidth / 2, y: position.y + height / 2 };
     },
-    [connectorNodeHeight, connectorVisualById, junctionIdSet, junctionNodeSize, nodeWidth, positions]
+    [connectorFacingLeft, connectorNodeHeight, connectorVisualById, junctionIdSet, junctionNodeSize, nodeWidth, positions]
   );
 
   const paths = useMemo(
     () =>
       pathsState
         .map((path) => {
-          const from = getNodeCenter(path.fromConnectorId);
-          const to = getNodeCenter(path.toConnectorId);
+          const from = getNodeAttachment(path.fromConnectorId);
+          const to = getNodeAttachment(path.toConnectorId);
           if (!from || !to) {
             return null;
           }
@@ -310,7 +333,7 @@ export function CableCanvas({
           };
         })
         .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry)),
-    [getNodeCenter, pathsState]
+    [getNodeAttachment, pathsState]
   );
 
   const bundleDiameterBySection = useMemo(
@@ -479,7 +502,7 @@ export function CableCanvas({
     if (!connectState) {
       return null;
     }
-    const start = getNodeCenter(connectState.fromNodeId);
+    const start = getNodeAttachment(connectState.fromNodeId);
     if (!start) {
       return null;
     }
@@ -489,7 +512,7 @@ export function CableCanvas({
       x2: connectState.pointerCanvasX,
       y2: connectState.pointerCanvasY
     };
-  }, [connectState, getNodeCenter]);
+  }, [connectState, getNodeAttachment]);
 
   const addCanvasPart = (kind: "connector" | "frame") => {
     if (readOnly) {
@@ -1733,6 +1756,8 @@ export function CableCanvas({
           const position = positions[connector.id] ?? { x: 0, y: 0 };
           const visual = connectorVisualById.get(connector.id);
           const sideProfile = visual?.sideProfile;
+          const facingLeft = connectorFacingLeft.get(connector.id) ?? false;
+          const exit = sideProfile ? sideProfileExitPoint(sideProfile, nodeWidth, visual.height, facingLeft) : undefined;
           return (
             <button
               key={connector.id}
@@ -1770,6 +1795,8 @@ export function CableCanvas({
                   key={`${sideProfile.id}:${sideProfile.url}`}
                   unoptimized
                   className={styles.connectorProfile}
+                  style={{ transform: facingLeft ? "scaleX(-1)" : undefined }}
+                  data-cable-exit={facingLeft ? "left" : "right"}
                   src={sideProfile.url}
                   alt={sideProfile.altText ?? `${connector.partNumber ?? connector.reference} side profile`}
                   width={sideProfile.pixelWidth ?? nodeWidth}
@@ -1785,6 +1812,7 @@ export function CableCanvas({
               </>}
               <span
                 className={styles.connectHandle}
+                style={exit ? { left: exit.x, top: exit.y, right: "auto", transform: "translate(-50%, -50%)" } : undefined}
                 onPointerDown={(event) => {
                   if (readOnly) {
                     return;

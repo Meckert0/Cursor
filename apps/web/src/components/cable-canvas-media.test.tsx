@@ -37,6 +37,55 @@ function snapshot(connectors?: RevisionDto["snapshot"]["connectors"]): RevisionD
 const catalog = [part("one"), part("two")];
 
 describe("CableCanvas part side profiles", () => {
+  it("shows frame artwork for installed modules and shares the module artwork only for standalone iSeries modules", () => {
+    const source = { ...part("source"), partNumber: "510161101", family: "iCon/i1" };
+    const other = { ...part("other"), partNumber: "510161108", family: "iCon/i1" };
+    const frame = { ...part("frame"), category: "frame" as const, partType: "ITA", family: "iCon", partNumber: "410123101" };
+    const framed = snapshot([
+      { id: "f", reference: "F1", libraryComponentId: frame.id, partNumber: frame.partNumber, pins: [], slots: [{ slotId: "A", reference: "F1A", libraryComponentId: other.id, partNumber: other.partNumber, pins: [] }] },
+      { id: "m", reference: "J1", libraryComponentId: other.id, partNumber: other.partNumber, pins: [] }
+    ]);
+    render(<CableCanvas revisionId="shared-module" snapshot={framed} snapshotHash="hash" connectorCatalog={[source, other, frame]}
+      sideProfileMedia={[media(source.id), media(frame.id)]} quickAddConnectorAction={async () => ({ ok: true, connectorCatalog: [] })} readOnly />);
+    const frameNode = screen.getByRole("button", { name: "Frame F1" });
+    expect(new URL((within(frameNode).getByRole("img") as HTMLImageElement).src).pathname).toBe("/part-media/frame.png");
+    const moduleNode = screen.getByRole("button", { name: "Connector J1" });
+    expect(new URL((within(moduleNode).getByRole("img") as HTMLImageElement).src).pathname).toBe("/part-media/source.png");
+    expect(screen.getAllByRole("img")).toHaveLength(2);
+  });
+
+  it("flips only the image left/right with the cable, moves its exit handle, and restores direction on undo", () => {
+    const connected = snapshot([
+      { id: "c1", reference: "J1", libraryComponentId: "one", pins: [], location: { x: 100, y: 40 } },
+      { id: "c2", reference: "J2", libraryComponentId: "one", pins: [], location: { x: 300, y: 300 } }
+    ]);
+    connected.paths = [{ id: "section", fromConnectorId: "c1", toConnectorId: "c2", pathType: "cable", length: 10 }];
+    const profile = media("one", { url: "/part-media/vpc-side-profiles/v2/510161101.png", orientation: "cable_exit_right", pixelWidth: 100, pixelHeight: 200 });
+    render(<CableCanvas revisionId="flip-geometry" snapshot={connected} snapshotHash="hash" connectorCatalog={catalog}
+      sideProfileMedia={[profile]} quickAddConnectorAction={async () => ({ ok: true, connectorCatalog: catalog })} />);
+    const first = screen.getByRole("button", { name: "Connector J1" });
+    const second = screen.getByRole("button", { name: "Connector J2" });
+    const firstImage = within(first).getByRole("img");
+    const secondImage = within(second).getByRole("img");
+    expect(firstImage).toHaveAttribute("data-cable-exit", "right");
+    expect(secondImage).toHaveAttribute("data-cable-exit", "left");
+    expect(secondImage).toHaveStyle({ transform: "scaleX(-1)" });
+    expect(within(second).getByText("J2")).not.toHaveStyle({ transform: "scaleX(-1)" });
+    expect(within(second).getByText("+")).toHaveStyle({ left: "33.6px", top: "60px" });
+    const canvas = screen.getByTestId("cable-canvas");
+    canvas.getBoundingClientRect = () => new DOMRect(0, 0, 600, 700);
+    second.getBoundingClientRect = () => new DOMRect(300, 300, 120, 120);
+    fireEvent(second, new MouseEvent("pointerdown", { bubbles: true, clientX: 310, clientY: 310 }));
+    fireEvent(window, new MouseEvent("pointermove", { clientX: 0, clientY: 450 }));
+    fireEvent(window, new MouseEvent("pointerup"));
+    expect(firstImage).toHaveAttribute("data-cable-exit", "left");
+    expect(secondImage).toHaveAttribute("data-cable-exit", "right");
+    expect(secondImage.style.transform).not.toContain("rotate");
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    expect(firstImage).toHaveAttribute("data-cable-exit", "right");
+    expect(secondImage).toHaveAttribute("data-cable-exit", "left");
+  });
+
   it("uses the primary side profile while retaining selection and cable handles", () => {
     render(<CableCanvas revisionId="media-primary" snapshot={snapshot()} snapshotHash="hash" connectorCatalog={catalog}
       sideProfileMedia={[

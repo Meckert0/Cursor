@@ -1,4 +1,5 @@
 import type { PartMedia, PartMediaInput, PartWithAttributes } from "./library.js";
+import { isISeriesModule, ISERIES_SIDE_PROFILE_PART_NUMBER } from "./part-side-profiles.js";
 
 export interface SideProfileAsset {
   partNumber: string;
@@ -9,11 +10,14 @@ export interface SideProfileAsset {
   altText?: string;
   caption?: string;
   sha256?: string;
+  orientation?: string;
+  sharedWith?: "standalone_iseries_modules";
 }
 
 export interface SideProfileManifest {
   source: string;
   images: SideProfileAsset[];
+  assetBasePath?: string;
 }
 
 export interface SideProfileImportPlan {
@@ -43,6 +47,30 @@ export function planSideProfileImport(
     origin = parsed.origin;
   }
   const plan: SideProfileImportPlan = { updates: [], unchanged: [], skipped: [] };
+  const basePath = manifest.assetBasePath ?? "/part-media/vpc-side-profiles";
+  if (!/^\/part-media\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+$/.test(basePath)) throw new Error("Invalid bundled asset directory.");
+  const record = (asset: SideProfileAsset, part: PartWithAttributes, shared = false) => {
+    const input: PartMediaInput = {
+      id: `vpc-side-profile-${part.id}`,
+      partId: part.id,
+      url: `${origin}${basePath}/${asset.fileName}`,
+      storageKey: `${basePath.slice(1)}/${asset.fileName}`,
+      viewType: "side_profile",
+      orientation: asset.orientation ?? "manufacturer_side_view",
+      mimeType: "image/png",
+      pixelWidth: asset.pixelWidth,
+      pixelHeight: asset.pixelHeight,
+      altText: shared ? `${part.partNumber} standalone iSeries module side profile` : asset.altText ?? `VPC ${asset.partNumber} side profile`,
+      caption: shared ? `User-approved shared ${ISERIES_SIDE_PROFILE_PART_NUMBER} side profile for standalone iSeries module ${part.partNumber}. Installed modules use the frame image.` : asset.caption ?? `Manufacturer side profile extracted from ${manifest.source}, page ${asset.page}.`,
+      sortOrder: 0,
+      isPrimary: true,
+      source: `${manifest.source}, page ${asset.page}${shared ? `; shared module ${ISERIES_SIDE_PROFILE_PART_NUMBER}` : ""}`,
+      revision: asset.sha256
+    };
+    const previous = existing.find(row => row.id === input.id);
+    if (previous && Object.entries(input).every(([key, value]) => previous[key as keyof PartMedia] === value)) plan.unchanged.push(part.partNumber);
+    else plan.updates.push(input);
+  };
   const seen = new Set<string>();
   for (const asset of manifest.images) {
     if (!/^\d{9}$/.test(asset.partNumber) || asset.fileName !== `${asset.partNumber}.png`) throw new Error(`Invalid exact part asset: ${asset.partNumber}`);
@@ -55,27 +83,15 @@ export function planSideProfileImport(
     const part = matches[0];
     if (part.category !== "frame" && part.category !== "module") { skip("Part is not a connector frame or module."); continue; }
     if (hasConflictingManufacturer(part)) { skip("Manufacturer metadata does not identify VPC."); continue; }
-    const input: PartMediaInput = {
-      id: `vpc-side-profile-${part.id}`,
-      partId: part.id,
-      url: `${origin}/part-media/vpc-side-profiles/${asset.fileName}`,
-      storageKey: `part-media/vpc-side-profiles/${asset.fileName}`,
-      viewType: "side_profile",
-      orientation: "manufacturer_side_view",
-      mimeType: "image/png",
-      pixelWidth: asset.pixelWidth,
-      pixelHeight: asset.pixelHeight,
-      altText: asset.altText ?? `VPC ${asset.partNumber} side profile`,
-      caption: asset.caption ?? `Manufacturer side profile extracted from ${manifest.source}, page ${asset.page}.`,
-      sortOrder: 0,
-      isPrimary: true,
-      source: `${manifest.source}, page ${asset.page}`,
-      revision: asset.sha256
-    };
-    const previous = existing.find(row => row.id === input.id);
-    if (previous && Object.entries(input).every(([key, value]) => previous[key as keyof PartMedia] === value)) {
-      plan.unchanged.push(asset.partNumber);
-    } else plan.updates.push(input);
+    record(asset, part);
+  }
+  const shared = manifest.images.find(asset => asset.partNumber === ISERIES_SIDE_PROFILE_PART_NUMBER && asset.sharedWith === "standalone_iseries_modules");
+  if (shared) for (const part of parts) {
+    if (part.isArchived || seen.has(part.partNumber.trim()) || !isISeriesModule(part) || hasConflictingManufacturer(part)) continue;
+    if (parts.filter(row => !row.isArchived && row.partNumber.trim() === part.partNumber.trim()).length !== 1) continue;
+    // An explicitly catalogued exact view takes precedence over the generic shared side view.
+    if (existing.some(row => row.partId === part.id && row.viewType === "side_profile" && row.isPrimary && row.id !== `vpc-side-profile-${part.id}`)) continue;
+    record(shared, part, true);
   }
   return plan;
 }

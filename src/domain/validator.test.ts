@@ -789,6 +789,24 @@ test("blank modules reject saved strain reliefs on standalone connectors and fra
   }
 });
 
+test("accessory validation honors restrictions owned by the strain relief on connectors and frame slots", () => {
+  for (const inFrame of [false, true]) {
+    const snapshot = compatSnapshot();
+    if (inFrame) snapshot.connectors[0] = { id: "frame", reference: "J1", pins: [], slots: [{ ...snapshot.connectors[0], slotId: "A" }] };
+    for (const status of ["allowed", "review", "forbidden"] as const) {
+      const report = validateSnapshot(snapshot, {
+        libraryLookup: compatLibraryLookup(), rulesetVersion: "rules-2026.04", partRelationships: [{
+          parentPartId: COMPAT_PARTS.strainRelief.id, relationshipType: "MATES_WITH", compatibleParts: [COMPAT_PARTS.module.partNumber],
+          targetPartIds: [COMPAT_PARTS.module.id], parentPositions: [], status
+        }]
+      });
+      const finding = report.results.find(row => row.code === "RULE_COMPAT_MODULE_STRAIN_RELIEF");
+      if (status === "allowed") assert.equal(finding, undefined);
+      else assert.equal(finding?.severity, status === "forbidden" ? "error" : "warning");
+    }
+  }
+});
+
 test("validateSnapshot compat rules are disabled under rules-2026.03", () => {
   const report = validateSnapshot(compatSnapshot(), {
     libraryLookup: compatLibraryLookup(),

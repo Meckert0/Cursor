@@ -326,9 +326,15 @@ export function filterAllowedAccessoryOptionsForModule(
   if (!module) {
     return [];
   }
-  const moduleRelationships = relationships.filter((row) => row.parentPartId === module.id);
+  const byParent = new Map<string, CompatibilityRule[]>();
+  for (const row of relationships) {
+    const existing = byParent.get(row.parentPartId);
+    if (existing) existing.push(row);
+    else byParent.set(row.parentPartId, [row]);
+  }
+  const moduleRelationships = byParent.get(module.id) ?? [];
   return accessories
-    .filter((component) => component.isActive && !component.isArchived && moduleAccessoryStatus(module, component, moduleRelationships) === "allowed")
+    .filter((component) => component.isActive && !component.isArchived && moduleAccessoryStatus(module, component, [...moduleRelationships, ...(byParent.get(component.id) ?? [])]) === "allowed")
     .map((component) => ({
       component,
       label: `${component.partNumber}${component.description ? ` — ${component.description}` : ""}`

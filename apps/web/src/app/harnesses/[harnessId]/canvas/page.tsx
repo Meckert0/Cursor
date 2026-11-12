@@ -58,13 +58,9 @@ export default async function HarnessCanvasPage({
     strainReliefCatalog,
     wireCatalog,
     sleeveCatalog,
-    backshellRelationships,
-    strainReliefRelationships,
-    moduleAllowedRelationships,
+    relationships,
     contactCatalog,
     moduleContactCompat,
-    contactRelationships,
-    insertAllowedRelationships,
     sideProfileMedia
   ] = await Promise.all([
     loadConnectorCatalog(),
@@ -84,18 +80,17 @@ export default async function HarnessCanvasPage({
       category: "sleeve-tube-braid",
       isActive: true
     }),
-    listPartRelationships({ relationshipType: "BACKSHELL_ALLOWED" }),
-    listPartRelationships({ relationshipType: "STRAIN_RELIEF_ALLOWED" }),
-    listPartRelationships({ relationshipType: "MODULE_ALLOWED" }),
+    listPartRelationships(),
     listLibraryComponents({
       category: "contact",
       isActive: true
     }),
     listModuleContactCompat(),
-    listPartRelationships({ relationshipType: "CONTACT_ALLOWED" }),
-    listPartRelationships({ relationshipType: "INSERT_ALLOWED" }),
     listCanvasSideProfiles()
   ]);
+  const moduleAllowedRelationships = relationships.filter(row => row.relationshipType === "MODULE_ALLOWED");
+  const contactRelationships = relationships.filter(row => row.relationshipType === "CONTACT_ALLOWED");
+  const insertAllowedRelationships = relationships.filter(row => row.relationshipType === "INSERT_ALLOWED");
 
   async function quickAddConnectorAction(formData: FormData) {
     "use server";
@@ -251,7 +246,7 @@ export default async function HarnessCanvasPage({
             sideProfileMedia={sideProfileMedia}
             backshellCatalog={backshellCatalog}
             strainReliefCatalog={strainReliefCatalog}
-            accessoryRelationships={[...backshellRelationships, ...strainReliefRelationships]}
+            accessoryRelationships={relationships}
             moduleAllowedRelationships={moduleAllowedRelationships}
             insertAllowedRelationships={insertAllowedRelationships}
             wireCatalog={wireCatalog}

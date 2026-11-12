@@ -12,6 +12,7 @@ import { assertCatalogSchemaReady } from "./catalog-schema.js";
 import type { Store } from "./store.js";
 import { makePart } from "../../domain/part-test-helpers.js";
 import type { PartIngestItem } from "../../domain/library.js";
+import { moduleAccessoryStatus } from "../../domain/module-accessory-compatibility.js";
 
 const migrationDirectory = new URL("../../../db/migrations/", import.meta.url);
 
@@ -157,6 +158,13 @@ test("migration preserves legacy sources, unresolved targets, scoped rules and n
       await db.query(`INSERT INTO parts (id, category, part_number, family, description, stock_status, created_by_user_id, created_at, last_edited_by_user_id, last_edited_at, updated_at) VALUES ($1,$2,$3,'Test','Legacy','in_stock','test',NOW(),'test',NOW(),NOW())`, [part.id, part.category, part.partNumber]);
     }
     await db.exec(`
+      INSERT INTO parts (id, category, part_number, family, description, stock_status, created_by_user_id, created_at, last_edited_by_user_id, last_edited_at, updated_at)
+        VALUES ('legacy-sr', 'strain-relief', '310123102', 'iSeries', 'Strain relief', 'in_stock', 'test', NOW(), 'test', NOW(), NOW()),
+               ('legacy-blank', 'module', 'BLANK-1', 'Blank insert', 'Blank module', 'in_stock', 'test', NOW(), 'test', NOW(), NOW());
+      INSERT INTO strain_reliefs (part_id) VALUES ('legacy-sr');
+      INSERT INTO modules (part_id, pin_ids_json) VALUES ('legacy-blank', '[]');
+    `);
+    await db.exec(`
       INSERT INTO frames (part_id, slot_ids_json) VALUES ('frame', '["A","B"]');
       INSERT INTO modules (part_id, pin_ids_json) VALUES ('module', '["1","2"]');
       INSERT INTO contacts (part_id, accepted_gauges_json) VALUES ('contact', '["20","24"]');
@@ -164,14 +172,19 @@ test("migration preserves legacy sources, unresolved targets, scoped rules and n
       INSERT INTO labels (part_id, dia_in) VALUES ('label', 0.25);
       INSERT INTO part_relationships (id, parent_part_id, compatible_parts, relationship_type, parent_positions_json, status, notes)
         VALUES ('legacy-contact', 'module', 'C-1', 'CONTACT_ALLOWED', '["1"]', 'allowed', 'Pin 1 only'),
-               ('legacy-frame', 'frame', 'M-1, UNKNOWN-PN', 'MODULE_ALLOWED', '["A"]', 'review', 'Original note');
+               ('legacy-frame', 'frame', 'M-1, UNKNOWN-PN', 'MODULE_ALLOWED', '["A"]', 'review', 'Original note'),
+               ('legacy-strain-fit', 'legacy-sr', 'M-1, BLANK-1', 'MODULE_ALLOWED', '[]', 'allowed', 'Strain-relief-owned module fit');
       INSERT INTO module_contact_compat (module_part_id, contact_part_id, status, source) VALUES ('module','contact','allowed','vpc-catalog');
       INSERT INTO contact_wire_compat (contact_part_id, wire_part_id, status, crimp_class) VALUES ('contact','wire','review','B');
     `);
     await db.exec(await readFile(new URL("032_catalog_sections.sql", migrationDirectory), "utf8"));
     await assert.doesNotReject(assertCatalogSchemaReady(pool));
     const groups = await store.listPartRelationships();
-    assert.equal(groups.length, 3, "Derived VPC aggregate is not duplicated as unscoped evidence");
+    assert.equal(groups.length, 4, "Derived VPC aggregate is not duplicated as unscoped evidence");
+    const readPart = async (componentId: string) => (await store.getLibraryComponent({ componentId, requestingUserId: "test", canViewAllUnreviewed: true, canViewInactive: true }))!;
+    const [modulePart, blankPart, strainRelief] = await Promise.all([readPart("module"), readPart("legacy-blank"), readPart("legacy-sr")]);
+    assert.equal(moduleAccessoryStatus(modulePart, strainRelief, groups), "allowed");
+    assert.equal(moduleAccessoryStatus(blankPart, strainRelief, groups), "forbidden");
     assert.deepEqual(groups.find(row => row.id === "legacy-contact")?.parentPositions, ["1"]);
     assert.equal(groups.find(row => row.id === "legacy-contact")?.notes, "Pin 1 only");
     assert.deepEqual(groups.find(row => row.id === "legacy-frame")?.unresolvedParts, ["UNKNOWN-PN"]);

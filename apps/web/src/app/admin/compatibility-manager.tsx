@@ -15,6 +15,8 @@ import type {
 } from "@/lib/api";
 import styles from "./page.module.css";
 import { compatiblePartDisplays, formatRelationshipPositions, visibleCompatibleParts } from "./compatibility-display";
+import { moduleAccessoryStatus } from "../../../../../src/domain/module-accessory-compatibility";
+import { BLANK_INSERT_FAMILY, catalogPartFamily } from "../../../../../src/domain/library";
 
 type CompatKind = "contact-wire" | "module-contact" | "module-backshell" | "module-strain-relief" | "relationships" | "aliases";
 
@@ -223,6 +225,7 @@ export function CompatibilityManager(props: CompatibilityManagerProps) {
   const contacts = useMemo(() => partsByCategory(props.items, "contact"), [props.items]);
   const wires = useMemo(() => partsByCategory(props.items, "wire"), [props.items]);
   const modules = useMemo(() => partsByCategory(props.items, "module"), [props.items]);
+  const strainReliefModules = useMemo(() => modules.filter(part => catalogPartFamily(part) !== BLANK_INSERT_FAMILY), [modules]);
   const backshells = useMemo(() => partsByCategory(props.items, "backshell"), [props.items]);
   const strainReliefs = useMemo(() => partsByCategory(props.items, "strain-relief"), [props.items]);
   const allParts = useMemo(
@@ -277,9 +280,10 @@ export function CompatibilityManager(props: CompatibilityManagerProps) {
         rightId: row.strainReliefPartId,
         leftPn: resolvePn(partById, row.modulePartId),
         rightPn: resolvePn(partById, row.strainReliefPartId),
-        status: row.status
+        status: partById.get(row.modulePartId) && partById.get(row.strainReliefPartId)
+          ? moduleAccessoryStatus(partById.get(row.modulePartId)!, partById.get(row.strainReliefPartId)!, props.relationships) ?? row.status : row.status
       })),
-    [props.moduleStrainRelief, partById]
+    [props.moduleStrainRelief, partById, props.relationships]
   );
 
   return (
@@ -373,7 +377,7 @@ export function CompatibilityManager(props: CompatibilityManagerProps) {
           <details className={styles.recordEditor}>
             <summary className={styles.smallActionButton}>Add module–strain relief pair</summary>
           <form action={props.upsertModuleStrainReliefAction} className={styles.compatAddForm}>
-            <PartSelect name="modulePartId" parts={modules} label="Module" />
+            <PartSelect name="modulePartId" parts={strainReliefModules} label="Module" />
             <PartSelect name="strainReliefPartId" parts={strainReliefs} label="Strain relief" />
             <StatusSelect />
             <button type="submit">Add / update</button>
@@ -464,6 +468,8 @@ export function CompatibilityManager(props: CompatibilityManagerProps) {
                     const parent = partById.get(row.parentPartId);
                     const parts = compatiblePartDisplays(row, props.items);
                     const visibleParts = visibleCompatibleParts(parts, parent, matchingIds, props.searchQuery);
+                    const usableParts = visibleParts.filter(part => !part.blockedReason);
+                    const blockedParts = visibleParts.filter(part => part.blockedReason);
                     return (
                       <tr key={row.id}>
                         <td className={styles.compatRelationshipType}>
@@ -473,9 +479,9 @@ export function CompatibilityManager(props: CompatibilityManagerProps) {
                         <td>{resolvePn(partById, row.parentPartId)}</td>
                         <td className={styles.compatDescription}>{parent?.description || "Description unavailable"}</td>
                         <td>
-                          {visibleParts.length ? (
+                          {usableParts.length ? (
                             <ul className={styles.compatiblePartList}>
-                              {visibleParts.map(part => (
+                              {usableParts.map(part => (
                                 <li key={part.id ?? part.partNumber}>
                                   <span className={styles.compatiblePartNumber}>{part.partNumber}</span>
                                   <span className={styles.compatiblePartDescription}>{part.description || "Description unavailable"}</span>
@@ -483,7 +489,8 @@ export function CompatibilityManager(props: CompatibilityManagerProps) {
                               ))}
                             </ul>
                           ) : "—"}
-                          {visibleParts.length < parts.length ? <p className={styles.compatSearchHint}>Showing {visibleParts.length} of {parts.length} compatible parts</p> : null}
+                          {blockedParts.length ? <p className={styles.compatSearchHint}>Excluded from strain-relief compatibility: {blockedParts.map(part => part.partNumber).join(", ")}. Blank modules cannot use strain reliefs.</p> : null}
+                          {visibleParts.length < parts.length ? <p className={styles.compatSearchHint}>Showing {visibleParts.length} of {parts.length} {parts.some(part => part.blockedReason) ? "source targets" : "compatible parts"}</p> : null}
                           {row.unresolvedParts?.length ? <p role="status">Needs resolution: {row.unresolvedParts.join(", ")}</p> : null}
                         </td>
                         <td>{formatRelationshipPositions(row, parent)}</td>

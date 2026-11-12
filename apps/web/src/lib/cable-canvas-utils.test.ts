@@ -867,4 +867,12 @@ describe("cable-canvas-utils", () => {
     );
     expect(filtered).toEqual([]);
   });
+
+  it("uses strain-relief-owned module rules and always excludes blank modules", () => {
+    const modulePart = { id: "module", category: "module", partNumber: "510160101", family: "iSeries", description: "Signal module", attributes: { pinCount: 160 } } as LibraryComponentDto;
+    const accessories = ["allowed", "review", "forbidden", "other"].map(id => ({ id, category: "strain-relief", partNumber: id === "allowed" ? "310123102" : id, description: "Strain relief", isActive: true, attributes: {} })) as LibraryComponentDto[];
+    const rules = accessories.map(part => ({ parentPartId: part.id, relationshipType: "MATES_WITH", targetPartIds: [part.id === "other" ? "different-module" : modulePart.id], compatibleParts: [modulePart.partNumber], parentPositions: [], status: part.id === "review" || part.id === "forbidden" ? part.id : "allowed" }));
+    expect(filterAllowedAccessoryOptionsForModule(accessories, modulePart, rules).map(row => row.component.partNumber)).toEqual(["310123102"]);
+    expect(filterAllowedAccessoryOptionsForModule(accessories, { ...modulePart, family: "Blank insert", description: "Blank module", attributes: {} }, rules)).toEqual([]);
+  });
 });

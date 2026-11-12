@@ -11,7 +11,7 @@ import {
   uniqueToken
 } from "./helpers";
 
-test("canvas loads grouped and legacy strain reliefs, preserves valid selections, and rejects blanks", async ({ page, request }) => {
+test("canvas and part views honor strain-relief-owned module fits, preserve selections, and reject blanks", async ({ page, request, browser, baseURL }) => {
   test.setTimeout(180_000);
   const prefix = `SR-${uniqueToken()}`;
   const moduleId = "strain-test-510160101", reliefId = "strain-test-310123102";
@@ -27,8 +27,8 @@ test("canvas loads grouped and legacy strain reliefs, preserves valid selections
     ...[sibling, legacy, forbidden, review, unlisted, inactive].map(id => ({ ...common, id, category: "strain-relief", partNumber: id, description: id, isActive: id !== inactive, attributes: {} }))
   ]);
   await putPartRelationship(request, { parentPartId: frame, compatibleParts: ["510160101", otherModule, blank], relationshipType: "MODULE_ALLOWED", parentPositions: [], status: "allowed" });
-  for (const parentPartId of [moduleId, otherModule, blank]) {
-    await putPartRelationship(request, { parentPartId, compatibleParts: ["310123102", sibling, forbidden, review, inactive], relationshipType: "STRAIN_RELIEF_ALLOWED", parentPositions: [], status: "allowed" });
+  for (const parentPartId of [reliefId, sibling, forbidden, review, inactive]) {
+    await putPartRelationship(request, { parentPartId, compatibleParts: ["510160101", otherModule, blank], relationshipType: "MATES_WITH", parentPositions: [], status: "allowed" });
   }
   for (const [target, status] of [[forbidden, "forbidden"], [review, "review"]] as const) {
     await putPartRelationship(request, { parentPartId: moduleId, compatibleParts: [target], relationshipType: "STRAIN_RELIEF_ALLOWED", parentPositions: [], status });
@@ -42,6 +42,10 @@ test("canvas loads grouped and legacy strain reliefs, preserves valid selections
     });
     expect(response.ok()).toBeTruthy();
   }
+  const staleBlankPair = await request.put("http://127.0.0.1:3000/v1/library/compat/module-strain-relief", {
+    headers: { cookie: adminCookie }, data: { modulePartId: blank, strainReliefPartId: reliefId, status: "allowed" }
+  });
+  expect(staleBlankPair.ok()).toBeTruthy();
 
   await registerAndSignIn(page, { username: prefix, email: `${prefix}@example.com` });
   await createProjectAndOpenProjectPage(page, prefix);
@@ -71,13 +75,40 @@ test("canvas loads grouped and legacy strain reliefs, preserves valid selections
   } });
   expect(patched.ok()).toBeTruthy();
 
-  const rulesResponse = await apiAsPageUser(page, "/v1/library/relationships?relationshipType=STRAIN_RELIEF_ALLOWED");
+  const rulesResponse = await apiAsPageUser(page, "/v1/library/relationships");
   const rules = (await rulesResponse.json()).items;
-  expect(rules.some((row: { parentPartId: string; targetPartIds: string[] }) => row.parentPartId === moduleId && row.targetPartIds.includes(reliefId))).toBeTruthy();
+  expect(rules.some((row: { parentPartId: string; targetPartIds: string[] }) => row.parentPartId === reliefId && row.targetPartIds.includes(moduleId))).toBeTruthy();
+  expect(rules.some((row: { parentPartId: string; targetPartIds: string[] }) => row.parentPartId === moduleId && row.targetPartIds.includes(reliefId))).toBeFalsy();
   const validation = await apiAsPageUser(page, `/v1/revisions/${revisionId}/validate`, { method: "POST", data: { rulesetVersion: "rules-2026.04", mode: "full" } });
   expect(validation.ok()).toBeTruthy();
   const findings = (await validation.json()).results.filter((result: { code: string }) => result.code === "RULE_COMPAT_MODULE_STRAIN_RELIEF");
   expect(findings.map((result: { entityId: string }) => result.entityId).sort()).toEqual(["blank", "frame"]);
+
+  const adminContext = await browser.newContext({ baseURL });
+  try {
+    await adminContext.addCookies([{ name: "cdt_session", value: adminCookie.slice("cdt_session=".length), url: baseURL! }]);
+    const adminPage = await adminContext.newPage();
+    await adminPage.goto("/admin?databaseTab=compatibility&q=310123102");
+    const sourceRow = adminPage.getByRole("tabpanel", { name: "Compatibility & Aliases", exact: true }).getByRole("row")
+      .filter({ has: adminPage.getByRole("cell", { name: "310123102", exact: true }) });
+    await expect(sourceRow.locator("ul")).not.toContainText(blank);
+    await expect(sourceRow).toContainText(`Excluded from strain-relief compatibility: ${blank}`);
+    await adminPage.getByRole("tab", { name: "Module ↔ Strain relief", exact: true }).click();
+    const pairRow = adminPage.getByRole("row").filter({ has: adminPage.getByRole("cell", { name: blank, exact: true }) });
+    await expect(pairRow.getByRole("cell", { name: "forbidden", exact: true })).toBeVisible();
+    await adminPage.locator("summary", { hasText: "Add module–strain relief pair" }).click();
+    await expect(adminPage.getByRole("combobox", { name: "Module", exact: true }).locator(`option[value="${blank}"]`)).toHaveCount(0);
+  } finally { await adminContext.close(); }
+
+  await page.goto(`/library/${moduleId}`);
+  await expect(page.getByRole("list", { name: "Compatible strain reliefs", exact: true }).getByRole("link", { name: "310123102", exact: true })).toBeVisible();
+  await page.goto(`/library/${reliefId}`);
+  const modules = page.getByRole("list", { name: "Compatible modules", exact: true });
+  await expect(modules.getByRole("link", { name: "510160101", exact: true })).toBeVisible();
+  await expect(modules.getByRole("link", { name: blank, exact: true })).toHaveCount(0);
+  await page.goto(`/library/${blank}`);
+  await expect(page.getByRole("list", { name: "Compatible strain reliefs", exact: true })).toHaveCount(0);
+  await expect(page.getByText("No compatible strain reliefs recorded.", { exact: true })).toBeVisible();
 
   await page.goto(`/harnesses/${harness.id}/canvas`);
   await expectHeadingWithRetry(page, "Harness Canvas");

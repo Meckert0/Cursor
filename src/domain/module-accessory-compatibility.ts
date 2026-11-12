@@ -3,6 +3,7 @@ import { BLANK_INSERT_FAMILY, catalogPartFamily, type CompatStatus } from "./lib
 
 type AccessoryModule = {
   id: string;
+  partNumber?: string;
   category: string;
   family: string;
   description: string;
@@ -10,7 +11,14 @@ type AccessoryModule = {
   attributes?: unknown;
 };
 
-/** Evaluate canonical accessory relationships, including legacy pair rows. */
+/** Explicit module/strain-relief fit records may be owned by either part. */
+export const STRAIN_RELIEF_RELATIONSHIP_TYPES = ["STRAIN_RELIEF_ALLOWED", "MODULE_ALLOWED", "MATES_WITH"] as const;
+
+function strongestStatus(statuses: Array<CompatStatus | undefined>): CompatStatus | undefined {
+  return (["forbidden", "review", "allowed"] as const).find(status => statuses.includes(status));
+}
+
+/** Evaluate direct and reciprocal fit evidence without following other parts' relationships. */
 export function moduleAccessoryStatus(
   module: AccessoryModule,
   accessory: { id: string; category: string; partNumber: string },
@@ -20,14 +28,26 @@ export function moduleAccessoryStatus(
   if (accessory.category === "strain-relief" && catalogPartFamily(module) === BLANK_INSERT_FAMILY) {
     return "forbidden";
   }
-  const relationshipType = accessory.category === "strain-relief" ? "STRAIN_RELIEF_ALLOWED"
-    : accessory.category === "backshell" ? "BACKSHELL_ALLOWED" : undefined;
-  if (!relationshipType) return undefined;
-  return compatibilityStatus({
+  if (accessory.category === "backshell") return compatibilityStatus({
     rules,
     parentPartId: module.id,
-    relationshipType,
+    relationshipType: "BACKSHELL_ALLOWED",
     targetPartId: accessory.id,
     targetPartNumber: accessory.partNumber
   });
+  if (accessory.category !== "strain-relief") return undefined;
+  const direct = compatibilityStatus({ rules, parentPartId: module.id, relationshipType: "STRAIN_RELIEF_ALLOWED", targetPartId: accessory.id, targetPartNumber: accessory.partNumber });
+  const reverse = ["STRAIN_RELIEF_ALLOWED", "MODULE_ALLOWED"].map(relationshipType => compatibilityStatus({
+    rules, parentPartId: accessory.id, relationshipType, targetPartId: module.id, targetPartNumber: module.partNumber
+  }));
+  // Mating lists can also describe electrical counterparts. Only the explicit
+  // module/strain-relief pair is evidence here; their other targets exclude nothing.
+  const mating = rules.filter(rule => rule.relationshipType.trim().toUpperCase() === "MATES_WITH" && (
+    rule.parentPartId === module.id && (rule.targetPartIds ? rule.targetPartIds.includes(accessory.id) : rule.compatibleParts.some(pn => pn.trim().toUpperCase() === accessory.partNumber.trim().toUpperCase())) ||
+    rule.parentPartId === accessory.id && (rule.targetPartIds ? rule.targetPartIds.includes(module.id) : rule.compatibleParts.some(pn => pn.trim().toUpperCase() === module.partNumber?.trim().toUpperCase()))
+  ));
+  return strongestStatus([direct, ...reverse,
+    compatibilityStatus({ rules: mating, parentPartId: module.id, relationshipType: "MATES_WITH", targetPartId: accessory.id, targetPartNumber: accessory.partNumber }),
+    compatibilityStatus({ rules: mating, parentPartId: accessory.id, relationshipType: "MATES_WITH", targetPartId: module.id, targetPartNumber: module.partNumber })
+  ]);
 }

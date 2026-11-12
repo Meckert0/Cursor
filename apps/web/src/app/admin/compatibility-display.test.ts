@@ -17,6 +17,18 @@ const row: PartRelationshipDto = {
 };
 
 describe("compatibility display", () => {
+  it("marks blank modules as excluded in strain relief source groups without changing stored targets", () => {
+    const relief = { ...part("relief", "Strain relief"), category: "strain-relief" as const };
+    const blank = { ...part("blank", "Blank module"), family: "Blank insert" };
+    const group = { ...row, parentPartId: relief.id, relationshipType: "MATES_WITH", compatibleParts: [parent.partNumber, blank.partNumber], targetPartIds: [parent.id, blank.id] };
+    const displayed = compatiblePartDisplays(group, [relief, parent, blank]);
+    expect(displayed[0].blockedReason).toBeUndefined();
+    expect(displayed[1].blockedReason).toBe("Blank modules cannot use strain reliefs.");
+    expect(group.targetPartIds).toEqual([parent.id, blank.id]);
+    const reversed = { ...group, parentPartId: blank.id, targetPartIds: [relief.id], compatibleParts: [relief.partNumber] };
+    expect(compatiblePartDisplays(reversed, [relief, blank])[0].blockedReason).toBe("Blank modules cannot use strain reliefs.");
+  });
+
   it("resolves descriptions by stable IDs rather than stale or duplicate part numbers", () => {
     expect(compatiblePartDisplays({ ...row, compatibleParts: ["OLD", "OLD"] }, [parent, quad, mini])).toEqual([
       { id: "quad", partNumber: "QUAD", description: "QuadraPaddle contact" },

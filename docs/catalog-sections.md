@@ -56,7 +56,11 @@ The shared evaluator in `src/domain/compatibility-rules.ts` supplies frame/SIM f
 3. Matching allowance permits the relationship at that position.
 4. Missing evidence remains unknown unless an exhaustive allowlist excludes the target. Frames and SIM slots still require positive allowance.
 
-Relationships are directional and never inferred transitively. Known relationship types validate parent/target categories in application code and SQL triggers. New types can use the same group/member storage; add definitions and consumers when their semantics become available. Dimensional contact-wire profile checks remain distinct from explicit part approvals.
+Relationships are directional and never inferred transitively. Physical module/strain-relief fit is the exception: an explicit fit may be owned by either part. The canvas, accessory retention, validation, and item compatibility views accept module-owned `STRAIN_RELIEF_ALLOWED`, strain-relief-owned `MODULE_ALLOWED` or `STRAIN_RELIEF_ALLOWED`, and explicit `MATES_WITH` pairs between these two categories. They do not follow a frame, another module, or an electrical mating list to infer a strain-relief approval. Prohibitions and review status in either direction take precedence over allowances, and blank modules reject every strain relief even if a source group includes them. Item views show the effective fit from both ends without duplicating or rewriting the source records.
+
+The admin compatibility table marks blank-module targets as excluded from strain-relief compatibility while retaining the source group for editing. Legacy module/strain-relief pair rows display their effective status, and the pair editor does not offer blank modules.
+
+Known relationship types validate parent/target categories in application code and SQL triggers. Existing reverse-direction catalog rows remain readable; no migration or duplicate rules are required for their use by the canvas. New types can use the same group/member storage; add definitions and consumers when their semantics become available. Dimensional contact-wire profile checks remain distinct from explicit part approvals.
 
 ## Images and Files
 

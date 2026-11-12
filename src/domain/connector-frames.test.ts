@@ -116,19 +116,6 @@ test("moduleMatchesFrameSide hides opposite-side modules unless reverse compatib
   assert.equal(moduleMatchesFrameSide({ side: "ITA" }, undefined, true), false);
 });
 
-test("frame picker rejects blank modules in receivers with included strain relief even when old rules allow them", () => {
-  const modules = [
-    { id: "blank", category: "module", partNumber: "510160100", family: "iCon/i1", description: "Blank module, Receiver/ITA, iCon/i1", electricalMode: "NONE", attributes: { pinIds: [] } },
-    { id: "signal", category: "module", partNumber: "510160101", family: "iCon/i1", description: "Signal module", attributes: { pinIds: ["1"] } }
-  ];
-  const rules = [{ parentPartId: "receiver", compatibleParts: modules.map(part => part.partNumber), targetPartIds: modules.map(part => part.id), relationshipType: "MODULE_ALLOWED", parentPositions: ["A", "B"], status: "allowed" }];
-  const frame = { category: "frame", description: "iCon EMI Receiver with protective cover and strain relief" };
-  for (const slot of ["A", "B"]) {
-    assert.deepEqual(modulesAllowedForFrameSlot("receiver", slot, rules, modules, frame).map(part => part.partNumber), ["510160101"]);
-    assert.equal(modulesAllowedForFrameSlot("receiver", slot, rules, modules, { ...frame, description: "Receiver without strain relief" }).length, 2);
-  }
-});
-
 test("empty parentPositions allows the module in every slot", () => {
   const modules = [{ partNumber: "MOD-1", category: "module", partType: "MODULE" }];
   const relationships = [

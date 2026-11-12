@@ -466,21 +466,6 @@ test("validateSnapshot checks slot module pins not frame housing pin count", () 
   assert.ok(report.results.some((r) => r.code === "RULE_COMPAT_FRAME_MODULE" && r.message.includes("FORBIDDEN")));
 });
 
-test("validateSnapshot rejects 510160100 in the 310123102 assembly despite stale allowances", () => {
-  const frame = makePart({ id: "receiver", category: "frame", partNumber: "310123102", family: "iCon EMI", description: "iCon EMI Receiver with protective cover and strain relief", attributes: { slotIds: ["A", "B"] } });
-  const blank = makePart({ id: "blank", category: "module", partNumber: "510160100", family: "iCon/i1", description: "Blank module, Receiver/ITA, iCon/i1", electricalMode: "NONE", attributes: { pinIds: [] } });
-  const snapshot: DesignSnapshot = { ...baseSnapshot(), connectors: [{
-    id: "c1", reference: "J1", libraryComponentId: frame.id, partNumber: frame.partNumber, pins: [],
-    slots: [{ slotId: "A", reference: "J1A", libraryComponentId: blank.id, partNumber: blank.partNumber, pins: [] }]
-  }], paths: [], pinMappings: [] };
-  const rules = [{ parentPartId: frame.id, relationshipType: "MODULE_ALLOWED", compatibleParts: [blank.partNumber], targetPartIds: [blank.id], parentPositions: ["A", "B"], status: "allowed" as const }];
-  const check = (description: string) => validateSnapshot(snapshot, {
-    rulesetVersion: "rules-2026.04", libraryLookup: createLibraryLookup([{ ...frame, description }, blank]), partRelationships: rules
-  }).results.filter(row => row.code === "RULE_COMPAT_FRAME_MODULE");
-  assert.equal(check(frame.description).length, 1);
-  assert.equal(check("Receiver without strain relief").length, 0);
-});
-
 test("validateSnapshot checks wire AWG against contact acceptance (modules no longer restrict AWG/family)", () => {
   const snapshot = baseSnapshot();
   snapshot.connectors[0] = { ...snapshot.connectors[0], partNumber: "MDM-15P", libraryComponentId: "cmp-mod" };

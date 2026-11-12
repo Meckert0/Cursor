@@ -438,8 +438,7 @@ export function CableCanvas({
       selectedConnectorLibraryId,
       connectorSearchTarget.slotId,
       moduleAllowedRelationships,
-      moduleCatalog,
-      frameComponent
+      moduleCatalog
     ).filter((module) => moduleMatchesFrameSide(module, frameComponent, includeReverseCompat));
   }, [
     connectorCatalogState,

@@ -39,53 +39,6 @@ const fixtures: PartIngestItem[] = [
 ];
 
 for (const backend of ["memory", "sqlite", "postgres"] as const) {
-  test(`${backend}: removes blank module links in both directions for 310123102 receiver assemblies`, async () => {
-    const directory = await mkdtemp(path.join(os.tmpdir(), "integrated-strain-compat-"));
-    const pg = backend === "postgres" ? await postgres() : undefined;
-    let store: Store = pg?.store ?? (backend === "sqlite" ? new SqliteStore(path.join(directory, "app.db")) : new MemoryStore());
-    try {
-      await store.ingestLibraryComponents({ requestedByUserId: "test", dryRun: false, items: [
-        makePart({ id: "receiver", category: "frame", partNumber: "310123102", family: "iCon EMI", description: "Receiver", electricalMode: "NONE", attributes: { slotIds: ["A", "B"], moduleCapacity: 2 } }),
-        makePart({ id: "blank", category: "module", partNumber: "510160100", family: "iCon/i1", description: "Blank module, Receiver/ITA, iCon/i1", electricalMode: "NONE", attributes: { pinIds: [], positionCount: 0 } }),
-        { ...fixtures[1], partNumber: "510160101" }, fixtures[0]
-      ] });
-      const forward = await store.upsertPartRelationship({ parentPartId: "receiver", relationshipType: "MODULE_ALLOWED", targetPartIds: ["blank", "module"], parentPositions: ["A", "B"], status: "allowed", isExhaustive: true, source: "legacy-catalog", notes: "Intended-side receiver modules." });
-      const reverse = await store.upsertPartRelationship({ parentPartId: "blank", relationshipType: "MATES_WITH", targetPartIds: ["receiver", "frame"], parentPositions: [], status: "allowed" });
-      await store.upsertPartRelationship({ parentPartId: "blank", relationshipType: "MATES_WITH", targetPartIds: ["receiver"], parentPositions: [], status: "review" });
-      await store.upsertPartRelationship({ parentPartId: "frame", relationshipType: "MODULE_ALLOWED", targetPartIds: ["blank"], parentPositions: [], status: "allowed" });
-      await store.updateLibraryComponent({ componentId: "receiver", description: "iCon EMI Receiver with protective cover and strain relief", editedByUserId: "test" });
-      assert.deepEqual(await store.removeBlankModuleStrainReliefCompatibility(), { removedTargets: 3, removedGroups: 1 });
-      const cleanForward = (await store.listPartRelationships({ parentPartId: "receiver" }))[0];
-      assert.deepEqual(cleanForward.targetPartIds, ["module"]);
-      assert.deepEqual(cleanForward.compatibleParts, ["510160101"]);
-      assert.equal(cleanForward.id, forward.id);
-      assert.equal(cleanForward.notes, forward.notes);
-      assert.deepEqual(cleanForward.parentPositions, ["A", "B"]);
-      assert.equal(cleanForward.isExhaustive, true);
-      const cleanReverse = await store.listPartRelationships({ parentPartId: "blank" });
-      assert.equal(cleanReverse.length, 1);
-      assert.equal(cleanReverse[0].id, reverse.id);
-      assert.deepEqual(cleanReverse[0].targetPartIds, ["frame"]);
-      assert.deepEqual((await store.listPartRelationships({ parentPartId: "frame" }))[0].targetPartIds, ["blank"]);
-      for (const row of [forward, reverse]) {
-        const saved = await store.upsertPartRelationship(row);
-        assert.ok(!saved.targetPartIds?.includes(row.parentPartId === "receiver" ? "blank" : "receiver"));
-      }
-      for (const [parentPartId, targetPartId] of [["receiver", "blank"], ["blank", "receiver"]]) {
-        await assert.rejects(store.upsertPartRelationship({ parentPartId, targetPartIds: [targetPartId], relationshipType: "MATES_WITH", parentPositions: [], status: "allowed" }), /COMPATIBILITY_BLANK_MODULE_STRAIN_RELIEF/);
-      }
-      if (store instanceof SqliteStore) { store.close(); store = new SqliteStore(path.join(directory, "app.db")); }
-      else if (store instanceof MemoryStore) store = MemoryStore.fromState(store.exportState());
-      assert.deepEqual((await store.listPartRelationships({ parentPartId: "receiver" }))[0].targetPartIds, ["module"]);
-      assert.deepEqual((await store.listPartRelationships({ parentPartId: "blank" }))[0].targetPartIds, ["frame"]);
-      assert.deepEqual(await store.removeBlankModuleStrainReliefCompatibility(), { removedTargets: 0, removedGroups: 0 });
-    } finally {
-      if (store instanceof SqliteStore) store.close();
-      await pg?.db.close();
-      await rm(directory, { recursive: true, force: true });
-    }
-  });
-
   test(`${backend}: removes saved blank strain-relief links and prevents them from returning`, async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "blank-strain-compat-"));
     const pg = backend === "postgres" ? await postgres() : undefined;

@@ -1,6 +1,5 @@
 import { compatibilityStatus } from "./compatibility-rules.js";
-import { isBlankModule, isCanvasConnectorPart } from "./library.js";
-import { includesStrainRelief } from "./blank-strain-relief-compatibility.js";
+import { isCanvasConnectorPart } from "./library.js";
 import type { ConnectorPin, ConnectorSlot, SnapshotConnector } from "./types.js";
 
 export type FrameAttributesLike = {
@@ -226,11 +225,10 @@ export function moduleMatchesFrameSide(
   return moduleSide === frameSide;
 }
 
-export function modulesAllowedForFrameSlot<T extends { id?: string; partNumber: string; category: string; partType?: string; family?: string; description?: string; electricalMode?: string; attributes?: unknown }>(
-  framePartId: string, slotId: string, relationships: FrameModuleRelationship[], modules: T[], frame?: { category: string; description: string }
+export function modulesAllowedForFrameSlot<T extends { id?: string; partNumber: string; category: string; partType?: string }>(
+  framePartId: string, slotId: string, relationships: FrameModuleRelationship[], modules: T[]
 ): T[] {
-  return modules.filter(module => isCanvasConnectorPart(module) &&
-    !(frame && includesStrainRelief(frame) && isBlankModule({ ...module, family: module.family ?? "", description: module.description ?? "" })) && compatibilityStatus({
+  return modules.filter(module => isCanvasConnectorPart(module) && compatibilityStatus({
     rules: relationships, parentPartId: framePartId, relationshipType: "MODULE_ALLOWED",
     targetPartId: module.id, targetPartNumber: module.partNumber, position: slotId, requireAllowance: true
   }) === "allowed");

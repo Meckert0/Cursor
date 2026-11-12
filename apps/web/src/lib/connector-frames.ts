@@ -1,6 +1,4 @@
 import { compatibilityStatus } from "../../../../src/domain/compatibility-rules";
-import { includesStrainRelief } from "../../../../src/domain/blank-strain-relief-compatibility";
-import { isBlankModule } from "../../../../src/domain/library";
 import { isCanvasConnectorPart } from "./part-fields";
 import type { RevisionDto } from "./api";
 
@@ -231,11 +229,10 @@ export function moduleMatchesFrameSide(
   return moduleSide === frameSide;
 }
 
-export function modulesAllowedForFrameSlot<T extends { id?: string; partNumber: string; category: string; partType?: string; family?: string; description?: string; electricalMode?: string; attributes?: unknown }>(
-  framePartId: string, slotId: string, relationships: FrameModuleRelationship[], modules: T[], frame?: { category: string; description: string }
+export function modulesAllowedForFrameSlot<T extends { id?: string; partNumber: string; category: string; partType?: string }>(
+  framePartId: string, slotId: string, relationships: FrameModuleRelationship[], modules: T[]
 ): T[] {
-  return modules.filter(module => isCanvasConnectorPart(module) &&
-    !(frame && includesStrainRelief(frame) && isBlankModule({ ...module, family: module.family ?? "", description: module.description ?? "" })) && compatibilityStatus({
+  return modules.filter(module => isCanvasConnectorPart(module) && compatibilityStatus({
     rules: relationships, parentPartId: framePartId, relationshipType: "MODULE_ALLOWED",
     targetPartId: module.id, targetPartNumber: module.partNumber, position: slotId, requireAllowance: true
   }) === "allowed");

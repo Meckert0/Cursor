@@ -39,15 +39,6 @@ describe("compatibility display", () => {
     expect(compatiblePartDisplays(legacy, [quad, { ...mini, partNumber: "QUAD" }])[0].description).toBe("");
   });
 
-  it("excludes 510160100 from the 310123102 frame assembly and reciprocal compatible-part lists", () => {
-    const assembly = { ...part("prt-frame-310123102", "iCon EMI Receiver with protective cover and strain relief"), category: "frame" as const, partNumber: "310123102" };
-    const blank = { ...part("prt-module-510160100", "Blank module, Receiver/ITA, iCon/i1"), partNumber: "510160100", electricalMode: "NONE" };
-    const signal = { ...parent, partNumber: "510160101" };
-    const group = { ...row, parentPartId: assembly.id, relationshipType: "MODULE_ALLOWED", targetPartIds: [blank.id, signal.id], compatibleParts: [blank.partNumber, signal.partNumber] };
-    expect(compatiblePartDisplays(group, [assembly, blank, signal]).map(part => part.partNumber)).toEqual(["510160101"]);
-    expect(compatiblePartDisplays({ ...group, parentPartId: blank.id, targetPartIds: [assembly.id], compatibleParts: [assembly.partNumber] }, [assembly, blank])).toEqual([]);
-  });
-
   it("narrows visible targets while preserving the original group and exact validation", () => {
     const before = JSON.stringify(row);
     const parts = compatiblePartDisplays(row, [parent, quad, mini]);

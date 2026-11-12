@@ -6,6 +6,16 @@ export function isISeriesModule(part: { category: string; family: string; partTy
     /(?:^|[^a-z0-9])(?:iseries|icon|i1|i2)(?:$|[^a-z0-9])/i.test(part.family);
 }
 
+type ProfilePart = { category: string; family: string; partType?: string };
+
+/** Relative canvas size; a compatible strain relief follows its parent assembly. */
+export function sideProfileScale(part: ProfilePart | undefined, compatibleParent?: ProfilePart): number {
+  const host = part?.category === "strain-relief" ? compatibleParent : part;
+  if (!host) return 1;
+  if (isISeriesModule(host) || (host.category === "frame" && /^i1(?:\b|XL\b)/i.test(host.family.trim()))) return 0.9;
+  return 1;
+}
+
 /** Coordinates refer to the normalized, upright image with its cable exit on the right. */
 export const SIDE_PROFILE_EXITS: Readonly<Record<string, { x: number; y: number }>> = {
   "310123101": { x: 0.85, y: 0.5 },

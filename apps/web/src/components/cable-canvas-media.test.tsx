@@ -37,6 +37,46 @@ function snapshot(connectors?: RevisionDto["snapshot"]["connectors"]): RevisionD
 const catalog = [part("one"), part("two")];
 
 describe("CableCanvas part side profiles", () => {
+  it("keeps iCon size and aligns i1/module cable exits and drag bounds with the smaller profiles", () => {
+    const icon = { ...part("icon"), category: "frame" as const, partType: "ITA", partNumber: "410123101", family: "iCon" };
+    const i1 = { ...part("i1"), category: "frame" as const, partType: "ITA", partNumber: "410128102", family: "i1 EMI" };
+    const standaloneModule = { ...part("module"), partNumber: "510161101", family: "iCon/i1" };
+    const connected = snapshot([
+      { id: "f1", reference: "F1", libraryComponentId: icon.id, pins: [], slots: [], location: { x: 20, y: 40 } },
+      { id: "f2", reference: "F2", libraryComponentId: i1.id, pins: [], slots: [], location: { x: 220, y: 40 } },
+      { id: "m1", reference: "J1", libraryComponentId: standaloneModule.id, pins: [], location: { x: 400, y: 40 } }
+    ]);
+    connected.paths = [{ id: "section", fromConnectorId: "f1", toConnectorId: "f2", pathType: "cable", length: 10 }];
+    render(<CableCanvas revisionId="profile-relative-size" snapshot={connected} snapshotHash="hash" connectorCatalog={[icon, i1, standaloneModule]}
+      sideProfileMedia={[
+        media(icon.id, { url: "/part-media/vpc-side-profiles/v2/410123101.png", orientation: "cable_exit_right", pixelWidth: 200, pixelHeight: 100 }),
+        media(i1.id, { url: "/part-media/vpc-side-profiles/v2/410128102.png", orientation: "cable_exit_right", pixelWidth: 100, pixelHeight: 200 }),
+        media(standaloneModule.id)
+      ]} quickAddConnectorAction={async () => ({ ok: true, connectorCatalog: [] })} />);
+    const first = screen.getByRole("button", { name: "Frame F1" });
+    const second = screen.getByRole("button", { name: "Frame F2" });
+    const standalone = screen.getByRole("button", { name: "Connector J1" });
+    expect(first).toHaveStyle({ width: "120px", height: "120px" });
+    expect(second).toHaveStyle({ width: "108px", height: "108px" });
+    expect(standalone).toHaveStyle({ width: "108px", height: "108px" });
+    const canvas = screen.getByTestId("cable-canvas");
+    const line = () => canvas.querySelector('[data-cable-section="section"] > line')!;
+    expect(Number(line().getAttribute("x1"))).toBeCloseTo(135.2);
+    expect(Number(line().getAttribute("x2"))).toBeCloseTo(252.94);
+    expect(Number(line().getAttribute("y2"))).toBeCloseTo(69.16);
+    canvas.getBoundingClientRect = () => new DOMRect(0, 0, 600, 300);
+    second.getBoundingClientRect = () => new DOMRect(220, 40, 108, 108);
+    fireEvent(second, new MouseEvent("pointerdown", { bubbles: true, clientX: 230, clientY: 50 }));
+    fireEvent(window, new MouseEvent("pointermove", { clientX: 1000, clientY: 1000 }));
+    fireEvent(window, new MouseEvent("pointerup"));
+    expect(second).toHaveStyle({ left: "492px", top: "192px" });
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    expect(second).toHaveStyle({ left: "220px", top: "40px" });
+    fireEvent.error(within(second).getByRole("img"));
+    expect(Number(line().getAttribute("x2"))).toBe(280);
+    expect(Number(line().getAttribute("y2"))).toBe(68);
+  });
+
   it("shows frame artwork for installed modules and shares the module artwork only for standalone iSeries modules", () => {
     const source = { ...part("source"), partNumber: "510161101", family: "iCon/i1" };
     const other = { ...part("other"), partNumber: "510161108", family: "iCon/i1" };

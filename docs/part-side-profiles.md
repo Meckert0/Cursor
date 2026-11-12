@@ -30,6 +30,13 @@ Attachments account for the contained image's aspect ratio and mirror with the
 artwork. Parts and handles render above cable sections and cable labels,
 including hovered labels. Opaque part bodies hide cables underneath.
 
+The iCon frame images retain their original 120px canvas envelope. i1 frames
+and standalone iSeries modules use a 108px envelope (a 10% reduction in both
+dimensions). Cable exits, node centers, selection outlines and drag limits use
+these displayed dimensions. The shared sizing policy applies the same factor
+to a compatible strain relief when its parent is supplied. The current hosted
+catalog does not contain strain-relief parts or images.
+
 The user-approved `510161101` side view is shared by standalone iSeries modules,
 including the iCon/i1 catalog. It does not apply to SIM inserts, other module
 families, or frames. Slot modules do not create additional canvas images: an

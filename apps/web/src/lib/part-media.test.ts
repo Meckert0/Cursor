@@ -1,11 +1,26 @@
 import { describe, expect, it } from "vitest";
 import type { LibraryComponentDto, PartMediaDto } from "./api";
 import { cableExitFacesLeft, isISeriesModule, sideProfileExitPoint, sideProfilesByPart, standaloneSideProfile } from "./part-media";
+import { sideProfileScale } from "../../../../src/domain/part-side-profiles";
 
 const part = (id: string, family: string, extra: Partial<LibraryComponentDto> = {}) => ({ id, partNumber: id, category: "module", partType: "MODULE", family, ...extra }) as LibraryComponentDto;
 const image: PartMediaDto = { id: "source", partId: "source", url: "/part-media/vpc-side-profiles/v2/510161101.png", viewType: "side_profile", orientation: "cable_exit_right", mimeType: "image/png", pixelWidth: 100, pixelHeight: 200, sortOrder: 0, isPrimary: true };
 
 describe("standalone module side profiles", () => {
+  it("keeps iCon size while slightly shrinking i1, standalone modules, and their compatible strain reliefs", () => {
+    const icon = part("icon", "iCon", { category: "frame" });
+    const i1 = part("i1", "i1 EMI", { category: "frame" });
+    const standaloneModule = part("module", "iCon/i1");
+    const relief = part("relief", "iSeries", { category: "strain-relief" });
+    for (const family of ["iCon", "iCon EMI", "iCon Reverse", "iCon XL"]) expect(sideProfileScale({ ...icon, family })).toBe(1);
+    for (const family of ["i1", "i1 EMI", "i1 XL"]) expect(sideProfileScale({ ...i1, family })).toBe(0.9);
+    expect(sideProfileScale(standaloneModule)).toBe(0.9);
+    expect(sideProfileScale(relief, i1)).toBe(0.9);
+    expect(sideProfileScale(relief, standaloneModule)).toBe(0.9);
+    expect(sideProfileScale(relief, icon)).toBe(1);
+    expect(sideProfileScale(relief)).toBe(1);
+    expect(sideProfileScale(part("other", "90 Series"))).toBe(1);
+  });
   it("shares 510161101 for iSeries modules while preserving frame and exact views", () => {
     const source = part("source", "iCon/i1", { partNumber: "510161101" });
     const target = part("target", "iSeries");

@@ -8,6 +8,7 @@ import { SimInsertControls } from "@/components/sim-insert-controls";
 import { availableSimInserts, catalogModulePins, isSimHost, normalizeCanvasSimModules, simPlacement, usableSimPins, type SimInsertAssignment, type SimRelationship } from "@/lib/sim-modules";
 import type { LibraryComponentDto, PartMediaDto, RevisionDto } from "@/lib/api";
 import { cableExitFacesLeft, sideProfileExitPoint, sideProfilesByPart, standaloneSideProfile } from "@/lib/part-media";
+import { sideProfileScale } from "../../../../src/domain/part-side-profiles";
 import {
   buildNextCanvasId,
   buildNextConnectorReference,
@@ -160,13 +161,15 @@ export function CableCanvas({
     const part = partId ? catalogPartById.get(partId) : undefined;
     const sideProfile = standaloneSideProfile(part, sideProfileByPart, connectorCatalogState, isFrameHousingConnector(connector) || part?.category === "frame")
       ?? (partId ? sideProfileByPart.get(partId) : undefined);
-    return [connector.id, { sideProfile, height: sideProfile ? profileNodeHeight : connectorNodeHeight }];
+    const scale = sideProfileScale(part);
+    return [connector.id, { sideProfile, width: sideProfile ? nodeWidth * scale : nodeWidth, height: sideProfile ? profileNodeHeight * scale : connectorNodeHeight }];
   })), [connectors, catalogPartById, catalogPartByNumber, connectorCatalogState, sideProfileByPart]);
   const nodeCenters = useMemo(() => {
     const centers = new Map<string, NodePosition>();
     for (const connector of connectors) {
       const position = positions[connector.id];
-      if (position) centers.set(connector.id, { x: position.x + nodeWidth / 2, y: position.y + (connectorVisualById.get(connector.id)?.height ?? connectorNodeHeight) / 2 });
+      const visual = connectorVisualById.get(connector.id);
+      if (position) centers.set(connector.id, { x: position.x + (visual?.width ?? nodeWidth) / 2, y: position.y + (visual?.height ?? connectorNodeHeight) / 2 });
     }
     for (const junction of junctions) {
       const position = positions[junction.id];
@@ -225,7 +228,7 @@ export function CableCanvas({
       }
       const rect = canvas.getBoundingClientRect();
       const connectorVisual = connectorVisualById.get(dragState.nodeId);
-      const width = connectorVisual ? nodeWidth : junctionNodeSize;
+      const width = connectorVisual?.width ?? junctionNodeSize;
       const height = connectorVisual?.height ?? junctionNodeSize;
       const nextX = Math.max(0, Math.min(rect.width - width, event.clientX - rect.left - dragState.offsetX));
       const nextY = Math.max(0, Math.min(rect.height - height, event.clientY - rect.top - dragState.offsetY));
@@ -304,12 +307,13 @@ export function CableCanvas({
         return { x: position.x + junctionNodeSize / 2, y: position.y + junctionNodeSize / 2 };
       }
       const visual = connectorVisualById.get(nodeId);
+      const width = visual?.width ?? nodeWidth;
       const height = visual?.height ?? connectorNodeHeight;
       if (visual?.sideProfile) {
-        const exit = sideProfileExitPoint(visual.sideProfile, nodeWidth, height, connectorFacingLeft.get(nodeId) ?? false);
+        const exit = sideProfileExitPoint(visual.sideProfile, width, height, connectorFacingLeft.get(nodeId) ?? false);
         return { x: position.x + exit.x, y: position.y + exit.y };
       }
-      return { x: position.x + nodeWidth / 2, y: position.y + height / 2 };
+      return { x: position.x + width / 2, y: position.y + height / 2 };
     },
     [connectorFacingLeft, connectorNodeHeight, connectorVisualById, junctionIdSet, junctionNodeSize, nodeWidth, positions]
   );
@@ -1757,7 +1761,7 @@ export function CableCanvas({
           const visual = connectorVisualById.get(connector.id);
           const sideProfile = visual?.sideProfile;
           const facingLeft = connectorFacingLeft.get(connector.id) ?? false;
-          const exit = sideProfile ? sideProfileExitPoint(sideProfile, nodeWidth, visual.height, facingLeft) : undefined;
+          const exit = sideProfile ? sideProfileExitPoint(sideProfile, visual.width, visual.height, facingLeft) : undefined;
           return (
             <button
               key={connector.id}
@@ -1767,7 +1771,7 @@ export function CableCanvas({
               className={`${styles.connectorNode} ${sideProfile ? styles.connectorWithProfile : ""} ${
                 selectedEntity?.type === "connector" && selectedEntity.id === connector.id ? styles.selectedNode : ""
               }`}
-              style={{ left: `${position.x}px`, top: `${position.y}px`, height: sideProfile ? visual.height : undefined }}
+              style={{ left: `${position.x}px`, top: `${position.y}px`, width: sideProfile ? visual.width : undefined, height: sideProfile ? visual.height : undefined }}
               title={connector.partNumber ? `${connector.reference} · ${connector.partNumber}` : connector.reference}
               onPointerDown={(event) => {
                 if (readOnly) {

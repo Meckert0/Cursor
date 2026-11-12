@@ -57,20 +57,22 @@ describe("CableCanvas part side profiles", () => {
     const second = screen.getByRole("button", { name: "Frame F2" });
     const standalone = screen.getByRole("button", { name: "Connector J1" });
     expect(first).toHaveStyle({ width: "120px", height: "120px" });
-    expect(second).toHaveStyle({ width: "87.48px", height: "87.48px" });
-    expect(standalone).toHaveStyle({ width: "87.48px", height: "87.48px" });
+    for (const node of [second, standalone]) {
+      expect(parseFloat(node.style.width)).toBeCloseTo(78.732, 3);
+      expect(parseFloat(node.style.height)).toBeCloseTo(78.732, 3);
+    }
     const canvas = screen.getByTestId("cable-canvas");
     const line = () => canvas.querySelector('[data-cable-section="section"] > line')!;
     expect(Number(line().getAttribute("x1"))).toBeCloseTo(135.2);
-    expect(Number(line().getAttribute("x2"))).toBeCloseTo(246.6814);
-    expect(Number(line().getAttribute("y2"))).toBeCloseTo(63.6196);
+    expect(Number(line().getAttribute("x2"))).toBeCloseTo(244.01326);
+    expect(Number(line().getAttribute("y2"))).toBeCloseTo(61.25764);
     canvas.getBoundingClientRect = () => new DOMRect(0, 0, 600, 300);
-    second.getBoundingClientRect = () => new DOMRect(220, 40, 87.48, 87.48);
+    second.getBoundingClientRect = () => new DOMRect(220, 40, 78.732, 78.732);
     fireEvent(second, new MouseEvent("pointerdown", { bubbles: true, clientX: 230, clientY: 50 }));
     fireEvent(window, new MouseEvent("pointermove", { clientX: 1000, clientY: 1000 }));
     fireEvent(window, new MouseEvent("pointerup"));
-    expect(parseFloat(second.style.left)).toBeCloseTo(512.52);
-    expect(parseFloat(second.style.top)).toBeCloseTo(212.52);
+    expect(parseFloat(second.style.left)).toBeCloseTo(521.268);
+    expect(parseFloat(second.style.top)).toBeCloseTo(221.268);
     fireEvent.click(screen.getByRole("button", { name: "Undo" }));
     expect(second).toHaveStyle({ left: "220px", top: "40px" });
     fireEvent.error(within(second).getByRole("img"));

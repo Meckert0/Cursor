@@ -13,10 +13,10 @@ describe("standalone module side profiles", () => {
     const standaloneModule = part("module", "iCon/i1");
     const relief = part("relief", "iSeries", { category: "strain-relief" });
     for (const family of ["iCon", "iCon EMI", "iCon Reverse", "iCon XL"]) expect(sideProfileScale({ ...icon, family })).toBe(1);
-    for (const family of ["i1", "i1 EMI", "i1 XL"]) expect(sideProfileScale({ ...i1, family })).toBe(0.729);
-    expect(sideProfileScale(standaloneModule)).toBe(0.729);
-    expect(sideProfileScale(relief, i1)).toBe(0.729);
-    expect(sideProfileScale(relief, standaloneModule)).toBe(0.729);
+    for (const family of ["i1", "i1 EMI", "i1 XL"]) expect(sideProfileScale({ ...i1, family })).toBe(0.6561);
+    expect(sideProfileScale(standaloneModule)).toBe(0.6561);
+    expect(sideProfileScale(relief, i1)).toBe(0.6561);
+    expect(sideProfileScale(relief, standaloneModule)).toBe(0.6561);
     expect(sideProfileScale(relief, icon)).toBe(1);
     expect(sideProfileScale(relief)).toBe(1);
     expect(sideProfileScale(part("other", "90 Series"))).toBe(1);

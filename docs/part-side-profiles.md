@@ -31,7 +31,7 @@ artwork. Parts and handles render above cable sections and cable labels,
 including hovered labels. Opaque part bodies hide cables underneath.
 
 The iCon frame images retain their original 120px canvas envelope. i1 frames
-and standalone iSeries modules use an 87.48px envelope (three successive 10%
+and standalone iSeries modules use a 78.732px envelope (four successive 10%
 reductions in both dimensions). Cable exits, node centers, selection outlines
 and drag limits use
 these displayed dimensions. The shared sizing policy applies the same factor

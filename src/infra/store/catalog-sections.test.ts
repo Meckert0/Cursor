@@ -52,6 +52,13 @@ for (const backend of ["memory", "sqlite", "postgres"] as const) {
       assert.equal(updatedCopy.harnessHeaderDescription, originalCopy.harnessHeaderDescription);
       updatedCopy.adminSectionTitles.database = "Unsaved external change";
       assert.equal((await store.getUiCopySettings()).adminSectionTitles.database, "Part catalog");
+      const headers = await store.updateUiCopySettings({ pageHeaders: {
+        projects: { title: "Cable projects" }, canvas: { title: "Design canvas", description: "Shared canvas instructions" }, library: { description: "" }
+      } });
+      assert.equal(headers.pageHeaders.projects.description, "Custom projects description");
+      await store.updateUiCopySettings({ pageHeaders: { canvas: { title: "Harness designer" } } });
+      headers.pageHeaders.canvas.description = "Unsaved change";
+      assert.equal((await store.getUiCopySettings()).pageHeaders.canvas.description, "Shared canvas instructions");
       const result = await store.ingestLibraryComponents({ requestedByUserId: "test", dryRun: false, items: fixtures });
       assert.equal(result.summary.committed, fixtures.length);
       const group = await store.upsertPartRelationship({ parentPartId: "frame", relationshipType: "MODULE_ALLOWED", compatibleParts: "M-1", parentPositions: ["A"], status: "allowed", source: "manufacturer-drawing" });
@@ -113,6 +120,11 @@ for (const backend of ["memory", "sqlite", "postgres"] as const) {
       assert.equal((await store.getUiCopySettings()).adminSectionTitles.database, "Part catalog");
       assert.equal((await store.getUiCopySettings()).adminSectionTitles.media, "Reference views");
       assert.equal((await store.getUiCopySettings()).projectsHeaderDescription, "Custom projects description");
+      const savedHeaders = (await store.getUiCopySettings()).pageHeaders;
+      assert.equal(savedHeaders.projects.title, "Cable projects");
+      assert.equal(savedHeaders.canvas.title, "Harness designer");
+      assert.equal(savedHeaders.canvas.description, "Shared canvas instructions");
+      assert.equal(savedHeaders.library.description, "");
       const media = await store.listPartMedia({ partId: "module" });
       assert.equal(media.length, 3);
       assert.equal(media.find(row => row.id === first.id)?.isPrimary, false);
@@ -136,6 +148,8 @@ test("migration preserves legacy sources, unresolved targets, scoped rules and n
     await db.query("INSERT INTO app_settings (key, value) VALUES ('ui.projectsHeaderDescription', 'Existing page copy') ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value");
     const legacyCopy = await store.getUiCopySettings();
     assert.equal(legacyCopy.projectsHeaderDescription, "Existing page copy");
+    assert.equal(legacyCopy.pageHeaders.projects.description, "Existing page copy");
+    assert.equal(legacyCopy.pageHeaders.project.description, "Existing page copy");
     assert.equal(legacyCopy.adminSectionTitles.database, "Database", "Existing databases need no settings migration");
     assert.equal((await db.query<{ name: string | null }>("SELECT to_regclass('compatibility_groups') AS name")).rows[0].name, null,
       "The deployment check must not apply migrations");

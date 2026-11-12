@@ -10,6 +10,14 @@ Typing or changing Family filters all three tabs immediately using one shared se
 
 Each item category expands and collapses independently from its heading, which shows its item count. Categories start collapsed; an active search expands the matching categories. The compatibility view always retains Compatibility groups. Pair tables and Aliases appear only when they contain matching records, with an empty selected tab falling back to Compatibility groups. This changes which sections are displayed, without removing catalog data.
 
+## Page titles and descriptions
+
+Admins can right-click a page title or its description to open the page-header editor. Shift+F10 or the context-menu key opens the same popup when the title or description has keyboard focus. Changes are shared with all users when they open or reload that page. Titles accept 1–120 characters; descriptions accept up to 600 characters and may be cleared. Cancel and Escape discard unsaved edits. Failed saves preserve the draft.
+
+Every page uses this editor, including the library, item details, revision workspace, admin pages, and sign-in and registration pages. Signed-in admins can visit `/login` and `/register` to edit their headers; signed-out visitors see the saved text without editing controls. Record fields such as `{harnessName}`, `{partNumber}`, and `{revisionNumber}` retain each record's information; the editor lists the fields available on that page.
+
+The former Global Page Descriptions panel is removed. Existing projects and canvas descriptions are retained as defaults for their corresponding page headers. Page copy uses the existing `app_settings` table under `ui.pageHeaders.<pageKey>.<title|description>`, without a new migration. The page-header write API and server action both require an admin account. Anonymous reads expose only the sign-in and registration headers. Section-name editing in the admin console remains available independently.
+
 ## Items
 
 `parts` remains the common identity/lifecycle/audit record, with one typed detail record per category. Existing categories and IDs are retained. A category is immutable for an existing ID; create a new identity when introducing a different kind of part. Part numbers are text, including leading zeros. Add more items through the existing editors/imports. Adding a new category involves its detail table, domain/API schema and editor metadata; compatibility and media continue referencing the common part ID.

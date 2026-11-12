@@ -7,7 +7,6 @@ import {
   createProject,
   deleteProject,
   getHealth,
-  getPageDescriptions,
   listProjectHarnesses,
   listProjects,
   logoutUser,
@@ -69,22 +68,19 @@ async function logoutAction() {
 export default function Home() {
   const healthPromise = getHealth();
   const projectsPromise = listProjects();
-  const pageDescriptionsPromise = getPageDescriptions();
 
-  return <HomeView healthPromise={healthPromise} projectsPromise={projectsPromise} pageDescriptionsPromise={pageDescriptionsPromise} />;
+  return <HomeView healthPromise={healthPromise} projectsPromise={projectsPromise} />;
 }
 
 async function HomeView(input: {
   healthPromise: ReturnType<typeof getHealth>;
   projectsPromise: ReturnType<typeof listProjects>;
-  pageDescriptionsPromise: ReturnType<typeof getPageDescriptions>;
 }) {
   let healthStatus = "unreachable";
   let healthService = "unknown";
   let healthTime = "n/a";
   let projectError: string | undefined;
   let projects: Awaited<ReturnType<typeof listProjects>> = [];
-  let projectsHeaderDescription = "Projects are collections of cable designs. They can be used to keep cable designs separate.";
 
   try {
     const health = await input.healthPromise;
@@ -101,12 +97,6 @@ async function HomeView(input: {
     projects = await input.projectsPromise;
   } catch (error) {
     projectError = error instanceof Error ? error.message : "Unknown project load failure.";
-  }
-  try {
-    const pageDescriptions = await input.pageDescriptionsPromise;
-    projectsHeaderDescription = pageDescriptions.projectsHeaderDescription;
-  } catch {
-    // keep default fallback copy
   }
   const harnessCountByProjectId = new Map<string, number>();
   if (!projectError && projects.length > 0) {
@@ -125,9 +115,7 @@ async function HomeView(input: {
   return (
     <div className={styles.page}>
       <main className={styles.main}>
-        <PageHeader className={styles.header} user={signedInUser}>
-          <h1>Cable Design Tool Frontend (MVP)</h1>
-          <p>{projectsHeaderDescription}</p>
+        <PageHeader className={styles.header} user={signedInUser} pageKey="projects">
           <div className={styles.headerActions}>
             <form action={logoutAction}>
               <button type="submit" className={styles.inlineSummary}>Log out</button>

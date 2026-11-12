@@ -58,11 +58,7 @@ export default async function HarnessDetailsPage({
   return (
     <div className={styles.page}>
       <main className={styles.main}>
-        <PageHeader className={styles.header} user={signedInUser}>
-          <h1>Details</h1>
-          <p>
-            Harness <strong>{harness.name}</strong>
-          </p>
+        <PageHeader className={styles.header} user={signedInUser} pageKey="details" values={{ harnessName: harness.name }}>
           <div className={styles.actions}>
             <Link href={`/harnesses/${harness.id}/canvas`}>Back to canvas</Link>
           </div>

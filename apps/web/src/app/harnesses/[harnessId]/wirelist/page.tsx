@@ -181,11 +181,7 @@ export default async function HarnessWirelistPage({
   return (
     <div className={styles.page}>
       <main className={styles.main}>
-        <PageHeader className={styles.header} user={signedInUser}>
-          <h1>Wirelist</h1>
-          <p>
-            Harness <strong>{harness.name}</strong>. Spreadsheet edits autosave into revision snapshot data used by Details.
-          </p>
+        <PageHeader className={styles.header} user={signedInUser} pageKey="wirelist" values={{ harnessName: harness.name }}>
           <div className={styles.actions}>
             <Link href={`/harnesses/${harness.id}/canvas`}>Back to canvas</Link>
             <Link href={`/harnesses/${harness.id}/details/new`}>Details</Link>

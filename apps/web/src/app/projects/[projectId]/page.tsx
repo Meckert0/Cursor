@@ -5,7 +5,6 @@ import { redirect } from "next/navigation";
 import {
   createHarness,
   deleteHarness,
-  getPageDescriptions,
   listProjectHarnesses,
   listProjects,
   updateHarness,
@@ -99,7 +98,6 @@ export default async function ProjectPage({
   const { error } = await searchParams;
   const harnessesPromise = listProjectHarnesses(projectId);
   const projectsPromise = listProjects();
-  const pageDescriptionsPromise = getPageDescriptions();
 
   let harnessError: string | undefined;
   let harnesses: Awaited<ReturnType<typeof listProjectHarnesses>> = [];
@@ -114,15 +112,11 @@ export default async function ProjectPage({
   const projectDescription =
     (await projectsPromise.catch(() => [] as Awaited<ReturnType<typeof listProjects>>)).find((project) => project.id === projectId)
       ?.description ?? "";
-  const projectsHeaderDescription = (await pageDescriptionsPromise.catch(() => null))?.projectsHeaderDescription
-    ?? "Each harness is a separate cable assembly. Each harness has its own details history.";
 
   return (
     <div className={styles.page}>
       <main className={styles.main}>
-        <PageHeader className={styles.header} user={signedInUser}>
-          <h1>Project workspace</h1>
-          <p>{projectsHeaderDescription}</p>
+        <PageHeader className={styles.header} user={signedInUser} pageKey="project">
           <p>Project ID: {projectId}</p>
           <div className={styles.actions}>
             <Link href="/">Back to projects</Link>

@@ -1,3 +1,4 @@
+import { PageHeader } from "@/components/page-header";
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
@@ -47,7 +48,7 @@ export default async function RegisterPage({
 }) {
   const { error } = await searchParams;
   const currentUser = await getCurrentUser().catch(() => null);
-  if (currentUser?.user) {
+  if (currentUser?.user && currentUser.user.accountRole !== "admin") {
     redirect("/");
   }
 
@@ -55,8 +56,7 @@ export default async function RegisterPage({
     <div className={styles.page}>
       <main className={styles.main}>
         <section className={styles.card}>
-          <h1>Create account</h1>
-          <p>Register a user account to keep your project data between sessions.</p>
+          <PageHeader pageKey="register" user={currentUser?.user} />
           {error ? <p className={styles.error}>{error}</p> : null}
           <form action={registerAction} className={styles.form}>
             <label>

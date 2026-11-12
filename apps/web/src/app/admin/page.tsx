@@ -209,22 +209,6 @@ async function createItemAction(formData: FormData) {
   revalidatePath("/admin");
 }
 
-async function updatePageDescriptionsAction(formData: FormData) {
-  "use server";
-  await requireAdminUser();
-  const projectsHeaderDescription = String(formData.get("projectsHeaderDescription") ?? "").trim();
-  const harnessHeaderDescription = String(formData.get("harnessHeaderDescription") ?? "").trim();
-  if (!projectsHeaderDescription || !harnessHeaderDescription) {
-    throw new Error("Both description fields are required.");
-  }
-  await updateAdminPageDescriptions({
-    projectsHeaderDescription,
-    harnessHeaderDescription
-  });
-  revalidatePath("/admin");
-  revalidatePath("/");
-}
-
 async function updateSectionNameAction(formData: FormData) {
   "use server";
   await requireAdminUser();
@@ -471,9 +455,7 @@ export default async function AdminOverviewPage({ searchParams }: { searchParams
     <SectionNamesProvider titles={sectionTitles} saveAction={updateSectionNameAction}>
     <div className={styles.page}>
       <main className={styles.main}>
-        <PageHeader className={styles.header} user={signedInUser}>
-          <h1>Admin console</h1>
-          <p>Full visibility across users, projects, harness canvases, and library inventory.</p>
+        <PageHeader className={styles.header} user={signedInUser} pageKey="admin">
           <div className={styles.actionButtons}>
             <Link href="/" className={styles.actionButton}>
               Back to home
@@ -486,38 +468,6 @@ export default async function AdminOverviewPage({ searchParams }: { searchParams
             </Link>
           </div>
         </PageHeader>
-
-        <section className={`${styles.card} ${styles.sectionPanel}`}>
-          <details>
-            <summary className={styles.sectionSummary}>
-              <SectionName name="pageDescriptions" className={styles.sectionTitle} />
-              <span className={styles.sectionHint}>admin editable copy - expand panel</span>
-            </summary>
-            <div className={styles.sectionContent}>
-              <form action={updatePageDescriptionsAction} className={styles.pageDescriptionForm}>
-                <label>
-                  Projects page header description
-                  <textarea
-                    name="projectsHeaderDescription"
-                    rows={3}
-                    defaultValue={pageDescriptions.projectsHeaderDescription}
-                    required
-                  />
-                </label>
-                <label>
-                  Harness page header description
-                  <textarea
-                    name="harnessHeaderDescription"
-                    rows={3}
-                    defaultValue={pageDescriptions.harnessHeaderDescription}
-                    required
-                  />
-                </label>
-                <button type="submit">Save descriptions</button>
-              </form>
-            </div>
-          </details>
-        </section>
 
         <section className={`${styles.card} ${styles.sectionPanel}`}>
           <details>

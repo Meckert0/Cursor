@@ -36,7 +36,7 @@ import {
 } from "../../domain/library.js";
 import { hashDesignSnapshot } from "../../domain/snapshot-hash.js";
 import type { TablePreferencesRecord } from "../../domain/table-preferences.js";
-import { ADMIN_SECTION_KEYS, resolveUiCopySettings, type AdminSectionTitles, type UiCopySettings, type UiCopySettingsUpdate } from "../../domain/ui-settings.js";
+import { mergeUiCopySettings, resolveUiCopySettings, type UiCopySettings, type UiCopySettingsUpdate } from "../../domain/ui-settings.js";
 import type { Store } from "./store.js";
 
 const EMPTY_SNAPSHOT = {
@@ -135,7 +135,7 @@ export class MemoryStore implements Store {
 
   exportState(): MemoryStoreState {
     return {
-      uiCopySettings: { ...this.uiCopySettings, adminSectionTitles: { ...this.uiCopySettings.adminSectionTitles } },
+      uiCopySettings: structuredClone(this.uiCopySettings),
       projects: Array.from(this.projects.values()),
       designs: Array.from(this.designs.values()),
       revisions: Array.from(this.revisions.values()),
@@ -305,29 +305,11 @@ export class MemoryStore implements Store {
   }
 
   async getUiCopySettings(): Promise<UiCopySettings> {
-    return {
-      projectsHeaderDescription: this.uiCopySettings.projectsHeaderDescription,
-      harnessHeaderDescription: this.uiCopySettings.harnessHeaderDescription,
-      adminSectionTitles: { ...this.uiCopySettings.adminSectionTitles }
-    };
+    return structuredClone(this.uiCopySettings);
   }
 
   async updateUiCopySettings(input: UiCopySettingsUpdate): Promise<UiCopySettings> {
-    const nextProjectsHeaderDescription = input.projectsHeaderDescription?.trim();
-    const nextHarnessHeaderDescription = input.harnessHeaderDescription?.trim();
-    this.uiCopySettings = {
-      projectsHeaderDescription:
-        nextProjectsHeaderDescription && nextProjectsHeaderDescription.length > 0
-          ? nextProjectsHeaderDescription
-          : this.uiCopySettings.projectsHeaderDescription,
-      harnessHeaderDescription:
-        nextHarnessHeaderDescription && nextHarnessHeaderDescription.length > 0
-          ? nextHarnessHeaderDescription
-          : this.uiCopySettings.harnessHeaderDescription,
-      adminSectionTitles: Object.fromEntries(ADMIN_SECTION_KEYS.map(key => [
-        key, input.adminSectionTitles?.[key]?.trim() || this.uiCopySettings.adminSectionTitles[key]
-      ])) as AdminSectionTitles
-    };
+    this.uiCopySettings = mergeUiCopySettings(this.uiCopySettings, input);
     return this.getUiCopySettings();
   }
 

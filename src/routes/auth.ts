@@ -4,6 +4,13 @@ import { isAdminEmail, resolveAccountRole } from "../auth/admin.js";
 import type { AccountRole } from "../domain/auth.js";
 import { createSessionToken, getSessionTtlMs, hashPassword, hashSessionToken, verifyPassword } from "../auth/session.js";
 import { requireAdmin, requireRole } from "../auth/rbac.js";
+import { PAGE_KEYS, PUBLIC_PAGE_KEYS, type PageKey } from "../domain/ui-settings.js";
+
+const pageKeySchema = z.enum(PAGE_KEYS as [PageKey, ...PageKey[]]);
+const pageHeaderPayloadSchema = z.object({
+  title: z.string().trim().min(1).max(120).optional(),
+  description: z.string().trim().max(600).optional()
+}).strict().refine(body => body.title !== undefined || body.description !== undefined);
 
 const registerPayloadSchema = z.object({
   username: z
@@ -25,7 +32,6 @@ const updatePageDescriptionsPayloadSchema = z.object({
   projectsHeaderDescription: z.string().trim().min(1).max(600).optional(),
   harnessHeaderDescription: z.string().trim().min(1).max(600).optional(),
   adminSectionTitles: z.object({
-    pageDescriptions: z.string().trim().min(1).max(80).optional(),
     userAccess: z.string().trim().min(1).max(80).optional(),
     database: z.string().trim().min(1).max(80).optional(),
     items: z.string().trim().min(1).max(80).optional(),
@@ -177,6 +183,24 @@ export function registerAuthRoutes(app: FastifyInstance) {
       return;
     }
     return await app.store.getUiCopySettings();
+  });
+
+  app.get("/v1/ui/page-headers/:pageKey", async (request, reply) => {
+    const params = z.object({ pageKey: pageKeySchema }).safeParse(request.params);
+    if (!params.success) return reply.badRequest("Unknown page header.");
+    const { pageKey } = params.data;
+    if (!PUBLIC_PAGE_KEYS.includes(pageKey) && !requireRole(request, reply, ["viewer", "editor", "owner", "supplier_reviewer"]).ok) return;
+    return (await app.store.getUiCopySettings()).pageHeaders[pageKey];
+  });
+
+  app.put("/v1/admin/ui/page-headers/:pageKey", async (request, reply) => {
+    if (!requireAdmin(request, reply).ok) return;
+    const params = z.object({ pageKey: pageKeySchema }).safeParse(request.params);
+    if (!params.success) return reply.badRequest("Unknown page header.");
+    const { pageKey } = params.data;
+    const parsed = pageHeaderPayloadSchema.safeParse(request.body);
+    if (!parsed.success) return reply.badRequest("Enter a page title of 1–120 characters or a description of up to 600 characters.");
+    return (await app.store.updateUiCopySettings({ pageHeaders: { [pageKey]: parsed.data } })).pageHeaders[pageKey];
   });
 
   app.put("/v1/admin/ui/page-descriptions", async (request, reply) => {

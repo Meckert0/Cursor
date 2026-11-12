@@ -9,7 +9,7 @@ test("admin console uses full width, groups database tools and persists section 
   await page.goto("/admin");
   const database = page.locator("#database");
   const tabs = database.getByRole("tab");
-  await expect(page.locator("main > section")).toHaveCount(3);
+  await expect(page.locator("main > section")).toHaveCount(2);
   await expect(tabs).toHaveCount(3);
   const main = await page.getByRole("main").boundingBox();
   expect(main!.x).toBeLessThanOrEqual(1);
@@ -48,7 +48,6 @@ test("admin console uses full width, groups database tools and persists section 
   await expect(page).toHaveURL(/databaseTab=compatibility/);
 
   const renamed = {
-    pageDescriptions: "Page copy",
     userAccess: "Accounts and projects",
     database: "Parts catalog",
     items: "Inventory",
@@ -82,11 +81,11 @@ test("admin console uses full width, groups database tools and persists section 
       await name.click({ button: "right" });
       await expect(page.locator("#database-tab-compatibility")).toHaveAttribute("aria-selected", "true");
       await expect(database.locator(":scope > details")).toHaveAttribute("open", "");
-      if (key === "pageDescriptions") {
+      if (key === "database") {
         await page.screenshot({ path: testInfo.outputPath("section-rename-menu.png"), caret: "initial" });
       }
       await page.getByRole("menuitem", { name: "Rename", exact: true }).click();
-      if (key === "pageDescriptions") {
+      if (key === "database") {
         await page.screenshot({ path: testInfo.outputPath("section-rename-dialog.png"), caret: "initial" });
         await dialog.getByRole("textbox", { name: "Section name", exact: true }).fill("   ");
         await dialog.getByRole("button", { name: "Save name", exact: true }).click();
@@ -99,8 +98,7 @@ test("admin console uses full width, groups database tools and persists section 
     }
     await expect(database.locator(":scope > details > summary")).toContainText(renamed.database);
     await page.reload();
-    await expect(page.locator("main > section > details > summary").nth(0)).toContainText(renamed.pageDescriptions);
-    await expect(page.locator("main > section > details > summary").nth(1)).toContainText(renamed.userAccess);
+    await expect(page.locator("main > section > details > summary").nth(0)).toContainText(renamed.userAccess);
     await expect(database.getByRole("tab", { name: renamed.compatibility, exact: true })).toHaveAttribute("aria-selected", "true");
     for (const name of [renamed.items, renamed.compatibility, renamed.media]) await expect(database.getByRole("tab", { name, exact: true })).toBeVisible();
     const response = await apiAsPageUser(page, "/v1/ui/page-descriptions");

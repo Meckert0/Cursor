@@ -4,7 +4,6 @@ import { revalidatePath } from "next/cache";
 import { CableCanvas } from "@/components/cable-canvas";
 import {
   getHarness,
-  getPageDescriptions,
   getRevision,
   ingestLibraryComponents,
   listCanvasSideProfiles,
@@ -50,7 +49,6 @@ export default async function HarnessCanvasPage({
   const { harnessId } = await params;
   const { mode } = await searchParams;
   const harness = await getHarness(harnessId);
-  const pageDescriptions = await getPageDescriptions();
   const adminIsViewingAnotherUsersCanvas = signedInUser.accountRole === "admin" && harness.createdBy !== signedInUser.id;
   const isReadOnly = adminIsViewingAnotherUsersCanvas && mode !== "edit";
   const revision = await getRevision(harness.currentRevisionId);
@@ -219,9 +217,7 @@ export default async function HarnessCanvasPage({
   return (
     <div className={styles.page}>
       <main className={styles.main}>
-        <PageHeader className={styles.header} user={signedInUser}>
-          <h1>Harness Canvas</h1>
-          <p>{pageDescriptions.harnessHeaderDescription}</p>
+        <PageHeader className={styles.header} user={signedInUser} pageKey="canvas">
           <div className={styles.actions}>
             <Link href={`/projects/${harness.projectId}`}>Back to project</Link>
             <Link href={`/harnesses/${harness.id}/wirelist`}>Wirelist</Link>

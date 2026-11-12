@@ -98,9 +98,7 @@ export default async function AdminDatastoresPage({
   return (
     <div className={styles.page}>
       <main className={styles.main}>
-        <PageHeader className={styles.header} user={signedInUser}>
-          <h1>Datastore Admin Console (Phase 7)</h1>
-          <p>Review queue for unreviewed library entries. Reviewed entries become globally visible.</p>
+        <PageHeader className={styles.header} user={signedInUser} pageKey="datastores">
           <p>
             <Link href="/">Back to home</Link>
           </p>

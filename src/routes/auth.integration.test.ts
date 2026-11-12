@@ -8,6 +8,7 @@ import { FileArtifactStorage } from "../infra/storage/file-artifact-storage.js";
 import { PassthroughArtifactDownloadUrlResolver } from "../infra/storage/artifact-download-url-resolver.js";
 import { ExportQueueService } from "../services/export-queue.js";
 import { createSessionToken, hashPassword, hashSessionToken } from "../auth/session.js";
+import { PAGE_KEYS, PUBLIC_PAGE_KEYS } from "../domain/ui-settings.js";
 
 process.env.ENABLE_LEGACY_HEADER_AUTH = "true";
 
@@ -429,6 +430,48 @@ test("admin can update page descriptions and non-admin cannot", async () => {
     assert.equal(finalRead.json().projectsHeaderDescription, payload.projectsHeaderDescription);
   } finally {
     await app.close();
+  }
+});
+
+test("only admin accounts edit page headers and their changes are shared with all readers", async () => {
+  const legacyAuth = process.env.ENABLE_LEGACY_HEADER_AUTH;
+  process.env.ENABLE_LEGACY_HEADER_AUTH = "false";
+  const app = buildTestApp();
+  try {
+    const admin = await registerAndGetCookie(app, "header-admin", "meckert@vpc.com");
+    const regular = await registerAndGetCookie(app, "header-reader", "header-reader@example.com");
+    for (const key of PAGE_KEYS) {
+      const url = `/v1/admin/ui/page-headers/${key}`;
+      if (!PUBLIC_PAGE_KEYS.includes(key)) {
+        assert.equal((await app.inject({ method: "GET", url: `/v1/ui/page-headers/${key}` })).statusCode, 401);
+      }
+      assert.equal((await app.inject({ method: "PUT", url, payload: { title: "Anonymous" } })).statusCode, 401);
+      assert.equal((await app.inject({ method: "PUT", url, headers: { cookie: regular.cookie, "x-role": "owner" }, payload: { title: "Blocked" } })).statusCode, 403);
+      const copy = { title: `Shared ${key}`, description: `Shared description for ${key}` };
+      const saved = await app.inject({ method: "PUT", url, headers: { cookie: admin.cookie }, payload: copy });
+      assert.equal(saved.statusCode, 200);
+      assert.deepEqual(saved.json(), copy);
+      const read = await app.inject({ method: "GET", url: `/v1/ui/page-headers/${key}`, headers: { cookie: regular.cookie } });
+      assert.deepEqual(read.json(), copy);
+      const partial = await app.inject({ method: "PUT", url, headers: { cookie: admin.cookie }, payload: { title: `Renamed ${key}` } });
+      assert.deepEqual(partial.json(), { ...copy, title: `Renamed ${key}` });
+      for (const payload of [{}, { title: "  " }, { title: "x".repeat(121) }, { description: "x".repeat(601) }, { unknown: "not a header" }]) {
+        assert.equal((await app.inject({ method: "PUT", url, headers: { cookie: admin.cookie }, payload })).statusCode, 400);
+      }
+    }
+    for (const key of PUBLIC_PAGE_KEYS) {
+      const publicRead = await app.inject({ method: "GET", url: `/v1/ui/page-headers/${key}` });
+      assert.deepEqual(publicRead.json(), { title: `Renamed ${key}`, description: `Shared description for ${key}` });
+    }
+    const cleared = await app.inject({ method: "PUT", url: "/v1/admin/ui/page-headers/canvas", headers: { cookie: admin.cookie }, payload: { description: "" } });
+    assert.equal(cleared.statusCode, 200);
+    assert.equal(cleared.json().description, "");
+    assert.equal(cleared.json().title, "Renamed canvas");
+    assert.equal((await app.inject({ method: "PUT", url: "/v1/admin/ui/page-headers/unknown", headers: { cookie: admin.cookie }, payload: { title: "Blocked" } })).statusCode, 400);
+  } finally {
+    await app.close();
+    if (legacyAuth === undefined) delete process.env.ENABLE_LEGACY_HEADER_AUTH;
+    else process.env.ENABLE_LEGACY_HEADER_AUTH = legacyAuth;
   }
 });
 

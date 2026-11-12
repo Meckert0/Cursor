@@ -1,3 +1,4 @@
+import { PageHeader } from "@/components/page-header";
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
@@ -39,7 +40,7 @@ export default async function LoginPage({
 }) {
   const { error } = await searchParams;
   const currentUser = await getCurrentUser().catch(() => null);
-  if (currentUser?.user) {
+  if (currentUser?.user && currentUser.user.accountRole !== "admin") {
     redirect("/");
   }
 
@@ -47,8 +48,7 @@ export default async function LoginPage({
     <div className={styles.page}>
       <main className={styles.main}>
         <section className={styles.card}>
-          <h1>Sign in</h1>
-          <p>Sign in to load your projects and harness data.</p>
+          <PageHeader pageKey="login" user={currentUser?.user} />
           {error ? <p className={styles.error}>{error}</p> : null}
           <form action={loginAction} className={styles.form}>
             <label>

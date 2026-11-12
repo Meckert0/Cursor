@@ -34,9 +34,7 @@ export default async function LibraryPage({
   return (
     <div className={styles.page}>
       <main className={styles.main}>
-        <PageHeader className={styles.header} user={signedInUser}>
-          <h1>Library catalog</h1>
-          <p>Search and filter all item categories.</p>
+        <PageHeader className={styles.header} user={signedInUser} pageKey="library">
           <Link href="/">Back to projects</Link>
         </PageHeader>
 

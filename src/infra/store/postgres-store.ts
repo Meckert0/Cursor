@@ -50,7 +50,7 @@ import type {
 import { emptyAttributesForCategory, normalizePartRelationship } from "../../domain/library.js";
 import { hashDesignSnapshot } from "../../domain/snapshot-hash.js";
 import type { TablePreferencesRecord } from "../../domain/table-preferences.js";
-import { ADMIN_SECTION_KEYS, resolveUiCopySettings, type AdminSectionTitles, type UiCopySettings, type UiCopySettingsUpdate } from "../../domain/ui-settings.js";
+import { ADMIN_SECTION_KEYS, PAGE_KEYS, pageHeaderUpdates, resolveUiCopySettings, type AdminSectionTitles, type UiCopySettings, type UiCopySettingsUpdate, type PageHeaderUpdates } from "../../domain/ui-settings.js";
 import type { Store } from "./store.js";
 
 const PART_COLUMNS = `id, category, family, part_number, description, is_active, stock_status, import_batch_id,
@@ -1428,12 +1428,15 @@ export class PostgresStore implements Store {
       `SELECT key, value
        FROM app_settings
        WHERE key = ANY($1::text[])`,
-      [["ui.projectsHeaderDescription", "ui.harnessHeaderDescription", ...ADMIN_SECTION_KEYS.map(key => `ui.adminSectionTitles.${key}`)]]
+      [["ui.projectsHeaderDescription", "ui.harnessHeaderDescription", ...ADMIN_SECTION_KEYS.map(key => `ui.adminSectionTitles.${key}`), ...PAGE_KEYS.flatMap(key => [`ui.pageHeaders.${key}.title`, `ui.pageHeaders.${key}.description`])]]
     );
     const byKey = new Map(result.rows.map((row) => [row.key, row.value]));
     return resolveUiCopySettings({
       projectsHeaderDescription: byKey.get("ui.projectsHeaderDescription"),
       harnessHeaderDescription: byKey.get("ui.harnessHeaderDescription"),
+      pageHeaders: Object.fromEntries(PAGE_KEYS.map(key => [key, {
+        title: byKey.get(`ui.pageHeaders.${key}.title`), description: byKey.get(`ui.pageHeaders.${key}.description`)
+      }])) as PageHeaderUpdates,
       adminSectionTitles: Object.fromEntries(ADMIN_SECTION_KEYS.map(key => [
         key, byKey.get(`ui.adminSectionTitles.${key}`)
       ])) as Partial<AdminSectionTitles>
@@ -1449,6 +1452,13 @@ export class PostgresStore implements Store {
     for (const key of ADMIN_SECTION_KEYS) {
       const value = input.adminSectionTitles?.[key]?.trim();
       if (value) entries.push([`ui.adminSectionTitles.${key}`, value]);
+    }
+    const headers = pageHeaderUpdates(input);
+    for (const key of PAGE_KEYS) {
+      for (const field of ["title", "description"] as const) {
+        const value = headers[key]?.[field];
+        if (value !== undefined) entries.push([`ui.pageHeaders.${key}.${field}`, value.trim()]);
+      }
     }
     if (entries.length) await this.pool.query(
       `INSERT INTO app_settings (key, value, updated_at)

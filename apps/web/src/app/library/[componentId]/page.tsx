@@ -19,9 +19,7 @@ export default async function LibraryComponentDetailPage({
   return (
     <div className={styles.page}>
       <main className={styles.main}>
-        <PageHeader className={styles.header} user={signedInUser}>
-          <h1>{component.partNumber}</h1>
-          <p>{component.description}</p>
+        <PageHeader className={styles.header} user={signedInUser} pageKey="libraryItem" values={{ partNumber: component.partNumber, partDescription: component.description }}>
           <div className={styles.meta}>
             <span>{component.category}</span>
             <span>{component.family}</span>

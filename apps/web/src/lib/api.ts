@@ -1,6 +1,8 @@
 import type { AdminSectionTitles } from "../../../../src/domain/ui-settings.ts";
+import type { PageKey, PageHeaderCopy } from "../../../../src/domain/ui-settings.ts";
 export { ADMIN_SECTION_KEYS, DEFAULT_ADMIN_SECTION_TITLES } from "../../../../src/domain/ui-settings.ts";
 export type { AdminSectionKey, AdminSectionTitles } from "../../../../src/domain/ui-settings.ts";
+export type { PageKey, PageHeaderCopy } from "../../../../src/domain/ui-settings.ts";
 
 export interface HealthResponse {
   ok: boolean;
@@ -562,6 +564,14 @@ export async function listAdminUsers(): Promise<AuthUserDto[]> {
 
 export function getPageDescriptions(): Promise<PageDescriptionsDto> {
   return apiRequest<PageDescriptionsDto>("/v1/ui/page-descriptions");
+}
+
+export function getPageHeaderCopy(pageKey: PageKey): Promise<PageHeaderCopy> {
+  return apiRequest<PageHeaderCopy>(`/v1/ui/page-headers/${encodeURIComponent(pageKey)}`);
+}
+
+export function updatePageHeaderCopy(pageKey: PageKey, copy: Partial<PageHeaderCopy>): Promise<PageHeaderCopy> {
+  return apiRequest<PageHeaderCopy>(`/v1/admin/ui/page-headers/${encodeURIComponent(pageKey)}`, { method: "PUT", body: copy });
 }
 
 export function updateAdminPageDescriptions(input: {

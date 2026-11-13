@@ -272,6 +272,20 @@ const compatibleAccessorySchema = z.object({
   z.object({ category: z.literal("strain-relief"), attributes: strainReliefAttributesSchema.default({}) })
 ]));
 
+const canvasItemSchema = z.object({
+  harnessId: z.string().uuid(),
+  partNumber: z.string().trim().min(1),
+  family: z.string().trim().min(1),
+  description: z.string().trim().min(1)
+}).and(z.discriminatedUnion("category", [
+  z.object({ category: z.literal("backshell"), parentPartId: z.string().min(1), attributes: backshellAttributesSchema.default({ fitments: [] }) }),
+  z.object({ category: z.literal("strain-relief"), parentPartId: z.string().min(1), attributes: strainReliefAttributesSchema.default({}) }),
+  z.object({ category: z.literal("module"), attributes: moduleAttributesSchema.default({ pinIds: [], contactPositions: [], simSlotSections: [] }) }),
+  z.object({ category: z.literal("frame"), partType: z.enum(["ITA", "RECEIVER"]), attributes: frameAttributesSchema.refine(
+    attributes => Boolean(attributes.slotIds.length || attributes.moduleCapacity), { message: "Specify a module capacity or slot IDs for the frame." }
+  ) })
+]));
+
 const updateReviewSchema = z.object({
   reviewedByUserId: z.string().min(1).optional(),
   reviewedAt: z.string().datetime().optional()
@@ -726,6 +740,42 @@ export function registerLibraryRoutes(app: FastifyInstance) {
       columnWidths: saved.columnWidths,
       updatedAt: saved.updatedAt
     };
+  });
+
+  app.post("/v1/library/components/canvas-item", async (request, reply) => {
+    if (!requireRole(request, reply, ["editor", "owner"]).ok) return;
+    const parsed = canvasItemSchema.safeParse(request.body);
+    if (!parsed.success) return reply.badRequest(parsed.error.issues.map(issue => issue.message).join("; "));
+    const body = parsed.data;
+    const harness = await app.store.getDesign(body.harnessId);
+    if (!harness) return reply.notFound("Harness not found.");
+    const membership = await requireProjectMembership({ request, reply, store: app.store, projectId: harness.projectId, allowedRoles: ["editor", "owner"] });
+    if (!membership.ok) return;
+    const canViewAllUnreviewed = request.currentUser?.accountRole === "admin";
+    if (body.category === "backshell" || body.category === "strain-relief") {
+      return reply.code(201).send(await app.store.createCompatibleAccessory({
+        ...body, requestedByUserId: membership.userId, canViewAllUnreviewed
+      }));
+    }
+    const result = await app.store.ingestLibraryComponents({
+      requestedByUserId: membership.userId, dryRun: false, items: [normalizeBlankModuleFamily({
+        category: body.category, partNumber: body.partNumber, family: body.family, description: body.description,
+        isActive: true, isReviewed: false, stockStatus: "in_stock" as const, attributes: body.attributes,
+        partType: body.category === "frame" ? body.partType : "MODULE",
+        ...(body.category === "frame" ? { side: body.partType, electricalMode: "NONE" } : {})
+      })]
+    });
+    if (result.summary.committed !== 1) {
+      const message = result.results[0]?.message ?? "Could not create the item.";
+      return /duplicate|already exists/i.test(message) ? reply.conflict(message) : reply.badRequest(message);
+    }
+    const componentId = result.results[0]?.componentId;
+    if (!componentId) throw new Error("The created item could not be loaded.");
+    const part = await app.store.getLibraryComponent({
+      componentId, requestingUserId: membership.userId, canViewAllUnreviewed, canViewInactive: false
+    });
+    if (!part) return reply.notFound("The new item is no longer available.");
+    return reply.code(201).send({ part });
   });
 
   app.post("/v1/library/components/compatible-accessory", async (request, reply) => {

@@ -12,8 +12,8 @@ import {
 
 test.use({ actionTimeout: 15_000 });
 
-async function fillNewPart(page: Page, category: "backshell" | "strain-relief", partNumber: string, description: string) {
-  const dialog = page.getByRole("dialog", { name: "Add compatible part", exact: true });
+async function fillNewPart(page: Page, category: "module" | "frame" | "backshell" | "strain-relief", partNumber: string, description: string) {
+  const dialog = page.getByRole("dialog", { name: "Create new Item", exact: true });
   await expect(dialog).toBeVisible();
   await dialog.getByRole("combobox", { name: "Category", exact: true }).selectOption(category);
   await dialog.getByLabel("Part number", { exact: true }).fill(partNumber);
@@ -64,10 +64,10 @@ test("regular users create compatible accessories on connectors and frame module
   await page.getByRole("button", { name: "Connector J1", exact: true }).click();
   await expect(page.getByRole("combobox", { name: "Backshell", exact: true })).toHaveCount(0);
   await expect(page.getByRole("combobox", { name: "Strain relief", exact: true })).toHaveCount(0);
-  await page.getByRole("button", { name: "Add compatible part", exact: true }).click();
+  await page.getByRole("button", { name: "Create new Item", exact: true }).click();
   const backshellDialog = await fillNewPart(page, "backshell", backshellPn, "New backshell for the standalone connector");
-  await backshellDialog.screenshot({ path: testInfo.outputPath("add-compatible-part.png") });
-  await backshellDialog.getByRole("button", { name: "Create and add part", exact: true }).click();
+  await backshellDialog.screenshot({ path: testInfo.outputPath("create-new-item.png") });
+  await backshellDialog.getByRole("button", { name: "Create item", exact: true }).click();
   await expect(backshellDialog).not.toBeVisible();
   const backshellSelect = page.getByRole("combobox", { name: "Backshell", exact: true });
   await expect(backshellSelect).toBeVisible();
@@ -85,9 +85,9 @@ test("regular users create compatible accessories on connectors and frame module
     expect.objectContaining({ relationshipType: "BACKSHELL_ALLOWED", targetPartIds: [backshellId], status: "allowed" })
   ]));
 
-  await page.getByRole("button", { name: "Add compatible part", exact: true }).click();
+  await page.getByRole("button", { name: "Create new Item", exact: true }).click();
   const duplicateDialog = await fillNewPart(page, "backshell", backshellPn, "This duplicate must not replace the original");
-  await duplicateDialog.getByRole("button", { name: "Create and add part", exact: true }).click();
+  await duplicateDialog.getByRole("button", { name: "Create item", exact: true }).click();
   await expect(duplicateDialog).toBeVisible();
   const duplicateError = duplicateDialog.getByRole("alert");
   await expect(duplicateError).toContainText(/already exists|already in|duplicate/i);
@@ -102,15 +102,15 @@ test("regular users create compatible accessories on connectors and frame module
   const slotB = page.getByRole("article", { name: "Slot B module", exact: true });
   await expect(page.getByRole("combobox", { name: "Slot A backshell", exact: true })).toHaveCount(0);
   await expect(page.getByRole("combobox", { name: "Slot A strain relief", exact: true })).toHaveCount(0);
-  await slotB.getByRole("button", { name: "Add compatible part", exact: true }).click();
-  const blankDialog = page.getByRole("dialog", { name: "Add compatible part", exact: true });
+  await slotB.getByRole("button", { name: "Create new Item", exact: true }).click();
+  const blankDialog = page.getByRole("dialog", { name: "Create new Item", exact: true });
   const categories = blankDialog.getByRole("combobox", { name: "Category", exact: true });
   await expect(categories.locator('option[value="strain-relief"]')).toHaveJSProperty("disabled", true);
   await expect(categories.locator('option[value="backshell"]')).toHaveJSProperty("disabled", false);
   await blankDialog.getByRole("button", { name: "Cancel", exact: true }).click();
-  await slotA.getByRole("button", { name: "Add compatible part", exact: true }).click();
+  await slotA.getByRole("button", { name: "Create new Item", exact: true }).click();
   const reliefDialog = await fillNewPart(page, "strain-relief", reliefPn, "New strain relief for slot A");
-  await reliefDialog.getByRole("button", { name: "Create and add part", exact: true }).click();
+  await reliefDialog.getByRole("button", { name: "Create item", exact: true }).click();
   await expect(reliefDialog).not.toBeVisible();
   const slotReliefSelect = page.getByRole("combobox", { name: "Slot A strain relief", exact: true });
   const reliefId = await slotReliefSelect.inputValue();
@@ -140,6 +140,62 @@ test("regular users create compatible accessories on connectors and frame module
     const adminPage = await adminContext.newPage();
     await adminPage.goto(`/harnesses/${harnessId}/canvas`);
     await expect(adminPage.getByRole("button", { name: "Connector J1", exact: true })).toBeDisabled();
-    await expect(adminPage.getByRole("button", { name: "Add compatible part", exact: true })).toHaveCount(0);
+    await expect(adminPage.getByRole("button", { name: "Create new Item", exact: true })).toBeDisabled();
   } finally { await adminContext.close(); }
+});
+
+test("Create new Item is compact and right aligned and adds modules and frames to an empty canvas", async ({ page }, testInfo) => {
+  const token = uniqueToken();
+  const modulePn = `NEW-MODULE-${token}`, framePn = `NEW-FRAME-${token}`;
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await registerAndSignIn(page, { username: `new-item-${token}`, email: `new-item-${token}@example.com` });
+  await createProjectAndOpenProjectPage(page, `New item project ${token}`);
+  await createHarnessOnProjectPage(page, `New item harness ${token}`);
+  const harnessId = /\/harnesses\/([^/]+)\/canvas/.exec(page.url())![1];
+  const harness = await (await apiAsPageUser(page, `/v1/harnesses/${harnessId}`)).json();
+  const revisionId = harness.currentRevisionId;
+  const readRevision = async () => (await apiAsPageUser(page, `/v1/revisions/${revisionId}`)).json();
+  const initial = await readRevision();
+  const button = page.getByRole("button", { name: "Create new Item", exact: true });
+  const measure = () => button.evaluate(element => ({
+    rightGap: element.parentElement!.getBoundingClientRect().right - element.getBoundingClientRect().right,
+    height: element.getBoundingClientRect().height, fontSize: parseFloat(getComputedStyle(element).fontSize)
+  }));
+  const emptySize = await measure();
+  expect(emptySize.rightGap).toBeLessThan(2);
+  expect(emptySize.height).toBeLessThan(30);
+  expect(emptySize.fontSize).toBeLessThanOrEqual(11);
+  await expect(page.getByRole("button", { name: "Add compatible part", exact: true })).toHaveCount(0);
+  await button.click();
+  const dialog = await fillNewPart(page, "module", modulePn, "Created module / connector");
+  const category = dialog.getByRole("combobox", { name: "Category", exact: true });
+  for (const value of ["module", "frame", "backshell", "strain-relief"]) await expect(category.locator(`option[value="${value}"]`)).toHaveCount(1);
+  await dialog.locator("summary").click();
+  await dialog.getByLabel("Pin count", { exact: true }).fill("2");
+  await dialog.getByRole("button", { name: "Create item", exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+  await expect(page.getByRole("button", { name: "Change connector", exact: true })).toContainText(modulePn);
+  await expect.poll(async () => (await readRevision()).snapshot.connectors.length).toBe(initial.snapshot.connectors.length + 1);
+  const createdModule = (await readRevision()).snapshot.connectors.find((part: { partNumber: string }) => part.partNumber === modulePn);
+  expect(createdModule.pins).toHaveLength(2);
+  expect((await measure()).rightGap).toBeLessThan(2);
+  await button.click();
+  const frameDialog = await fillNewPart(page, "frame", framePn, "Created receiver frame");
+  await frameDialog.getByRole("combobox", { name: "Housing type", exact: true }).selectOption("RECEIVER");
+  await frameDialog.getByLabel("Module capacity", { exact: true }).fill("3");
+  await frameDialog.screenshot({ path: testInfo.outputPath("create-frame.png") });
+  await frameDialog.getByRole("button", { name: "Create item", exact: true }).click();
+  await expect(frameDialog).not.toBeVisible();
+  await expect(page.getByRole("button", { name: "Change frame", exact: true })).toContainText(framePn);
+  await expect(page.getByRole("button", { name: "Define slot A module", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Define slot C module", exact: true })).toBeVisible();
+  await expect.poll(async () => (await readRevision()).snapshot.connectors.length).toBe(initial.snapshot.connectors.length + 2);
+  const saved = await readRevision();
+  const frame = saved.snapshot.connectors.find((part: { partNumber: string }) => part.partNumber === framePn);
+  expect(frame.slots.map((slot: { slotId: string }) => slot.slotId)).toEqual(["A", "B", "C"]);
+  const catalog = await (await apiAsPageUser(page, `/v1/library/components/${frame.libraryComponentId}`)).json();
+  expect(catalog).toMatchObject({ category: "frame", partType: "RECEIVER", side: "RECEIVER", isReviewed: false });
+  await page.reload();
+  await expect(page.getByRole("button", { name: `Connector ${createdModule.reference}`, exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: `Frame ${frame.reference}`, exact: true })).toBeVisible();
 });

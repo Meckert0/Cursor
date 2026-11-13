@@ -959,6 +959,19 @@ export async function deletePartRelationship(input: { id: string }): Promise<voi
   });
 }
 
+export function createCanvasItem(input: {
+  harnessId: string;
+  parentPartId?: string;
+  category: "module" | "frame" | "backshell" | "strain-relief";
+  partNumber: string;
+  family: string;
+  description: string;
+  partType?: "ITA" | "RECEIVER";
+  attributes: PartAttributesDto;
+}): Promise<{ part: LibraryComponentDto; relationship?: PartRelationshipDto }> {
+  return apiRequest("/v1/library/components/canvas-item", { method: "POST", body: input });
+}
+
 export function createCompatibleAccessory(input: {
   harnessId: string;
   parentPartId: string;

@@ -4,9 +4,9 @@ import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import type { LibraryComponentDto, PartRelationshipDto } from "@/lib/api";
 import { getPartFieldsForCategory } from "@/lib/part-fields";
-import styles from "./compatible-part-dialog.module.css";
+import styles from "./create-item-dialog.module.css";
 
-export interface CompatiblePartCreateResult {
+export interface CreateItemResult {
   ok: boolean;
   error?: string;
   notice?: string;
@@ -14,17 +14,17 @@ export interface CompatiblePartCreateResult {
   relationship?: PartRelationshipDto;
 }
 
-export function CompatiblePartDialog({ parentPartNumber, destination, allowStrainRelief, onCreate, onClose }: {
-  parentPartNumber: string;
-  destination: string;
+export function CreateItemDialog({ parentPartNumber, destination, allowStrainRelief, onCreate, onClose }: {
+  parentPartNumber?: string;
+  destination?: string;
   allowStrainRelief: boolean;
-  onCreate: (data: FormData) => Promise<CompatiblePartCreateResult>;
+  onCreate: (data: FormData) => Promise<CreateItemResult>;
   onClose: () => void;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const partNumberRef = useRef<HTMLInputElement>(null);
   const id = useId();
-  const [category, setCategory] = useState<"backshell" | "strain-relief">("backshell");
+  const [category, setCategory] = useState<"module" | "frame" | "backshell" | "strain-relief">("module");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -46,25 +46,34 @@ export function CompatiblePartDialog({ parentPartNumber, destination, allowStrai
     try {
       const result = await onCreate(data);
       if (result.ok) onClose();
-      else setError(result.error ?? "Could not create the compatible part.");
+      else setError(result.error ?? "Could not create the item.");
     } catch (error) {
-      setError(error instanceof Error ? error.message : "Could not create the compatible part. Please try again.");
+      setError(error instanceof Error ? error.message : "Could not create the item. Please try again.");
     } finally { setPending(false); }
   };
-  const fields = getPartFieldsForCategory(category).filter(field => !field.isIdentity && field.showOnAddForm);
-  return createPortal(<dialog ref={dialogRef} className={styles.dialog} aria-label="Add compatible part" aria-describedby={`${id}-description`}
+  const isAccessory = category === "backshell" || category === "strain-relief";
+  const fields = getPartFieldsForCategory(category).filter(field => !field.isIdentity && field.showOnAddForm && !(category === "frame" && field.key === "moduleCapacity"));
+  return createPortal(<dialog ref={dialogRef} className={styles.dialog} aria-label="Create new Item" aria-describedby={`${id}-description`}
     onCancel={event => { event.preventDefault(); if (!pending) onClose(); }}>
     <header className={styles.header}>
-      <div><h2>Add compatible part</h2><p id={`${id}-description`}>Create an accessory for {destination} and link it to part {parentPartNumber}.</p></div>
-      <button type="button" aria-label="Close add compatible part" disabled={pending} onClick={onClose}>×</button>
+      <div><h2>Create new Item</h2><p id={`${id}-description`}>{isAccessory
+        ? `Create an accessory for ${destination} and link it to part ${parentPartNumber}.`
+        : `Create a library item and add a new ${category === "frame" ? "frame" : "connector"} to the canvas.`}</p></div>
+      <button type="button" aria-label="Close create new Item" disabled={pending} onClick={onClose}>×</button>
     </header>
     <form onSubmit={submit} aria-busy={pending}>
       <fieldset disabled={pending} className={styles.fields}>
         <label>Category<select name="category" value={category} onChange={event => { setCategory(event.target.value as typeof category); setError(null); }}>
-          <option value="backshell">Backshell</option>
-          <option value="strain-relief" disabled={!allowStrainRelief}>Strain relief</option>
+          <option value="module">Module / connector</option>
+          <option value="frame">Frame</option>
+          <option value="backshell" disabled={!parentPartNumber}>Backshell</option>
+          <option value="strain-relief" disabled={!parentPartNumber || !allowStrainRelief}>Strain relief</option>
         </select></label>
-        {!allowStrainRelief ? <p className={styles.hint}>Blank modules cannot use strain reliefs.</p> : null}
+        {!parentPartNumber ? <p className={styles.hint}>Select a defined connector or frame module to create compatible accessories.</p> : isAccessory && !allowStrainRelief ? <p className={styles.hint}>Blank modules cannot use strain reliefs.</p> : null}
+        {category === "frame" ? <>
+          <label>Housing type<select name="partType" defaultValue="ITA" required><option value="ITA">ITA housing</option><option value="RECEIVER">Receiver housing</option></select></label>
+          <label>Module capacity<input name="attr:moduleCapacity" type="number" defaultValue={2} min={1} step={1} required /></label>
+        </> : null}
         <label>Part number<input ref={partNumberRef} name="partNumber" required maxLength={200} /></label>
         <label>Family<input name="family" placeholder="e.g. iSeries" maxLength={200} /></label>
         <label>Description<textarea name="description" rows={2} maxLength={2000} /></label>
@@ -76,7 +85,7 @@ export function CompatiblePartDialog({ parentPartNumber, destination, allowStrai
         </details> : null}
       </fieldset>
       {error ? <p role="alert" className={styles.error}>{error}</p> : null}
-      <footer className={styles.actions}><button type="button" onClick={onClose} disabled={pending}>Cancel</button><button className={styles.primary} type="submit" disabled={pending}>{pending ? "Creating part…" : "Create and add part"}</button></footer>
+      <footer className={styles.actions}><button type="button" onClick={onClose} disabled={pending}>Cancel</button><button className={styles.primary} type="submit" disabled={pending}>{pending ? "Creating item…" : "Create item"}</button></footer>
     </form>
   </dialog>, document.body);
 }

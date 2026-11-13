@@ -59,6 +59,58 @@ test("designers can create only new compatible accessories through the scoped ca
   } finally { await app.close(); }
 });
 
+test("canvas item creation supports modules and frames without granting access outside the project", async () => {
+  const store = new MemoryStore();
+  const authStore = new MemoryAuthStore();
+  const storage = new FileArtifactStorage(process.cwd());
+  const app = buildApp({ store, authStore, lockManager: new MemoryLockManager(), artifactStorage: storage, artifactDownloadUrlResolver: new PassthroughArtifactDownloadUrlResolver(), exportQueue: new ExportQueueService(store, storage) });
+  try {
+    const session = async (username: string, role: "editor" | "viewer" = "editor") => {
+      const user = await authStore.createUser({ username, email: `${username}@example.com`, passwordHash: "unused", role, accountRole: "regular" });
+      const token = `session-${username}`;
+      await authStore.createSession({ userId: user.id, tokenHash: hashSessionToken(token), expiresAt: new Date(Date.now() + 60_000).toISOString() });
+      return { user, headers: { cookie: `cdt_session=${token}` } };
+    };
+    const creator = await session("item-creator"), outsider = await session("item-outsider"), viewer = await session("item-viewer", "viewer");
+    const project = await store.createProject({ name: "New item project", createdBy: creator.user.id });
+    const harness = await store.createDesign({ projectId: project.id, name: "New item harness", createdBy: creator.user.id });
+    await store.upsertProjectMember({ projectId: project.id, userId: viewer.user.id, role: "viewer" });
+    const endpoint = "/v1/library/components/canvas-item";
+    const payload = { harnessId: harness.id, category: "module", partNumber: "NEW-MODULE", family: "Custom", description: "New connector", attributes: { pinCount: 2, pinIds: ["1", "2"] } };
+    for (const headers of [undefined, outsider.headers, viewer.headers]) {
+      assert.equal((await app.inject({ method: "POST", url: endpoint, headers, payload })).statusCode, headers ? 403 : 401);
+    }
+    const created = await app.inject({ method: "POST", url: endpoint, headers: creator.headers, payload });
+    assert.equal(created.statusCode, 201, created.body);
+    const module = created.json().part;
+    assert.equal(module.partType, "MODULE");
+    assert.equal(module.isReviewed, false);
+    assert.equal(module.createdByUserId, creator.user.id);
+    assert.deepEqual(module.attributes.pinIds, ["1", "2"]);
+    assert.equal(created.json().relationship, undefined);
+    const duplicate = await app.inject({ method: "POST", url: endpoint, headers: creator.headers, payload: { ...payload, description: "Must not overwrite" } });
+    assert.equal(duplicate.statusCode, 409, duplicate.body);
+    assert.equal((await store.getLibraryComponent({ componentId: module.id, requestingUserId: creator.user.id, canViewAllUnreviewed: false, canViewInactive: false }))?.description, payload.description);
+    for (const partType of ["ITA", "RECEIVER"]) {
+      const frame = await app.inject({ method: "POST", url: endpoint, headers: creator.headers, payload: { ...payload, category: "frame", partNumber: `NEW-${partType}`, partType, attributes: { moduleCapacity: 2, slotIds: ["A", "B"] } } });
+      assert.equal(frame.statusCode, 201, frame.body);
+      assert.equal(frame.json().part.partType, partType);
+      assert.equal(frame.json().part.side, partType);
+      assert.equal(frame.json().part.electricalMode, "NONE");
+      assert.deepEqual(frame.json().part.attributes.slotIds, ["A", "B"]);
+    }
+    const accessory = await app.inject({ method: "POST", url: endpoint, headers: creator.headers, payload: { ...payload, category: "backshell", partNumber: "NEW-BS", parentPartId: module.id, attributes: {} } });
+    assert.equal(accessory.statusCode, 201, accessory.body);
+    assert.deepEqual(accessory.json().relationship.targetPartIds, [accessory.json().part.id]);
+    for (const invalid of [
+      { ...payload, category: "wire" },
+      { ...payload, category: "frame", partType: "MODULE" },
+      { ...payload, category: "frame", partType: "ITA", attributes: {} },
+      { ...payload, category: "strain-relief" }
+    ]) assert.equal((await app.inject({ method: "POST", url: endpoint, headers: creator.headers, payload: invalid })).statusCode, 400);
+  } finally { await app.close(); }
+});
+
 test("catalog API validates stable compatibility references, label edits, and media permissions", async () => {
   const store = new MemoryStore();
   const storage = new FileArtifactStorage(process.cwd());

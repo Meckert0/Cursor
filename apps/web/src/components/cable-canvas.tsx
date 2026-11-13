@@ -4,7 +4,7 @@ import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { DetailsSummary } from "@/components/details-summary";
 import { ConnectorPickerDialog } from "@/components/connector-picker-dialog";
-import { CompatiblePartDialog, type CompatiblePartCreateResult } from "@/components/compatible-part-dialog";
+import { CreateItemDialog, type CreateItemResult } from "@/components/create-item-dialog";
 import { isBlankModule } from "../../../../src/domain/library";
 import { SimInsertControls } from "@/components/sim-insert-controls";
 import { availableSimInserts, catalogModulePins, isSimHost, normalizeCanvasSimModules, simPlacement, usableSimPins, type SimInsertAssignment, type SimRelationship } from "@/lib/sim-modules";
@@ -93,7 +93,7 @@ export function CableCanvas({
   moduleContactCompat,
   contactRelationships,
   quickAddConnectorAction,
-  quickAddAccessoryAction,
+  createNewItemAction,
   saveCanvasAction,
   readOnly = false
 }: {
@@ -119,7 +119,7 @@ export function CableCanvas({
     newConnectorPartNumber?: string;
     connectorCatalog: LibraryComponentDto[];
   }>;
-  quickAddAccessoryAction?: (formData: FormData) => Promise<CompatiblePartCreateResult>;
+  createNewItemAction?: (formData: FormData) => Promise<CreateItemResult>;
   saveCanvasAction?: (input: {
     snapshot: RevisionDto["snapshot"];
     expectedSnapshotHash: string;
@@ -128,7 +128,8 @@ export function CableCanvas({
 }) {
   const [createdAccessories, setCreatedAccessories] = useState<LibraryComponentDto[]>([]);
   const [createdAccessoryRules, setCreatedAccessoryRules] = useState<CompatibilityRule[]>([]);
-  const [accessoryTarget, setAccessoryTarget] = useState<{ connectorId: string; slotId?: string; module: LibraryComponentDto; reference: string } | null>(null);
+  const [createItemOpen, setCreateItemOpen] = useState(false);
+  const [itemTarget, setItemTarget] = useState<{ connectorId: string; slotId?: string; module: LibraryComponentDto; reference: string } | null>(null);
   const backshellCatalog = useMemo(() => [...new Map([...providedBackshellCatalog, ...createdAccessories.filter(part => part.category === "backshell")].map(part => [part.id, part])).values()], [providedBackshellCatalog, createdAccessories]);
   const strainReliefCatalog = useMemo(() => [...new Map([...providedStrainReliefCatalog, ...createdAccessories.filter(part => part.category === "strain-relief")].map(part => [part.id, part])).values()], [providedStrainReliefCatalog, createdAccessories]);
   const accessoryRelationships = useMemo(() => [...providedAccessoryRelationships, ...createdAccessoryRules], [providedAccessoryRelationships, createdAccessoryRules]);
@@ -1198,13 +1199,35 @@ export function CableCanvas({
     return () => window.removeEventListener("keydown", onKeyDown);
   });
 
-  const createCompatibleAccessory = async (data: FormData): Promise<CompatiblePartCreateResult> => {
-    const target = accessoryTarget;
-    if (readOnly || !target || !quickAddAccessoryAction) return { ok: false, error: "Select a module in edit mode to add a compatible part." };
-    data.set("parentPartId", target.module.id);
-    const result = await quickAddAccessoryAction(data);
-    if (!result.ok || !result.part || !result.relationship) return { ...result, ok: false, error: result.error ?? "Could not create the compatible part." };
+  const openNewItem = (target: typeof itemTarget) => {
+    setItemTarget(target);
+    setCreateItemOpen(true);
+  };
+  const hasModuleCreationContext = selectedIsFrame
+    ? selectedConnector?.slots?.some(slot => slot.libraryComponentId && moduleCatalog.some(part => part.id === slot.libraryComponentId))
+    : moduleDefined && Boolean(selectedLibraryPart);
+  const createNewItem = async (data: FormData): Promise<CreateItemResult> => {
+    const target = itemTarget;
+    if (readOnly || !createNewItemAction) return { ok: false, error: "Switch to edit mode to create items." };
+    const isAccessory = data.get("category") === "backshell" || data.get("category") === "strain-relief";
+    if (isAccessory && !target) return { ok: false, error: "Select a defined module to create a compatible accessory." };
+    if (target) data.set("parentPartId", target.module.id);
+    const result = await createNewItemAction(data);
+    if (!result.ok || !result.part) return { ...result, ok: false, error: result.error ?? "Could not create the item." };
     const part = result.part;
+    if (part.category === "module" || part.category === "frame") {
+      const connectorId = buildNextCanvasId(connectors.map(connector => connector.id), "c_canvas_");
+      const reference = buildNextConnectorReference(connectors);
+      const slots = part.category === "frame" ? buildSlotsForFrame(reference, slotIdsForFrame(frameAttributesFromComponent(part))) : undefined;
+      const pins = slots ? flattenFramePins(slots) : buildConnectorPinsFromComponent(part);
+      pushUndoCheckpoint();
+      setConnectorCatalogState(previous => [...previous.filter(item => item.id !== part.id), part]);
+      setConnectors(previous => [...previous, { id: connectorId, reference, partNumber: part.partNumber, libraryComponentId: part.id, pins, ...(slots ? { slots } : {}) }]);
+      setPositions(previous => ({ ...previous, [connectorId]: { x: 80 + ((connectors.length + 1) % 5) * 150, y: 80 + Math.floor((connectors.length + 1) / 5) * 110 } }));
+      setSelectedEntity({ type: "connector", id: connectorId });
+      return result;
+    }
+    if (!target || !result.relationship) return { ok: false, error: "Could not link the new accessory." };
     setCreatedAccessories(previous => [...previous.filter(item => item.id !== part.id), part]);
     setCreatedAccessoryRules(previous => [...previous, result.relationship!]);
     const partKey = part.category === "backshell" ? "backshellPartNumber" : "strainReliefPartNumber";
@@ -1221,8 +1244,8 @@ export function CableCanvas({
 
   return (
     <section className={styles.wrapper}>
-      {accessoryTarget ? <CompatiblePartDialog parentPartNumber={accessoryTarget.module.partNumber} destination={accessoryTarget.reference}
-        allowStrainRelief={!isBlankModule(accessoryTarget.module)} onCreate={createCompatibleAccessory} onClose={() => setAccessoryTarget(null)} /> : null}
+      {createItemOpen ? <CreateItemDialog parentPartNumber={itemTarget?.module.partNumber} destination={itemTarget?.reference}
+        allowStrainRelief={Boolean(itemTarget && !isBlankModule(itemTarget.module))} onCreate={createNewItem} onClose={() => { setCreateItemOpen(false); setItemTarget(null); }} /> : null}
       <section className={styles.topSection} ref={controlsRef} data-testid="canvas-controls">
         <div className={styles.toolbar}>
           <button type="button" onClick={() => addCanvasPart("connector")} disabled={readOnly}>
@@ -1464,7 +1487,7 @@ export function CableCanvas({
                                 </select>
                               </label>) : slot.strainReliefLibraryComponentId ? <div className={styles.unavailableAccessory}><span>{slot.strainReliefPartNumber ?? slot.strainReliefLibraryComponentId} · incompatible strain relief</span><button type="button" aria-label={`Remove slot ${slot.slotId} strain relief`} disabled={readOnly} onClick={() => applySlotAccessorySelection(slot.slotId, "strainRelief", "")}>Remove strain relief</button></div> : null}
                             </div>
-                            {slotLibraryPart && slotModuleDefined && quickAddAccessoryAction ? <button type="button" className={styles.addCompatiblePart} disabled={readOnly} onClick={() => setAccessoryTarget({ connectorId: selectedConnector.id, slotId: slot.slotId, module: slotLibraryPart, reference: slot.reference })}>Add compatible part</button> : null}
+                            {slotLibraryPart && slotModuleDefined && createNewItemAction ? <button type="button" className={styles.createNewItem} disabled={readOnly} onClick={() => openNewItem({ connectorId: selectedConnector.id, slotId: slot.slotId, module: slotLibraryPart, reference: slot.reference })}>Create new Item</button> : null}
                           </div>
                         </article>
                       );
@@ -1528,7 +1551,7 @@ export function CableCanvas({
                         </select>
                       </label>) : selectedConnector.strainReliefLibraryComponentId ? <div className={styles.unavailableAccessory}><span>{selectedConnector.strainReliefPartNumber ?? selectedConnector.strainReliefLibraryComponentId} · incompatible strain relief</span><button type="button" disabled={readOnly} onClick={() => applyConnectorAccessorySelection("strainRelief", "")}>Remove strain relief</button></div> : null}
                     </div>
-                    {moduleDefined && selectedLibraryPart && quickAddAccessoryAction ? <button type="button" className={styles.addCompatiblePart} disabled={readOnly} onClick={() => setAccessoryTarget({ connectorId: selectedConnector.id, module: selectedLibraryPart, reference: selectedConnector.reference })}>Add compatible part</button> : null}
+                    {moduleDefined && selectedLibraryPart && createNewItemAction ? <button type="button" className={styles.createNewItem} disabled={readOnly} onClick={() => openNewItem({ connectorId: selectedConnector.id, module: selectedLibraryPart, reference: selectedConnector.reference })}>Create new Item</button> : null}
                     {!moduleDefined ? (
                       <span className={styles.connectorPartNumber}>Define connector first</span>
                     ) : allowedBackshellOptions.length === 0 && allowedStrainReliefOptions.length === 0 ? (
@@ -1558,6 +1581,9 @@ export function CableCanvas({
           ) : null}
           {!selectedEntity ? <div className={styles.detailPanelEmpty} aria-hidden="true" /> : null}
         </div>
+        {createNewItemAction && !hasModuleCreationContext ? <div className={styles.createItemActions}>
+          <button type="button" className={styles.createNewItem} disabled={readOnly} onClick={() => openNewItem(null)}>Create new Item</button>
+        </div> : null}
       </section>
       {showConnectorSearchDialog ? (
         <ConnectorPickerDialog

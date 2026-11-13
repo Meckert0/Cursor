@@ -110,6 +110,55 @@ test("mapWorkbookStatus maps confirmed family to allowed and conditional to revi
   assert.deepEqual(mapWorkbookStatus("CONFIRMED_FAMILY"), { status: "allowed", unknown: false });
   assert.deepEqual(mapWorkbookStatus("CONDITIONAL_CLEARANCE"), { status: "review", unknown: false });
   assert.deepEqual(mapWorkbookStatus("NOPE"), { status: "review", unknown: true });
+  assert.deepEqual(mapWorkbookStatus("CONDITIONAL"), { status: "review", unknown: false });
+  for (const status of ["CONFIRMED_DIRECT", "CONFIRMED_DRAWING", "REQUIRED_PER_MODULE"]) {
+    assert.deepEqual(mapWorkbookStatus(status), { status: "allowed", unknown: false });
+  }
+});
+
+test("accessories retain their types, fit conditions, and module-only high-power rule", () => {
+  const build = parseVpcCatalog({
+    parts: [
+      ...baseParts,
+      partRow(8, { part_number: "310113531", part_type: "STRAIN_RELIEF_PLATE", family: "i1/D1", side: "DUAL", strain_relief_integrated: false, strain_relief_type: "PLATE", max_bundle_diameter_in: "N/A" }),
+      partRow(9, { part_number: "310113582", part_type: "STRAIN_RELIEF_STANDOFF_KIT", family: "iCon/i1/D1" }),
+      partRow(10, { part_number: "310113794", part_type: "BACKSHELL", family: "iCon", max_bundle_diameter_in: 1.5 }),
+      partRow(11, { part_number: "510109572", part_type: "HIGH_POWER_STRAIN_RELIEF_KIT", family: "iCon/i1 High Power", side: "RECEIVER" }),
+      partRow(12, { part_number: "410123102-1", part_type: "ITA", family: "iCon EMI", strain_relief_integrated: true, strain_relief_type: "THREADED_STRAIGHT", max_bundle_diameter_in: 1.37, module_capacity: 2 })
+    ],
+    compatibility: [
+      compatRow(2, { parent_part: "410123101", relationship_type: "STRAIN_RELIEF_PLATE", position_type: "FRAME_ACCESSORY", compatible_parts: "310113531", status: "CONFIRMED_DIRECT", conditions: "Standard ITA only." }),
+      compatRow(3, { parent_part: "410123101", relationship_type: "STRAIN_RELIEF_STANDOFF", position_type: "FRAME_ACCESSORY", compatible_parts: "310113582", status: "CONDITIONAL", notes: "Optional.", conditions: "Use only when spacing requires it." }),
+      compatRow(4, { parent_part: "510160101", relationship_type: "HIGH_POWER_STRAIN_RELIEF", position_type: "MODULE_ACCESSORY", compatible_parts: "510109572", status: "REQUIRED_PER_MODULE", conditions: "RCV side only; one kit per module." })
+    ]
+  });
+  assert.deepEqual(build.issues, []);
+  assert.deepEqual(build.unmappedColumns, { PARTS: [], COMPATIBILITY: [] });
+  const plate = build.parts.find(part => part.partNumber === "310113531")!;
+  assert.equal(plate.category, "strain-relief");
+  assert.equal(plate.side, "DUAL");
+  assert.deepEqual(plate.extraAttributes, { strainReliefIntegrated: false, strainReliefType: "PLATE" });
+  const backshell = build.parts.find(part => part.partNumber === "310113794")!;
+  assert.equal(backshell.category, "backshell");
+  assert.equal(backshell.extraAttributes?.maxBundleDiameterIn, 1.5);
+  const frame = build.parts.find(part => part.partNumber === "410123102-1")!;
+  assert.equal(frame.category, "frame");
+  assert.equal(frame.extraAttributes?.strainReliefIntegrated, true);
+  assert.equal(frame.extraAttributes?.maxBundleDiameterIn, 1.37);
+  assert.deepEqual((frame.attributes as FrameAttributes).slotIds, ["A", "B"]);
+  assert.ok(!build.relationships.some(rel => rel.parentPartId === frame.id), "Variant fits must not be inferred from a base frame");
+  const direct = build.relationships.find(rel => rel.relationshipType === "STRAIN_RELIEF_PLATE")!;
+  assert.equal(direct.status, "allowed");
+  assert.equal(direct.positionType, "FRAME_ACCESSORY");
+  assert.equal(direct.extra?.conditions, "Standard ITA only.");
+  const conditional = build.relationships.find(rel => rel.relationshipType === "STRAIN_RELIEF_STANDOFF")!;
+  assert.equal(conditional.status, "review");
+  assert.equal(conditional.notes, "Optional. | Use only when spacing requires it.");
+  const highPower = build.relationships.find(rel => rel.relationshipType === "STRAIN_RELIEF_ALLOWED")!;
+  assert.equal(highPower.parentPartId, "prt-module-510160101");
+  assert.equal(highPower.sourceStatus, "REQUIRED_PER_MODULE");
+  assert.equal(highPower.extra?.sourceRelationshipType, "HIGH_POWER_STRAIN_RELIEF");
+  assert.equal(highPower.extra?.requiredPerModule, true);
 });
 
 test("parseVpcCatalog maps part types, keeps grouped compat rows, and dual-writes contacts", () => {

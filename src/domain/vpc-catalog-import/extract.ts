@@ -28,8 +28,13 @@ function rowsFromSheet(sheet: XLSX.WorkSheet | undefined): VpcSheetRow[] {
 }
 
 function findSheet(workbook: XLSX.WorkBook, wanted: string): XLSX.WorkSheet | undefined {
-  const match = workbook.SheetNames.find((name) => name.trim().toUpperCase() === wanted);
-  return match ? workbook.Sheets[match] : undefined;
+  const exact = workbook.SheetNames.find((name) => name.trim().toUpperCase() === wanted);
+  if (exact) return workbook.Sheets[exact];
+  const copies = workbook.SheetNames.filter(
+    (name) => name.trim().toUpperCase().replace(/^COPY OF\s+/, "") === wanted
+  );
+  if (copies.length > 1) throw new Error(`Workbook has multiple copies of the ${wanted} sheet`);
+  return copies.length === 1 ? workbook.Sheets[copies[0]] : undefined;
 }
 
 export function extractVpcWorkbook(filePath: string): VpcWorkbookSheets {

@@ -8,7 +8,8 @@ import type {
   ModuleContactCompat,
   ModuleContactPosition,
   PartImportProvenance,
-  PartRelationshipInput
+  PartRelationshipInput,
+  StrainReliefAttributes
 } from "../library.js";
 import {
   emptyAttributesForCategory,
@@ -35,7 +36,10 @@ const PARTS_COLUMNS = new Set([
   "active",
   "notes",
   "sim_slots",
-  "sim_slot_sections"
+  "sim_slot_sections",
+  "strain_relief_integrated",
+  "strain_relief_type",
+  "max_bundle_diameter_in"
 ]);
 
 const COMPAT_COLUMNS = new Set([
@@ -49,7 +53,8 @@ const COMPAT_COLUMNS = new Set([
   "status",
   "notes",
   "wire_gauges_awg",
-  "wire_cable_or_interface"
+  "wire_cable_or_interface",
+  "conditions"
 ]);
 
 const CATEGORY_BY_TYPE: Record<string, LibraryCategory> = {
@@ -57,7 +62,11 @@ const CATEGORY_BY_TYPE: Record<string, LibraryCategory> = {
   RECEIVER: "frame",
   MODULE: "module",
   SIM_INSERT: "module",
-  CONTACT: "contact"
+  CONTACT: "contact",
+  STRAIN_RELIEF_PLATE: "strain-relief",
+  STRAIN_RELIEF_STANDOFF_KIT: "strain-relief",
+  HIGH_POWER_STRAIN_RELIEF_KIT: "strain-relief",
+  BACKSHELL: "backshell"
 };
 
 const ALLOWED_SOURCE_STATUSES = new Set([
@@ -65,7 +74,10 @@ const ALLOWED_SOURCE_STATUSES = new Set([
   "CONFIRMED_FAMILY",
   "FAMILY_CONFIRMED",
   "CONFIRMED_REVERSE",
-  "EXCLUSIVE_CONFIRMED"
+  "EXCLUSIVE_CONFIRMED",
+  "CONFIRMED_DIRECT",
+  "CONFIRMED_DRAWING",
+  "REQUIRED_PER_MODULE"
 ]);
 
 type MutablePart = VpcCatalogPart & { id: string; partNumberKey: string };
@@ -139,7 +151,7 @@ export function mapWorkbookStatus(sourceStatus: string | undefined): {
   if (!normalized) {
     return { status: "review", unknown: true };
   }
-  if (normalized === "CONDITIONAL_CLEARANCE") {
+  if (normalized === "CONDITIONAL_CLEARANCE" || normalized === "CONDITIONAL") {
     return { status: "review", unknown: false };
   }
   if (ALLOWED_SOURCE_STATUSES.has(normalized)) {
@@ -225,12 +237,18 @@ function extraFromCompat(row: {
   removable?: boolean;
   gauges: string[];
   wireInterface?: string;
+  conditions?: string;
+  sourceRelationshipType?: string;
+  requiredPerModule?: boolean;
 }): Record<string, unknown> | undefined {
   const extra: Record<string, unknown> = {};
   if (row.quantity !== undefined) extra.quantity = row.quantity;
   if (row.removable !== undefined) extra.removable = row.removable;
   if (row.gauges.length > 0) extra.gauges = row.gauges;
   if (row.wireInterface) extra.interface = row.wireInterface;
+  if (row.conditions) extra.conditions = row.conditions;
+  if (row.sourceRelationshipType) extra.sourceRelationshipType = row.sourceRelationshipType;
+  if (row.requiredPerModule) extra.requiredPerModule = true;
   return Object.keys(extra).length > 0 ? extra : undefined;
 }
 
@@ -312,12 +330,22 @@ export function parseVpcCatalog(input: {
     } else if (category === "contact") {
       const contact = attributes as ContactAttributes;
       contact.gender = genderFromSide(side);
+    } else if (category === "strain-relief") {
+      (attributes as StrainReliefAttributes).gender = genderFromSide(side);
     }
 
     const extraAttributes: Record<string, unknown> = {};
     if (category !== "frame" && moduleCapacity !== undefined) {
       extraAttributes.moduleCapacity = moduleCapacity;
     }
+    if (cellText(row.cells.strain_relief_integrated) !== undefined) {
+      extraAttributes.strainReliefIntegrated = cellBool(row.cells.strain_relief_integrated, false);
+    }
+    const strainReliefType = cellText(row.cells.strain_relief_type);
+    if (strainReliefType) extraAttributes.strainReliefType = strainReliefType;
+    const diameterText = cellText(row.cells.max_bundle_diameter_in);
+    const diameter = diameterText === undefined ? NaN : Number(diameterText);
+    if (Number.isFinite(diameter) && diameter > 0) extraAttributes.maxBundleDiameterIn = diameter;
 
     const part: MutablePart = {
       id: makePartId(category, partNumber),
@@ -351,7 +379,8 @@ export function parseVpcCatalog(input: {
 
   for (const row of input.compatibility) {
     const parentPn = cellText(row.cells.parent_part);
-    const relationshipType = cellText(row.cells.relationship_type)?.toUpperCase();
+    const sourceRelationshipType = cellText(row.cells.relationship_type)?.toUpperCase();
+    let relationshipType = sourceRelationshipType;
     const sourceStatus = cellText(row.cells.status)?.toUpperCase();
     statusMapped[sourceStatus ?? "(empty)"] = (statusMapped[sourceStatus ?? "(empty)"] ?? 0) + 1;
     if (!parentPn || !relationshipType) {
@@ -393,7 +422,10 @@ export function parseVpcCatalog(input: {
     const removableRaw = cellText(row.cells.removable);
     const removable =
       removableRaw === undefined ? undefined : cellBool(row.cells.removable, false);
-    const notes = cellText(row.cells.notes);
+    const conditions = cellText(row.cells.conditions);
+    const notes = uniqueInOrder(
+      [cellText(row.cells.notes), conditions].filter((value): value is string => !!value)
+    ).join(" | ") || undefined;
 
     if (relationshipType === "MODULE_ALLOWED" && parent.category === "frame") {
       slotIdsByFrame.set(parent.id, uniqueInOrder([...(slotIdsByFrame.get(parent.id) ?? []), ...parentPositions]));
@@ -457,6 +489,12 @@ export function parseVpcCatalog(input: {
     if (children.length > 0 && compatibleParts.length === 0) {
       continue;
     }
+    if (
+      relationshipType === "HIGH_POWER_STRAIN_RELIEF" && parent.category === "module" &&
+      compatibleParts.length > 0 && compatibleParts.every((pn) => partsByNumber.get(pn)?.category === "strain-relief")
+    ) {
+      relationshipType = "STRAIN_RELIEF_ALLOWED";
+    }
     if (relationshipType === "WIRE_COMPATIBILITY" && compatibleParts.length === 0) {
       explodedPairCount += 1;
     }
@@ -471,7 +509,11 @@ export function parseVpcCatalog(input: {
       status: mapped.status,
       sourceStatus,
       notes,
-      extra: extraFromCompat({ quantity, removable, gauges, wireInterface })
+      extra: extraFromCompat({
+        quantity, removable, gauges, wireInterface, conditions,
+        sourceRelationshipType: relationshipType !== sourceRelationshipType ? sourceRelationshipType : undefined,
+        requiredPerModule: sourceStatus === "REQUIRED_PER_MODULE"
+      })
     };
     rel.id = relationshipId(rel);
 

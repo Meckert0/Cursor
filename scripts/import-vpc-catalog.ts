@@ -26,11 +26,13 @@ import { parseVpcCatalog } from "../src/domain/vpc-catalog-import/parse.js";
 import { renderVpcCatalogReport } from "../src/domain/vpc-catalog-import/report.js";
 import type { VpcCatalogPart } from "../src/domain/vpc-catalog-import/types.js";
 import type {
+  BackshellAttributes,
   ContactAttributes,
   FrameAttributes,
   ModuleAttributes,
   PartImportProvenance,
-  PartRelationshipInput
+  PartRelationshipInput,
+  StrainReliefAttributes
 } from "../src/domain/library.js";
 import { loadDotEnv } from "../src/infra/env/load-dotenv.js";
 
@@ -228,6 +230,28 @@ async function upsertParts(client: import("pg").PoolClient, parts: VpcCatalogPar
           json(attrs.acceptedGauges ?? []),
           attrs.wireInterface ?? null
         ]
+      );
+    } else if (part.category === "backshell") {
+      const attrs = part.attributes as BackshellAttributes;
+      await client.query(
+        `INSERT INTO backshells (part_id, keying_part_id, length_added, bundle_allowance)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (part_id) DO UPDATE SET
+           keying_part_id = EXCLUDED.keying_part_id,
+           length_added = EXCLUDED.length_added,
+           bundle_allowance = EXCLUDED.bundle_allowance`,
+        [part.id, attrs.keyingPartId ?? null, attrs.lengthAdded ?? null, attrs.bundleAllowance ?? null]
+      );
+    } else if (part.category === "strain-relief") {
+      const attrs = part.attributes as StrainReliefAttributes;
+      await client.query(
+        `INSERT INTO strain_reliefs (part_id, gender, requires_backshell, related_module_hint_part_id)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (part_id) DO UPDATE SET
+           gender = EXCLUDED.gender,
+           requires_backshell = EXCLUDED.requires_backshell,
+           related_module_hint_part_id = EXCLUDED.related_module_hint_part_id`,
+        [part.id, attrs.gender ?? null, attrs.requiresBackshell ?? null, attrs.relatedModuleHintPartId ?? null]
       );
     }
   }

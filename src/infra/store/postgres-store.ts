@@ -3,6 +3,7 @@ import { normalizeWireAttributes, validateCatalogAttributes, CatalogError } from
 import { listPairs, upsertPair, deletePair, pairRelationship } from "./compatibility-adapters.js";
 import { resolveRelationshipInput, validatePartMedia } from "../../domain/catalog-integrity.js";
 import { pruneBlankStrainReliefTargets } from "../../domain/blank-strain-relief-compatibility.js";
+import { ACCESSORY_DUPLICATE_MESSAGE, prepareCompatibleAccessory, type CreateCompatibleAccessoryInput, type CreatedCompatibleAccessory } from "../../domain/compatible-accessory.js";
 import type { PartMedia, PartMediaInput } from "../../domain/library.js";
 import type { Pool, PoolClient } from "pg";
 import type {
@@ -2296,6 +2297,34 @@ export class PostgresStore implements Store {
       ]
     );
     return mapProjectRulesetPolicy(result.rows[0]);
+  }
+
+  async createCompatibleAccessory(input: CreateCompatibleAccessoryInput): Promise<CreatedCompatibleAccessory> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      // Serialize this new-part identity across simultaneous creation requests.
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`compatible-accessory:${input.category}:${input.partNumber.trim().toLowerCase()}`]);
+      const parentRows = await client.query<PartRow>(`SELECT ${PART_COLUMNS} FROM parts WHERE id = $1 FOR UPDATE`, [input.parentPartId]);
+      const parent = (await loadPartsWithAttributes(client, parentRows.rows))[0];
+      const result = prepareCompatibleAccessory(input, parent);
+      const duplicate = await client.query("SELECT id FROM parts WHERE category = $1 AND LOWER(BTRIM(part_number)) = LOWER($2) AND is_archived = FALSE", [input.category, result.part.partNumber]);
+      if (duplicate.rows.length) throw new CatalogError(ACCESSORY_DUPLICATE_MESSAGE, 409);
+      const part = result.part;
+      await client.query(`INSERT INTO parts (
+        id, category, family, part_number, description, is_active, stock_status, created_by_user_id, created_at,
+        last_edited_by_user_id, last_edited_at, is_reviewed, is_archived, updated_at
+      ) VALUES ($1,$2,$3,$4,$5,TRUE,'in_stock',$6,$7,$6,$7,FALSE,FALSE,$7)`,
+      [part.id, part.category, part.family, part.partNumber, part.description, input.requestedByUserId, part.createdAt]);
+      await this.upsertExtensionRow(client, part.id, part.category, part.attributes);
+      await writeRelationship(client, result.relationship);
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
+      await this.rollbackSilently(client);
+      if (error && typeof error === "object" && "code" in error && error.code === "23505") throw new CatalogError(ACCESSORY_DUPLICATE_MESSAGE, 409);
+      throw error;
+    } finally { client.release(); }
   }
 
   async ingestLibraryComponents(input: {

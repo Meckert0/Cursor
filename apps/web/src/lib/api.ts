@@ -959,6 +959,18 @@ export async function deletePartRelationship(input: { id: string }): Promise<voi
   });
 }
 
+export function createCompatibleAccessory(input: {
+  harnessId: string;
+  parentPartId: string;
+  category: "backshell" | "strain-relief";
+  partNumber: string;
+  family: string;
+  description: string;
+  attributes: PartAttributesDto;
+}): Promise<{ part: LibraryComponentDto; relationship: PartRelationshipDto }> {
+  return apiRequest("/v1/library/components/compatible-accessory", { method: "POST", body: input });
+}
+
 export function ingestLibraryComponents(input: {
   items: LibraryIngestItemDto[];
   idempotencyKey?: string;

@@ -1,4 +1,5 @@
 import type { PartMedia, PartMediaInput } from "../../domain/library.js";
+import type { CreateCompatibleAccessoryInput, CreatedCompatibleAccessory } from "../../domain/compatible-accessory.js";
 import Database from "better-sqlite3";
 import type {
   Design,
@@ -264,6 +265,12 @@ export class SqliteStore extends MemoryStore {
     unreviewedPartSeverity?: "error" | "warning" | "info";
   }): Promise<ProjectRulesetPolicy> {
     const result = await super.upsertProjectRulesetPolicy(input);
+    this.persistState();
+    return result;
+  }
+
+  override async createCompatibleAccessory(input: CreateCompatibleAccessoryInput): Promise<CreatedCompatibleAccessory> {
+    const result = await super.createCompatibleAccessory(input);
     this.persistState();
     return result;
   }

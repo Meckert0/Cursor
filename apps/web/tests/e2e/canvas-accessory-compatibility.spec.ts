@@ -136,8 +136,7 @@ test("canvas and part views honor strain-relief-owned module fits, preserve sele
   await expect(strainSelect).toHaveValue(sibling);
   await page.getByRole("button", { name: "Change connector", exact: true }).click();
   await selectConnectorPickerPart(page, blank);
-  await expect(strainSelect).toHaveValue("");
-  await expect(strainSelect.locator("option")).toHaveCount(1);
+  await expect(strainSelect).toHaveCount(0);
   await expect.poll(async () => (await readRevision()).snapshot.connectors[0].partNumber).toBe(blank);
   expect((await readRevision()).snapshot.connectors[0].strainReliefLibraryComponentId).toBeUndefined();
 
@@ -146,21 +145,19 @@ test("canvas and part views honor strain-relief-owned module fits, preserve sele
   await expect(slotSelect).toHaveValue(reliefId);
   await expect(slotSelect.locator("option")).toHaveCount(4);
   const blankSlotSelect = page.getByRole("combobox", { name: "Slot B strain relief", exact: true });
-  await expect(blankSlotSelect.locator(`option[value="${reliefId}"]`)).toHaveJSProperty("disabled", true);
-  await blankSlotSelect.selectOption("");
-  await expect(blankSlotSelect.locator("option")).toHaveCount(1);
+  await expect(blankSlotSelect).toHaveCount(0);
+  await page.getByRole("button", { name: "Remove slot B strain relief", exact: true }).click();
+  await expect.poll(async () => (await readRevision()).snapshot.connectors[1].slots[1].strainReliefLibraryComponentId).toBeUndefined();
   await page.getByRole("button", { name: "Change slot A module", exact: true }).click();
   await selectConnectorPickerPart(page, otherModule, "module");
   await expect(slotSelect).toHaveValue(reliefId);
   await page.getByRole("button", { name: "Change slot A module", exact: true }).click();
   await selectConnectorPickerPart(page, blank, "module");
-  await expect(slotSelect).toHaveValue("");
-  await expect(slotSelect.locator("option")).toHaveCount(1);
+  await expect(slotSelect).toHaveCount(0);
   await expect.poll(async () => (await readRevision()).snapshot.connectors[1].slots[0].partNumber).toBe(blank);
   expect((await readRevision()).snapshot.connectors[1].slots[0].strainReliefLibraryComponentId).toBeUndefined();
   await saved();
   await page.reload();
   await page.getByRole("button", { name: "Connector J1", exact: true }).click();
-  await expect(strainSelect).toHaveValue("");
-  await expect(strainSelect.locator("option")).toHaveCount(1);
+  await expect(strainSelect).toHaveCount(0);
 });

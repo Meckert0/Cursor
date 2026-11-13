@@ -2,6 +2,7 @@ import { normalizeWireAttributes, validateCatalogAttributes, CatalogError } from
 import { listPairs, upsertPair, deletePair, pairRelationship } from "./compatibility-adapters.js";
 import { resolveRelationshipInput, validatePartMedia } from "../../domain/catalog-integrity.js";
 import { pruneBlankStrainReliefTargets } from "../../domain/blank-strain-relief-compatibility.js";
+import { ACCESSORY_DUPLICATE_MESSAGE, prepareCompatibleAccessory, type CreateCompatibleAccessoryInput, type CreatedCompatibleAccessory } from "../../domain/compatible-accessory.js";
 import type { PartMedia, PartMediaInput } from "../../domain/library.js";
 import type {
   AuditEvent,
@@ -921,6 +922,19 @@ export class MemoryStore implements Store {
     };
     this.projectRulesetPolicies.set(input.projectId, policy);
     return policy;
+  }
+
+  async createCompatibleAccessory(input: CreateCompatibleAccessoryInput): Promise<CreatedCompatibleAccessory> {
+    const result = prepareCompatibleAccessory(input, this.parts.get(input.parentPartId));
+    if ([...this.parts.values()].some(part => !part.isArchived && part.category === input.category && part.partNumber.trim().toLowerCase() === result.part.partNumber.toLowerCase())) {
+      throw new CatalogError(ACCESSORY_DUPLICATE_MESSAGE, 409);
+    }
+    const relationships = new Map(this.partRelationships);
+    const relationship = this.putRelationship(relationships, result.relationship);
+    this.parts.set(result.part.id, { ...result.part, enteredByUserId: input.requestedByUserId, enteredAt: result.part.createdAt, isArchived: false } as StoredPart);
+    this.partRelationships.clear();
+    for (const [key, row] of relationships) this.partRelationships.set(key, row);
+    return { part: structuredClone(result.part), relationship: structuredClone(relationship) };
   }
 
   async ingestLibraryComponents(input: {

@@ -223,7 +223,9 @@
 .slotConfiguration { display: contents; }
 .slotBlockWithSim { grid-template-columns: minmax(0, 1fr); gap: 4px; }
 .slotBlockWithSim .slotConfiguration { display: flex; align-items: center; flex-wrap: wrap; gap: 20px; }
-.slotAccessoryFields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; width: min(100%, 400px); min-width: min(100%, 280px); align-self: center; }
+.slotAccessoryFields { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; width: min(100%, 400px); min-width: min(100%, 280px); align-self: center; }
+.addCompatiblePart { justify-self: start; align-self: start; margin-top: 4px; }
+.unavailableAccessory { display: grid; gap: 6px; font-size: 12px; color: #475569; }
 .partAccessoriesWithSim { display: flex; align-items: center; flex-wrap: wrap; gap: 20px; }
 .partAccessoriesWithSim .accessoryGroup { flex: 0 1 400px; min-width: min(100%, 280px); }
 .partAccessoriesWithSim .accessoryFields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }

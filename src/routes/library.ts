@@ -2,6 +2,7 @@ import { validateCatalogAttributes } from "../domain/catalog-attributes.js";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireAdmin, requireRole } from "../auth/rbac.js";
+import { requireProjectMembership } from "../auth/membership.js";
 import { LIBRARY_CATEGORIES, catalogPartFamily, normalizeBlankModuleFamily, isWirePart } from "../domain/library.js";
 import type { WireAttributes } from "../domain/library.js";
 
@@ -259,6 +260,17 @@ const ingestRequestSchema = z.object({
   idempotencyKey: z.string().min(1).optional(),
   items: z.array(ingestItemSchema).min(1)
 });
+
+const compatibleAccessorySchema = z.object({
+  harnessId: z.string().uuid(),
+  parentPartId: z.string().min(1),
+  partNumber: z.string().trim().min(1),
+  family: z.string().trim().min(1),
+  description: z.string().trim().min(1)
+}).and(z.discriminatedUnion("category", [
+  z.object({ category: z.literal("backshell"), attributes: backshellAttributesSchema.default({ fitments: [] }) }),
+  z.object({ category: z.literal("strain-relief"), attributes: strainReliefAttributesSchema.default({}) })
+]));
 
 const updateReviewSchema = z.object({
   reviewedByUserId: z.string().min(1).optional(),
@@ -714,6 +726,21 @@ export function registerLibraryRoutes(app: FastifyInstance) {
       columnWidths: saved.columnWidths,
       updatedAt: saved.updatedAt
     };
+  });
+
+  app.post("/v1/library/components/compatible-accessory", async (request, reply) => {
+    if (!requireRole(request, reply, ["editor", "owner"]).ok) return;
+    const parsed = compatibleAccessorySchema.safeParse(request.body);
+    if (!parsed.success) return reply.badRequest(parsed.error.issues.map(issue => issue.message).join("; "));
+    const body = parsed.data;
+    const harness = await app.store.getDesign(body.harnessId);
+    if (!harness) return reply.notFound("Harness not found.");
+    const membership = await requireProjectMembership({ request, reply, store: app.store, projectId: harness.projectId, allowedRoles: ["editor", "owner"] });
+    if (!membership.ok) return;
+    const result = await app.store.createCompatibleAccessory({
+      ...body, requestedByUserId: membership.userId, canViewAllUnreviewed: request.currentUser?.accountRole === "admin"
+    });
+    return reply.code(201).send(result);
   });
 
   app.post("/v1/library/components/ingest/dry-run", async (request, reply) => {

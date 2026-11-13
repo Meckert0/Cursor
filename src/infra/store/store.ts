@@ -40,8 +40,10 @@ import type {
 } from "../../domain/library.js";
 import type { TablePreferencesRecord } from "../../domain/table-preferences.js";
 import type { UiCopySettings, UiCopySettingsUpdate } from "../../domain/ui-settings.js";
+import type { CreateCompatibleAccessoryInput, CreatedCompatibleAccessory } from "../../domain/compatible-accessory.js";
 
 export interface Store {
+  createCompatibleAccessory(input: CreateCompatibleAccessoryInput): Promise<CreatedCompatibleAccessory>;
   getUiCopySettings(): Promise<UiCopySettings>;
   updateUiCopySettings(input: UiCopySettingsUpdate): Promise<UiCopySettings>;
   deleteUserData(userId: string): Promise<void>;

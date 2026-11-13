@@ -3,6 +3,8 @@ import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { CableCanvas } from "@/components/cable-canvas";
 import {
+  createCompatibleAccessory,
+  extractApiErrorMessage,
   getHarness,
   getRevision,
   ingestLibraryComponents,
@@ -158,6 +160,40 @@ export default async function HarnessCanvasPage({
     }
   }
 
+  async function quickAddAccessoryAction(formData: FormData) {
+    "use server";
+    try {
+      const user = await requireSignedInUser();
+      const currentHarness = await getHarness(harnessId);
+      if (user.accountRole === "admin" && currentHarness.createdBy !== user.id && mode !== "edit") {
+        return { ok: false, error: "Switch to edit mode to add compatible parts." };
+      }
+      const category = String(formData.get("category") ?? "");
+      if (category !== "backshell" && category !== "strain-relief") return { ok: false, error: "Choose a backshell or strain relief category." };
+      const partNumber = String(formData.get("partNumber") ?? "").trim();
+      if (!partNumber) return { ok: false, error: "Part number is required." };
+      const result = await createCompatibleAccessory({
+        harnessId: currentHarness.id,
+        parentPartId: String(formData.get("parentPartId") ?? ""),
+        category, partNumber,
+        family: String(formData.get("family") ?? "").trim() || "User entered accessory",
+        description: String(formData.get("description") ?? "").trim() || `User-entered ${category === "backshell" ? "backshell" : "strain relief"} ${partNumber}`,
+        attributes: collectAttributesFromFormData(formData, category)
+      });
+      revalidatePath(`/harnesses/${currentHarness.id}/canvas`);
+      revalidatePath("/library");
+      revalidatePath("/admin");
+      return { ok: true, ...result, notice: "Compatible part created as an unreviewed library entry." };
+    } catch (error) {
+      let message = error instanceof Error ? extractApiErrorMessage(error.message) : "Could not create the compatible part.";
+      try {
+        const detail: unknown = JSON.parse(message);
+        if (detail && typeof detail === "object" && "message" in detail && typeof detail.message === "string") message = detail.message;
+      } catch { /* Plain-text failures already contain the message to display. */ }
+      return { ok: false, error: message };
+    }
+  }
+
   async function saveCanvasSnapshotAction(input: {
     snapshot: RevisionDto["snapshot"];
     expectedSnapshotHash: string;
@@ -255,6 +291,7 @@ export default async function HarnessCanvasPage({
             moduleContactCompat={moduleContactCompat}
             contactRelationships={contactRelationships}
             quickAddConnectorAction={quickAddConnectorAction}
+            quickAddAccessoryAction={quickAddAccessoryAction}
             saveCanvasAction={saveCanvasSnapshotAction}
             readOnly={isReadOnly}
           />

@@ -8,6 +8,56 @@ import { FileArtifactStorage } from "../infra/storage/file-artifact-storage.js";
 import { PassthroughArtifactDownloadUrlResolver } from "../infra/storage/artifact-download-url-resolver.js";
 import { ExportQueueService } from "../services/export-queue.js";
 import { makePart } from "../domain/part-test-helpers.js";
+import { hashSessionToken } from "../auth/session.js";
+
+test("designers can create only new compatible accessories through the scoped canvas endpoint", async () => {
+  const store = new MemoryStore();
+  const authStore = new MemoryAuthStore();
+  const storage = new FileArtifactStorage(process.cwd());
+  const app = buildApp({ store, authStore, lockManager: new MemoryLockManager(), artifactStorage: storage, artifactDownloadUrlResolver: new PassthroughArtifactDownloadUrlResolver(), exportQueue: new ExportQueueService(store, storage) });
+  try {
+    const session = async (username: string, role: "editor" | "viewer" = "editor") => {
+      const user = await authStore.createUser({ username, email: `${username}@example.com`, passwordHash: "unused", role, accountRole: "regular" });
+      const token = `session-${username}`;
+      await authStore.createSession({ userId: user.id, tokenHash: hashSessionToken(token), expiresAt: new Date(Date.now() + 60_000).toISOString() });
+      return { user, headers: { cookie: `cdt_session=${token}` } };
+    };
+    const designer = await session("accessory-designer"), outsider = await session("accessory-outsider"), viewer = await session("accessory-viewer", "viewer");
+    const project = await store.createProject({ name: "Accessory project", createdBy: designer.user.id });
+    const harness = await store.createDesign({ projectId: project.id, name: "Accessory harness", createdBy: designer.user.id });
+    await store.upsertProjectMember({ projectId: project.id, userId: viewer.user.id, role: "viewer" });
+    await store.ingestLibraryComponents({ requestedByUserId: "seed", dryRun: false, items: [
+      makePart({ id: "module", category: "module", family: "Test", partNumber: "M-1", description: "Module", attributes: { pinIds: ["1"] } }),
+      makePart({ id: "blank", category: "module", family: "Blank insert", partNumber: "BLANK", description: "Blank module", attributes: { pinIds: [] } }),
+      makePart({ id: "hidden", category: "module", family: "Test", partNumber: "HIDDEN", description: "Private draft", isReviewed: false, attributes: { pinIds: [] } })
+    ] });
+    const endpoint = "/v1/library/components/compatible-accessory";
+    const payload = { harnessId: harness.id, parentPartId: "module", category: "backshell", partNumber: "NEW-BS", family: "Test", description: "A new backshell", attributes: {} };
+    assert.equal((await app.inject({ method: "POST", url: endpoint, payload })).statusCode, 401);
+    assert.equal((await app.inject({ method: "POST", url: endpoint, headers: outsider.headers, payload })).statusCode, 403);
+    assert.equal((await app.inject({ method: "POST", url: endpoint, headers: viewer.headers, payload })).statusCode, 403);
+    const created = await app.inject({ method: "POST", url: endpoint, headers: designer.headers, payload });
+    assert.equal(created.statusCode, 201, created.body);
+    assert.equal(created.json().part.isReviewed, false);
+    assert.equal(created.json().part.createdByUserId, designer.user.id);
+    assert.deepEqual(created.json().relationship.targetPartIds, [created.json().part.id]);
+    assert.equal(created.json().relationship.relationshipType, "BACKSHELL_ALLOWED");
+    const duplicate = await app.inject({ method: "POST", url: endpoint, headers: designer.headers, payload });
+    assert.equal(duplicate.statusCode, 409);
+    assert.match(duplicate.json().message, /part number already exists/);
+    for (const invalid of [
+      { ...payload, category: "module" },
+      { ...payload, parentPartId: "blank", category: "strain-relief", partNumber: "BLANK-SR" },
+      { ...payload, partNumber: "" }
+    ]) assert.equal((await app.inject({ method: "POST", url: endpoint, headers: designer.headers, payload: invalid })).statusCode, 400);
+    assert.equal((await app.inject({ method: "POST", url: endpoint, headers: designer.headers, payload: { ...payload, parentPartId: "hidden", partNumber: "PRIVATE" } })).statusCode, 404);
+    assert.equal((await app.inject({ method: "POST", url: endpoint, headers: designer.headers, payload: { ...payload, category: "strain-relief", partNumber: "NEW-SR" } })).statusCode, 201);
+    assert.equal((await app.inject({ method: "PUT", url: "/v1/library/relationships", headers: designer.headers, payload: { parentPartId: "module", targetPartIds: [created.json().part.id], relationshipType: "BACKSHELL_ALLOWED", parentPositions: [], status: "allowed" } })).statusCode, 403, "General compatibility editing remains admin-only");
+    const parts = await store.listLibraryComponents({ requestingUserId: designer.user.id, canViewAllUnreviewed: true, canViewInactive: true });
+    assert.equal(parts.filter(part => part.category === "backshell").length, 1);
+    assert.equal(parts.filter(part => part.category === "strain-relief").length, 1);
+  } finally { await app.close(); }
+});
 
 test("catalog API validates stable compatibility references, label edits, and media permissions", async () => {
   const store = new MemoryStore();

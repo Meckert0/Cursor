@@ -108,7 +108,7 @@ describe("CableCanvas cable sections", () => {
     expect(within(screen.getByLabelText("Strain relief")).getByRole("option", { name: /^310123103/ })).toBeEnabled();
     fireEvent.pointerDown(screen.getByRole("button", { name: "Frame J2" }));
     expect(within(screen.getByLabelText("Slot A strain relief")).getAllByRole("option")).toHaveLength(3);
-    expect(within(screen.getByLabelText("Slot B strain relief")).getAllByRole("option")).toHaveLength(1);
+    expect(screen.queryByLabelText("Slot B strain relief")).not.toBeInTheDocument();
   });
 
   it("opens each frame module's SIM layout in a dialog while keeping previews in the module area", () => {

@@ -39,6 +39,48 @@ const fixtures: PartIngestItem[] = [
 ];
 
 for (const backend of ["memory", "sqlite", "postgres"] as const) {
+  test(`${backend}: compatible accessory creation is atomic, preserves existing rules and rejects duplicates`, async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "compatible-accessory-"));
+    const pg = backend === "postgres" ? await postgres() : undefined;
+    let store: Store = pg?.store ?? (backend === "sqlite" ? new SqliteStore(path.join(directory, "app.db")) : new MemoryStore());
+    try {
+      await store.ingestLibraryComponents({ requestedByUserId: "test", dryRun: false, items: [...fixtures,
+        makePart({ id: "blank", category: "module", family: "Blank insert", partNumber: "BLANK", description: "Blank module", attributes: { pinIds: [] } })
+      ] });
+      const profile = await store.upsertPartRelationship({ parentPartId: "module", relationshipType: "BACKSHELL_ALLOWED", targetPartIds: [], parentPositions: [], isExhaustive: true, status: "allowed", notes: "Preserved source profile" });
+      const input = { parentPartId: "module", category: "backshell" as const, partNumber: "NEW-BS", family: "Test", description: "New backshell", attributes: { lengthAdded: 1.25, fitments: [] }, requestedByUserId: "designer", canViewAllUnreviewed: false };
+      const created = await store.createCompatibleAccessory(input);
+      assert.equal(created.part.isReviewed, false);
+      assert.equal(created.part.createdByUserId, "designer");
+      assert.deepEqual(created.relationship.targetPartIds, [created.part.id]);
+      const parent = (await store.getLibraryComponent({ componentId: "module", requestingUserId: "designer", canViewAllUnreviewed: false, canViewInactive: false }))!;
+      const rules = await store.listPartRelationships();
+      assert.equal(moduleAccessoryStatus(parent, created.part, rules), "allowed", "Explicit new fit remains usable alongside an exhaustive profile");
+      assert.equal(rules.find(row => row.id === profile.id)?.notes, "Preserved source profile");
+      const before = (await store.listLibraryComponents({ requestingUserId: "designer", canViewAllUnreviewed: true, canViewInactive: true })).length;
+      await assert.rejects(store.createCompatibleAccessory({ ...input, partNumber: " new-bs " }), /part number already exists/);
+      await assert.rejects(store.createCompatibleAccessory({ ...input, parentPartId: "blank", category: "strain-relief", partNumber: "INVALID-SR", attributes: {} }), /BLANK_MODULE_STRAIN_RELIEF/);
+      await assert.rejects(store.createCompatibleAccessory({ ...input, parentPartId: "frame", partNumber: "INVALID-FRAME" }), /only be added to modules/);
+      assert.equal((await store.listLibraryComponents({ requestingUserId: "designer", canViewAllUnreviewed: true, canViewInactive: true })).length, before, "Failed creations leave no orphan parts");
+      assert.equal((await store.listPartRelationships()).length, rules.length, "Failed creations leave compatibility unchanged");
+      if (pg) {
+        await assert.rejects(store.createCompatibleAccessory({ ...input, partNumber: "ROLLBACK-BS", attributes: { keyingPartId: "missing-part", fitments: [] } }));
+        assert.equal((await pg.db.query("SELECT id FROM parts WHERE part_number = 'ROLLBACK-BS'")).rows.length, 0, "A failure after the part insert rolls back the new part");
+        assert.equal((await store.listPartRelationships()).length, rules.length);
+      }
+      const hidden = await store.getLibraryComponent({ componentId: created.part.id, requestingUserId: "someone-else", canViewAllUnreviewed: false, canViewInactive: false });
+      assert.equal(hidden, null, "The unreviewed part retains normal creator-only visibility");
+      if (store instanceof SqliteStore) { store.close(); store = new SqliteStore(path.join(directory, "app.db")); }
+      else if (store instanceof MemoryStore) store = MemoryStore.fromState(store.exportState());
+      assert.ok(await store.getLibraryComponent({ componentId: created.part.id, requestingUserId: "designer", canViewAllUnreviewed: false, canViewInactive: false }));
+      assert.ok((await store.listPartRelationships()).some(row => row.id === created.relationship.id));
+    } finally {
+      if (store instanceof SqliteStore) store.close();
+      await pg?.db.close();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   test(`${backend}: removes saved blank strain-relief links and prevents them from returning`, async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "blank-strain-compat-"));
     const pg = backend === "postgres" ? await postgres() : undefined;
